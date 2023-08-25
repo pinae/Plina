@@ -1,12 +1,15 @@
 from django.db import models
 from datetime import timedelta
+from uuid import uuid4
 
 
 class Tag(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     name = models.CharField(max_length=256)
 
 
 class Task(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     header = models.CharField(max_length=1024)
     description = models.TextField(default="")
     start_date = models.DateTimeField("start date", blank=True, null=True, default=None)
@@ -29,14 +32,19 @@ class Task(models.Model):
 
 
 class Project(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     name = models.CharField(max_length=512)
     description = models.TextField(default="")
     tags = models.ManyToManyField(to=Tag, related_name="projects")
     priority = models.FloatField(default=5.0)
+    order = models.PositiveIntegerField()
 
     def add(self, task):
         task_item = ProjectTaskItem(project=self, task=task, order=ProjectTaskItem.objects.filter(project=self).count())
         task_item.save()
+
+    class Meta:
+        ordering = ['order']
 
 
 class ProjectTaskItem(models.Model):
