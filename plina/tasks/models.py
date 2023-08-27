@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from datetime import timedelta
 from uuid import uuid4
 
@@ -37,11 +39,31 @@ class Project(models.Model):
     description = models.TextField(default="")
     tags = models.ManyToManyField(to=Tag, related_name="projects")
     priority = models.FloatField(default=5.0)
-    order = models.PositiveIntegerField()
+    order = models.PositiveIntegerField(default=0)
 
     def add(self, task):
         task_item = ProjectTaskItem(project=self, task=task, order=ProjectTaskItem.objects.filter(project=self).count())
         task_item.save()
+
+    def insert(self, task, position=0):
+        new_task_item = ProjectTaskItem(project=self, task=task, order=0)
+        for i, pti in enumerate(ProjectTaskItem.objects.filter(project=self).order_by("order").all()):
+            if i == position:
+                new_task_item.order = pti.order
+            if i >= position:
+                pti.order = pti.order + 1
+                pti.save()
+        new_task_item.save()
+
+    def remove(self, task):
+        try:
+            pti = ProjectTaskItem.objects.get(project=self, task=task)
+            for subsequent_pti in ProjectTaskItem.objects.filter(project=self, order__gte=pti.order):
+                subsequent_pti.order = subsequent_pti.order - 1
+                subsequent_pti.save()
+            pti.delete()
+        except ProjectTaskItem.DoesNotExist:
+            pass
 
     class Meta:
         ordering = ['order']
@@ -54,3 +76,9 @@ class ProjectTaskItem(models.Model):
 
     class Meta:
         ordering = ['order']
+
+
+@receiver(pre_delete, sender=Task)
+def pre_task_delete(sender, instance, using):
+    for pti in ProjectTaskItem.objects.filter(task=instance).all():
+        pti.project.remove(instance)
