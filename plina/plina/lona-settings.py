@@ -22,6 +22,7 @@ import lona_picocss
 
 MIDDLEWARES = [
     'lona_picocss.middlewares.LonaPicocssMiddleware',
+    'lona_picocss.middlewares.DjangoCollectStaticMiddleware',
     'lona_django.middlewares.DjangoSessionMiddleware',
 ]
 
@@ -33,13 +34,13 @@ ERROR_404_VIEW = lona_picocss.Error404View
 ERROR_500_VIEW = lona_picocss.Error500View
 
 PICOCSS_BRAND = 'Plina'
-
+PICOCSS_LOGO = 'plina_logo.svg'
 
 def get_navigation(server, request):
     return [
         lona_picocss.NavItem(
-            title='Home',
-            url=server.reverse('home'),
+            title='Calendar',
+            url=server.reverse('calendar'),
         ),
         lona_picocss.NavItem(
             title='Projects',
