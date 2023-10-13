@@ -5,6 +5,11 @@ name = "pypi"
 
 [packages]
 django = "*"
+lona = "*"
+lona-picocss = "*"
+lona-chartjs = "*"
+lona-django = "*"
+aiohttp-wsgi = "*"
 
 [dev-packages]
 
