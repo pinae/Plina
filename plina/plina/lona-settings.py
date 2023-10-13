@@ -22,6 +22,7 @@ import lona_picocss
 
 MIDDLEWARES = [
     'lona_picocss.middlewares.LonaPicocssMiddleware',
+    'lona_django.middlewares.DjangoSessionMiddleware',
 ]
 
 TEMPLATE_DIRS.append(lona_picocss.settings.TEMPLATE_DIR)
@@ -39,6 +40,14 @@ def get_navigation(server, request):
         lona_picocss.NavItem(
             title='Home',
             url=server.reverse('home'),
+        ),
+        lona_picocss.NavItem(
+            title='Projects',
+            url=server.reverse('projects'),
+        ),
+        lona_picocss.NavItem(
+            title='Tasks',
+            url=server.reverse('task_list'),
         ),
     ]
 
