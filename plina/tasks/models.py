@@ -19,7 +19,10 @@ class Task(models.Model):
     latest_finish_date = models.DateTimeField("due until", blank=True, null=True, default=None)
     time_spent = models.DurationField(default=timedelta(seconds=0))
     priority = models.FloatField(default=5.0)
-    tags = models.ManyToManyField(to=Tag, related_name="tasks")
+    tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
+
+    def __str__(self):
+        return "Task {}: {} ({:.2f})".format(str(self.id), self.header, self.priority)
 
     @property
     def project(self):
@@ -37,9 +40,12 @@ class Project(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     name = models.CharField(max_length=512)
     description = models.TextField(default="")
-    tags = models.ManyToManyField(to=Tag, related_name="projects")
+    tags = models.ManyToManyField(to=Tag, related_name="projects", blank=True)
     priority = models.FloatField(default=5.0)
     order = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return "Project {}: {} ({:d}:{:.2f})".format(str(self.id), self.name, self.order, self.priority)
 
     def add(self, task):
         task_item = ProjectTaskItem(project=self, task=task, order=ProjectTaskItem.objects.filter(project=self).count())
