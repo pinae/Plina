@@ -1,6 +1,7 @@
 from lona_picocss.html import Div
 from lona.html import Node, CLICK
 from lona.static_files import StyleSheet, StaticFile
+from datetime import datetime, timedelta
 
 
 class CalendarWidget(Node):
@@ -29,9 +30,22 @@ class CalendarWidget(Node):
             'tasks': [],
         }
 
-        self.nodes = [
-            Div("Foo"),
-        ]
+        self.nodes = []
 
     def set_tasks(self, task_list):
-        self.widget_data['tasks'] = task_list
+        self.nodes = []
+        for task in task_list:
+            self.nodes.append(
+                Div(
+                    Div(task.header, _class=["task-header"]),
+                    Div(task.description),
+                    _style={
+                        "margin-top": "{:d}px".format(round(
+                            (task.start_date-datetime(year=task.start_date.year, month=task.start_date.month,
+                                                      day=task.start_date.day, tzinfo=task.start_date.tzinfo))
+                            / timedelta(hours=1) * 60)
+                        ),
+                        "height": "{:d}px".format(round(task.duration / timedelta(hours=1) * 60))
+                    }
+                )
+            )
