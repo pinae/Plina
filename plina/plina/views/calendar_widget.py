@@ -20,13 +20,12 @@ class CalendarWidget(Node):
     CLASS_LIST = ['calendar-widget']
     EVENTS = [CLICK]
 
-    def __init__(self, *args, height="1440px", **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # setting up widget data
         # will be available as `this.data` in the widget
         self.widget_data = {
-            'height': height,
             'tasks': [],
         }
 
