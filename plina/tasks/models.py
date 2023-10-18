@@ -84,7 +84,7 @@ class ProjectTaskItem(models.Model):
         ordering = ['order']
 
 
-#@receiver(pre_delete, sender=Task)
-#def pre_task_delete(sender, instance, using):
-#    for pti in ProjectTaskItem.objects.filter(task=instance).all():
-#        pti.project.remove(instance)
+@receiver(pre_delete, sender=Task)
+def pre_task_delete(sender, instance, using, **kwargs):
+    for pti in ProjectTaskItem.objects.filter(task=instance).all():
+        pti.project.remove(instance)
