@@ -1,7 +1,19 @@
 .calendar-widget {
     display: block;
-    height: 1440px;
+    height: 1441px;
     width: 250px;
     background-image: url("/static/calendar-background.svg");
     background-repeat: repeat-y;
+    background-position-y: -59px;
+    padding: 1px 0 0 2px;
+}
+
+.calendar-widget div {
+    background-color: lightgray;
+    margin: 0 1px 0 1px;
+    border-radius: 4px;
+    color: black;
+    padding: 0 5px;
+    font-weight: bold;
+    font-size: 10pt;
 }
