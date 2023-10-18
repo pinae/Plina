@@ -1,0 +1,7 @@
+.calendar-widget {
+    display: block;
+    height: 1440px;
+    width: 250px;
+    background-image: url("/static/calendar-background.svg");
+    background-repeat: repeat-y;
+}
