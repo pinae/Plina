@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'lona_picocss',
     'tasks.apps.TasksConfig',
     'django.contrib.admin',
     'django.contrib.auth',

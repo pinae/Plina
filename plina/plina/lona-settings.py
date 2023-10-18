@@ -27,17 +27,22 @@ MIDDLEWARES = [
 ]
 
 TEMPLATE_DIRS.append(lona_picocss.settings.TEMPLATE_DIR)
-STATIC_DIRS.append(lona_picocss.settings.STATIC_DIR)
+STATIC_DIRS.extend([
+    'static',
+    lona_picocss.settings.STATIC_DIR
+])
 FRONTEND_TEMPLATE = lona_picocss.settings.FRONTEND_TEMPLATE
 ERROR_403_VIEW = lona_picocss.Error403View
 ERROR_404_VIEW = lona_picocss.Error404View
 ERROR_500_VIEW = lona_picocss.Error500View
 
+PICOCSS_SHOW_EXCEPTIONS = lona_picocss.get_django_show_exceptions
+
 PICOCSS_BRAND = 'Plina'
 PICOCSS_LOGO = 'plina_logo.svg'
 
 def get_navigation(server, request):
-    return [
+    nav_items = [
         lona_picocss.NavItem(
             title='Calendar',
             url=server.reverse('calendar'),
@@ -51,6 +56,8 @@ def get_navigation(server, request):
             url=server.reverse('task_list'),
         ),
     ]
+    nav_items.extend(lona_picocss.get_django_auth_navigation(server, request))
+    return nav_items
 
 
 PICOCSS_NAVIGATION = get_navigation
