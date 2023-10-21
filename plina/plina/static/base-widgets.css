@@ -1,0 +1,20 @@
+.movable-list {
+    display: block;
+}
+
+.block-widget {
+    display: list-item;
+    list-style-type: none;
+    margin: .3em 0;
+    background-color: #539dad;
+    border-radius: 4px;
+    color: #000000;
+    padding: 0 5px;
+    font-weight: lighter;
+    font-size: 10pt;
+    overflow: clip;
+}
+
+.block-widget .header {
+    font-weight: bold;
+}

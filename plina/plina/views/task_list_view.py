@@ -1,12 +1,19 @@
 from lona.view import LonaView
-from lona.html import HTML, H1, Li, Ul
+from lona.html import HTML, H1
+from widgets.movable_list_widget import MovableListWidget
+from widgets.task_widget import TaskWidget
 from tasks.models import Task
 
 
 class TaskListView(LonaView):
     def handle_request(self, request):
-        project_lis = [Li(str(t)) for t in Task.objects.all()]
+        tasks = [TaskWidget({
+            "header": t.header,
+            "tags": [str(tg) for tg in t.tags.all()],
+            "duration": t.duration,
+            "time_spent": t.time_spent
+        }) for t in Task.objects.all()]
         return HTML(
             H1('Tasks'),
-            Ul(project_lis)
+            MovableListWidget(tasks)
         )

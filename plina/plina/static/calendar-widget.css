@@ -9,10 +9,10 @@
 }
 
 .calendar-widget div {
-    background-color: lightgray;
+    background-color: #539dad;
     margin: 0 2px 0 2px;
     border-radius: 4px;
-    color: black;
+    color: #000000;
     padding: 0 5px;
     font-weight: lighter;
     font-size: 10pt;
