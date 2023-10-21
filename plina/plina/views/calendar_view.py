@@ -4,7 +4,7 @@ from lona.view import LonaView
 from lona.html import HTML
 from lona.view_runtime import ViewRuntime
 from lona_picocss.html import H1, H3, Div
-from calendar_widget import CalendarWidget
+from widgets.calendar_widget import CalendarWidget
 from tasks.models import Task
 from datetime import datetime
 from django.utils import timezone
