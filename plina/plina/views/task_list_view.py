@@ -9,7 +9,7 @@ class TaskListView(LonaView):
     def handle_request(self, request):
         tasks = [TaskWidget({
             "header": t.header,
-            "tags": [str(tg) for tg in t.tags.all()],
+            "tags": list(t.tags.all()),
             "duration": t.duration,
             "time_spent": t.time_spent
         }) for t in Task.objects.all()]
