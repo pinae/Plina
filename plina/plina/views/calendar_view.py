@@ -6,7 +6,7 @@ from lona.view_runtime import ViewRuntime
 from lona_picocss.html import H1, H3, Div
 from widgets.calendar_widget import CalendarWidget
 from tasks.models import Task
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.utils import timezone
 WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
@@ -27,11 +27,11 @@ class CalendarView(LonaView):
                 year=now.year, month=now.month, day=now.day+i, hour=0, minute=0, tzinfo=now.tzinfo).weekday()]
             self.calendar_days[i]["widget"].set_tasks(list(
                 Task.objects.filter(
-                    start_date__gte=datetime(year=now.year, month=now.month, day=now.day+i, hour=0, minute=0,
-                                             tzinfo=now.tzinfo)
+                    start_date__gte=datetime(year=now.year, month=now.month, day=now.day, hour=0, minute=0,
+                                             tzinfo=now.tzinfo) + timedelta(days=i)
                 ).filter(
-                    start_date__lt=datetime(year=now.year, month=now.month, day=now.day+i+1, hour=0, minute=0,
-                                            tzinfo=now.tzinfo)
+                    start_date__lt=datetime(year=now.year, month=now.month, day=now.day, hour=0, minute=0,
+                                            tzinfo=now.tzinfo) + timedelta(days=i+1)
                 ).order_by("start_date")
             ))
 
