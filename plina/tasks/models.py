@@ -25,7 +25,7 @@ class Task(models.Model):
     tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
 
     def __str__(self):
-        return "Task {}: {} ({:.2f})".format(str(self.id), self.header, self.priority)
+        return "Task: {} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
 
     @property
     def project(self):
