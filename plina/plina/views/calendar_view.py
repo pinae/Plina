@@ -23,8 +23,10 @@ class CalendarView(LonaView):
     def query_tasks(self):
         now = timezone.now()
         for i in range(len(self.calendar_days)):
-            self.calendar_days[i]["name"] = WEEKDAYS[datetime(
-                year=now.year, month=now.month, day=now.day+i, hour=0, minute=0, tzinfo=now.tzinfo).weekday()]
+            self.calendar_days[i]["name"] = WEEKDAYS[(
+                    datetime(year=now.year, month=now.month, day=now.day, hour=0, minute=0, tzinfo=now.tzinfo) +
+                    timedelta(days=i)
+            ).weekday()]
             self.calendar_days[i]["widget"].set_tasks(list(
                 Task.objects.filter(
                     start_date__gte=datetime(year=now.year, month=now.month, day=now.day, hour=0, minute=0,
