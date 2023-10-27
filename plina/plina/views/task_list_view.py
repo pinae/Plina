@@ -6,6 +6,7 @@ from lona.view_runtime import ViewRuntime
 from widgets.movable_list_widget import MovableListWidget
 from widgets.task_widget import TaskWidget
 from tasks.models import Task
+from tasks.sorters import set_priority_by_order
 
 
 class TaskListView(LonaView):
@@ -16,16 +17,7 @@ class TaskListView(LonaView):
     def handle_input_event(self, input_event):
         if input_event.name == "list_order":
             ordered_ids = input_event.data.split(',')
-            all_tasks = Task.objects.order_by('-priority').all()
-            ordered_tasks = []
-            for id_no, ordered_id in enumerate(ordered_ids):
-                for task in all_tasks:
-                    if str(task.pk) == ordered_id:
-                        task.priority = len(all_tasks) - id_no * 2
-                        task.save()
-                        ordered_tasks.append(task)
-            if len(ordered_ids) != len(ordered_tasks):
-                ordered_tasks = Task.objects.order_by('-priority').all()
+            ordered_tasks = set_priority_by_order(Task, ordered_ids)
             tasks = [TaskWidget({
                 "header": t.header,
                 "tags": list(t.tags.all()),
