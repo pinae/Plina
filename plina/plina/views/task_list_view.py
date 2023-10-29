@@ -14,29 +14,11 @@ class TaskListView(LonaView):
         super().__init__(server, view_runtime, request)
         self.movable_list = None
 
-    def handle_input_event(self, input_event):
-        if input_event.name == "list_order":
-            ordered_ids = input_event.data.split(',')
-            ordered_tasks = set_priority_by_order(Task, ordered_ids)
-            tasks = [TaskWidget({
-                "header": t.header,
-                "tags": list(t.tags.all()),
-                "duration": t.duration,
-                "time_spent": t.time_spent
-            }, _id=str(t.pk)) for t in ordered_tasks]
-            self.movable_list.nodes = tasks
-            self.movable_list.widget_data = {'ids': [str(t.pk) for t in ordered_tasks]}
-
     def handle_request(self, request):
         ordered_tasks = Task.objects.order_by('-priority').all()
-        tasks = [TaskWidget({
-            "header": t.header,
-            "tags": list(t.tags.all()),
-            "duration": t.duration,
-            "time_spent": t.time_spent
-        }, _id=str(t.pk)) for t in ordered_tasks]
-        self.movable_list = MovableListWidget(tasks)
-        self.movable_list.widget_data = {'ids': [str(t.pk) for t in ordered_tasks]}
+        self.movable_list = MovableListWidget(TaskWidget, ordered_tasks,
+                                              ordering_class=Task,
+                                              ordering_function=set_priority_by_order)
         return HTML(
             H1('Tasks'),
             self.movable_list,
