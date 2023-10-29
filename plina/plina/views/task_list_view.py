@@ -1,7 +1,7 @@
 from lona.request import Request
 from lona.server import Server
 from lona.view import LonaView
-from lona.html import HTML, H1, TextInput
+from lona.html import HTML, H1
 from lona.view_runtime import ViewRuntime
 from widgets.movable_list_widget import MovableListWidget
 from widgets.task_widget import TaskWidget

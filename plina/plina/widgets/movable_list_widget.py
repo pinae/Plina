@@ -1,6 +1,5 @@
 from lona.html import Node, CHANGE
 from lona.static_files import StyleSheet, Script
-from lona_picocss.html import Div
 
 
 class MovableListWidget(Node):
@@ -28,7 +27,10 @@ class MovableListWidget(Node):
             'header': item.header if 'header' in dir(item) else "",
             'tags': list(item.tags.all()) if 'tags' in dir(item) else [],
             'duration': item.duration if 'duration' in dir(item) else "",
-            'time_spent': item.time_spent if 'time_spent' in dir(item) else ""
+            'time_spent': item.time_spent if 'time_spent' in dir(item) else "",
+            'expandable': self.load_children is not None,
+            'load_children_function': self.load_children,
+            'expanded': False,
         }, _id=str(item.pk)) for item in items]
         self.widget_data = {'ids': [str(item.pk) for item in items]}
         self.nodes = nodes
@@ -39,9 +41,11 @@ class MovableListWidget(Node):
             ordered_items = self.ordering_function(self.ordering_class, ordered_ids)
             self.create_nodes(ordered_items)
 
-    def __init__(self, widget_class, items, ordering_class, ordering_function, *args, **kwargs):
+    def __init__(self, widget_class, items, ordering_class, ordering_function, load_children=None,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ordering_class = ordering_class
         self.ordering_function = ordering_function
         self.widget_class = widget_class
+        self.load_children = load_children
         self.create_nodes(items)

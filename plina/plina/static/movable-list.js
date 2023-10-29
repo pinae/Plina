@@ -9,6 +9,7 @@ class MovableList {
     }
 
     dragstartHandler(ev) {
+        ev.stopPropagation();
         ev.dataTransfer.setData("text/plain", ev.target.id);
         ev.target.style.opacity = "25%";
         ev.target.removeEventListener("dragend", this.dragendHandler.bind(this));
@@ -17,6 +18,11 @@ class MovableList {
 
     dragoverHandler(ev) {
         ev.preventDefault();
+        ev.stopPropagation();
+        const dragItemID = ev.dataTransfer.getData("text/plain");
+        if (!this.data['ids'].includes(dragItemID)) {
+            return;
+        }
         ev.dataTransfer.dropEffect = "move";
         let nodes = this.root_node.children;
         let pos = 0;
@@ -24,11 +30,10 @@ class MovableList {
             if (nodes[i].offsetTop <= ev.pageY) pos = i;
             else break;
         }
-        const data = ev.dataTransfer.getData("text/plain");
         if (pos < nodes.length - 1) {
-            this.root_node.insertBefore(document.getElementById(data), nodes[pos]);
+            this.root_node.insertBefore(document.getElementById(dragItemID), nodes[pos]);
         } else {
-            this.root_node.appendChild(document.getElementById(data));
+            this.root_node.appendChild(document.getElementById(dragItemID));
         }
     }
 
