@@ -49,6 +49,7 @@ class ProjectWidget(Node):
     def __init__(self, task_info: dict, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.load_children_function = task_info['load_children_function']
+        self.edit_function = task_info['edit_function']
         self.header = Span(task_info["name"], _class=["header"])
         self.expand_icon = Icon("chevron-down" if not task_info['expanded'] else "chevron-up",
                                 stroke_width=2, color="#337d8d")
@@ -66,6 +67,18 @@ class ProjectWidget(Node):
                            'padding': 0,
                        },
                        handle_click=self.expand_toggle), "&nbsp;"]
+        if self.edit_function is not None:
+            nodes += [
+                Button(Icon("edit", stroke_width=2, color="#337d8d"),
+                       _style={
+                           'border': 0,
+                           'display': 'inline-block',
+                           'width': 'auto',
+                           'background': 'none',
+                           'margin': 0,
+                           'padding': 0,
+                       },
+                       handle_click=lambda i: self.edit_function(str(self.id_list))), "&nbsp;"]
         nodes += [
             self.header, "&nbsp;",
             self.tag_list]

@@ -31,6 +31,7 @@ class MovableListWidget(Node):
             'expandable': self.load_children is not None,
             'load_children_function': self.load_children,
             'expanded': False,
+            'edit_function': self.edit_function,
         }, _id=str(item.pk)) for item in items]
         self.widget_data = {'ids': [str(item.pk) for item in items]}
         self.nodes = nodes
@@ -41,11 +42,12 @@ class MovableListWidget(Node):
             ordered_items = self.ordering_function(self.ordering_class, ordered_ids)
             self.create_nodes(ordered_items)
 
-    def __init__(self, widget_class, items, ordering_class, ordering_function, load_children=None,
+    def __init__(self, widget_class, items, ordering_class, ordering_function, load_children=None, edit_function=None,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ordering_class = ordering_class
         self.ordering_function = ordering_function
         self.widget_class = widget_class
         self.load_children = load_children
+        self.edit_function = edit_function
         self.create_nodes(items)
