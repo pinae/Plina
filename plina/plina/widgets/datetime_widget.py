@@ -1,6 +1,5 @@
 from lona.html import Node, HTML, CLICK, CHANGE
-#from lona_picocss.html import Switch
-from lona.html import CheckBox as Switch
+from lona_picocss.html import Switch
 from lona.static_files import StyleSheet, Script
 from datetime import datetime, timedelta
 from django.utils import timezone
