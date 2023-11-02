@@ -1,0 +1,7 @@
+.datetime-widget input[type="date"] {
+    width: auto;
+}
+
+.datetime-widget input[type="time"] {
+    width: auto;
+}

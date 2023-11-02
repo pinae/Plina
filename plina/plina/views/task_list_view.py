@@ -6,6 +6,7 @@ from lona_picocss.html import H1, Modal, InlineButton, TextInput, TextArea
 from lona.view_runtime import ViewRuntime
 from widgets.movable_list_widget import MovableListWidget
 from widgets.task_widget import TaskWidget
+from widgets.datetime_widget import DatetimeWidget
 from tasks.models import Task
 from tasks.sorters import set_priority_by_order
 from uuid import UUID
@@ -19,14 +20,17 @@ class TaskListView(LonaView):
         self.edit_task_modal = None
         self.task_header_input = None
         self.task_description_input = None
+        self.task_start_datetime = None
 
     def make_edit_task_modal(self):
         self.edit_task_modal = Modal()
         self.task_header_input = TextInput()
         self.task_description_input = TextArea()
+        self.task_start_datetime = DatetimeWidget()
         self.edit_task_modal.get_body().nodes = [
             self.task_header_input,
             self.task_description_input,
+            self.task_start_datetime,
         ]
         self.edit_task_modal.get_footer().nodes = [
             InlineButton(
@@ -44,11 +48,14 @@ class TaskListView(LonaView):
         self.current_task = Task.objects.get(id=UUID(task_uuid))
         self.task_header_input.value = self.current_task.header
         self.task_description_input.value = self.current_task.description
+        self.task_start_datetime.initial_value = self.current_task.start_date
+        self.task_start_datetime.value = self.current_task.start_date
         self.edit_task_modal.open()
 
     def save_task(self, input_event):
         self.current_task.header = self.task_header_input.value
         self.current_task.description = self.task_description_input.value
+        self.current_task.start_date = self.task_start_datetime.value
         self.current_task.save()
         ordered_tasks = Task.objects.order_by('-priority').all()
         self.movable_list.create_nodes(ordered_tasks)
