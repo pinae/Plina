@@ -1,7 +1,7 @@
 from lona.html import Node
 from lona_picocss.html import TextInput, InlineButton, Icon, Span
 from widgets.task_widget import TaskWidget
-from datetime import datetime, timedelta
+from datetime import timedelta
 from widgets.helpers import str_to_timedelta
 import re
 
@@ -57,6 +57,7 @@ class TaskSearchAndInputWidget(Node):
 
     def handle_plus(self, input_event):
         self.save_function(self.task_preview.task_info)
+        self.search_slot.value = ""
 
     def handle_search(self, input_event):
         self.search_function(self.task_preview.task_info)

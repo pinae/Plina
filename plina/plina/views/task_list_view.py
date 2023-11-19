@@ -92,11 +92,7 @@ class TaskListView(LonaView):
     def load_tasks():
         return Task.objects.order_by('-priority').all()
 
-    def save_task(self, input_event):
-        self.current_task.header = self.task_header_input.value
-        self.current_task.description = self.task_description_input.value
-        self.current_task.start_date = self.task_start_datetime.value
-        self.current_task.save()
+    def save_additions_after_id_is_set(self):
         for tag in self.current_task.tags.all():
             self.current_task.tags.remove(tag)
         for tag_chunk in self.task_tag_list.value.split(','):
@@ -110,6 +106,13 @@ class TaskListView(LonaView):
                     new_tag.save()
                     self.current_task.tags.add(new_tag)
         self.current_task.save()
+
+    def save_task(self, input_event):
+        self.current_task.header = self.task_header_input.value
+        self.current_task.description = self.task_description_input.value
+        self.current_task.start_date = self.task_start_datetime.value
+        self.current_task.save()
+        self.save_additions_after_id_is_set()
         ordered_tasks = self.load_tasks()
         self.movable_list.create_nodes(ordered_tasks)
         self.edit_task_modal.close()
@@ -120,9 +123,12 @@ class TaskListView(LonaView):
         self.set_modal_inputs()
         self.save_task(input_event=None)
 
+    @staticmethod
+    def base_query():
+        return Task.objects
+
     def search(self, task_info):
-        print(task_info)
-        query = Task.objects
+        query = self.base_query()
         if type(task_info['header']) is str and len(task_info['header']) > 0:
             query = query.filter(Q(header__icontains=task_info['header']) | Q(description__icontains=task_info['header']))
         if task_info['duration'] > timedelta(minutes=0):

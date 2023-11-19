@@ -4,7 +4,7 @@ from lona.request import Request
 from lona.server import Server
 from lona.view import LonaView
 from lona.html import HTML
-from lona_picocss.html import H1, P, A, InlineButton
+from lona_picocss.html import H1, H3, P, A
 from lona.view_runtime import ViewRuntime
 from widgets.movable_list_widget import MovableListWidget
 from tasks.models import Project, Task
@@ -44,6 +44,13 @@ class SigleProjectView(TaskListView):
     def load_tasks(self):
         return self.project.tasks
 
+    def base_query(self):
+        return Task.objects.filter(project_item__project__id=self.project.pk)
+
+    def save_additions_after_id_is_set(self):
+        self.project.add(self.current_task)
+        super().save_additions_after_id_is_set()
+
     def handle_request(self, request: Request) -> None | str | AbstractNode | dict:
         project_id = request.match_info['project_id']
         try:
@@ -61,6 +68,8 @@ class SigleProjectView(TaskListView):
                                               edit_function=self.edit_task)
         return HTML(
             H1(f'Projekt: {self.project.name}'),
+            self.search_slot,
+            H3('Tasks', _style={'margin': '1em 0 .5em 0'}),
             self.movable_list,
             self.edit_task_modal,
         )
