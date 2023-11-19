@@ -25,7 +25,7 @@ class Task(models.Model):
     tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
 
     def __str__(self):
-        return "Task: {} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
+        return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
 
     @property
     def project(self):
@@ -49,6 +49,10 @@ class Project(models.Model):
 
     def __str__(self):
         return "Project {}: {} ({:d}:{:.2f})".format(str(self.id), self.name, self.order, self.priority)
+
+    @property
+    def tasks(self):
+        return [pti.task for pti in self.task_list.order_by('-order').all()]
 
     def add(self, task):
         task_item = ProjectTaskItem(project=self, task=task, order=ProjectTaskItem.objects.filter(project=self).count())

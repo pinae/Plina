@@ -1,3 +1,4 @@
+from lona import RedirectResponse
 from lona.html import Node, CLICK
 from lona.static_files import StyleSheet
 from lona_picocss.html import Span, Icon, Button
@@ -42,9 +43,14 @@ class ProjectWidget(Node):
             self.expand_icon.name = "chevron-down"
 
     def handle_input_event(self, input_event):
-        print(dir(input_event))
-        if input_event.type == CLICK._symbol:
-            print(input_event.payload)
+        if (input_event.type == CLICK._symbol and
+                input_event.target_node is not None and
+                input_event.target_node.tag_name in ['span', 'tag-widget', 'project-widget']):
+            project_widget = input_event.node
+            while len(str(project_widget.id_list)) != 36 and project_widget.parent is not None:
+                project_widget = project_widget.parent
+            if len(str(project_widget.id_list)) == 36:
+                return RedirectResponse(f'/project/{project_widget.id_list}')
 
     def __init__(self, task_info: dict, *args, **kwargs):
         super().__init__(*args, **kwargs)

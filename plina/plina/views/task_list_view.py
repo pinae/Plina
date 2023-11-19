@@ -88,6 +88,10 @@ class TaskListView(LonaView):
         self.set_modal_inputs()
         self.edit_task_modal.open()
 
+    @staticmethod
+    def load_tasks():
+        return Task.objects.order_by('-priority').all()
+
     def save_task(self, input_event):
         self.current_task.header = self.task_header_input.value
         self.current_task.description = self.task_description_input.value
@@ -106,7 +110,7 @@ class TaskListView(LonaView):
                     new_tag.save()
                     self.current_task.tags.add(new_tag)
         self.current_task.save()
-        ordered_tasks = Task.objects.order_by('-priority').all()
+        ordered_tasks = self.load_tasks()
         self.movable_list.create_nodes(ordered_tasks)
         self.edit_task_modal.close()
 
@@ -132,7 +136,7 @@ class TaskListView(LonaView):
         self.movable_list.create_nodes(filtered_tasks)
 
     def handle_request(self, request):
-        ordered_tasks = Task.objects.order_by('-priority').all()
+        ordered_tasks = self.load_tasks()
         self.make_edit_task_modal()
         self.movable_list = MovableListWidget(TaskWidget, ordered_tasks,
                                               ordering_class=Task,
