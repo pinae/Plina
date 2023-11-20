@@ -114,7 +114,7 @@ class TaskListView(LonaView):
         self.current_task.save()
         self.save_additions_after_id_is_set()
         ordered_tasks = self.load_tasks()
-        self.movable_list.create_nodes(ordered_tasks)
+        self.movable_list.set_nodes(ordered_tasks)
         self.edit_task_modal.close()
 
     def immediate_save(self, task_info):
@@ -139,7 +139,7 @@ class TaskListView(LonaView):
         for tag_name in task_info['tags']:
             query = query.filter(tags__name=tag_name)
         filtered_tasks = query.order_by('-priority').all()
-        self.movable_list.create_nodes(filtered_tasks)
+        self.movable_list.set_nodes(filtered_tasks)
 
     def handle_request(self, request):
         ordered_tasks = self.load_tasks()
