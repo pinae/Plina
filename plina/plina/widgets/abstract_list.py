@@ -1,8 +1,9 @@
+from __future__ import annotations
 from lona.html import Node
 
 
 class AbstractList(Node):
-    def set_nodes(self, items):
+    def set_nodes(self, items: list):
         nodes = [self.widget_class({
             'name': item.name if 'name' in dir(item) else "",
             'header': item.header if 'header' in dir(item) else "",
@@ -17,9 +18,8 @@ class AbstractList(Node):
         self.widget_data = {'ids': [str(item.pk) for item in items]}
         self.nodes = nodes
 
-    def __init__(self, widget_class, items=None, load_children=None, edit_function=None,
-                 *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, widget_class, items=None, load_children=None, edit_function=None, **kwargs):
+        super().__init__()
         self.widget_class = widget_class
         self.load_children = load_children
         self.edit_function = edit_function

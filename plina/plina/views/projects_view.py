@@ -7,6 +7,7 @@ from lona.html import HTML
 from lona_picocss.html import H1, H3, P, A
 from lona.view_runtime import ViewRuntime
 from widgets.movable_list_widget import MovableListWidget
+from widgets.gantt_order_widget import GanttOrderWidget
 from tasks.models import Project, Task
 from widgets.project_widget import ProjectWidget
 from tasks.sorters import set_priority_by_order
@@ -26,7 +27,8 @@ class ProjectsView(LonaView):
 
     def handle_request(self, request: Request) -> None | str | AbstractNode | dict:
         ordered_projects = Project.objects.order_by('-priority').all()
-        self.movable_list = MovableListWidget(ProjectWidget, ordered_projects,
+        self.movable_list = MovableListWidget(widget_class=ProjectWidget,
+                                              items=ordered_projects,
                                               ordering_class=Project,
                                               ordering_function=set_priority_by_order,
                                               load_children=load_project_tasks)
@@ -40,6 +42,11 @@ class SigleProjectView(TaskListView):
     def __init__(self, server: Server, view_runtime: ViewRuntime, request: Request):
         super().__init__(server, view_runtime, request)
         self.project = None
+        self.gantt_list = GanttOrderWidget(widget_class=TaskWidget,
+                                           items=None,
+                                           ordering_class=Task,
+                                           ordering_function=set_priority_by_order,
+                                           edit_function=self.edit_task)
 
     def load_tasks(self):
         return self.project.tasks
@@ -62,14 +69,11 @@ class SigleProjectView(TaskListView):
             )
         ordered_tasks = self.load_tasks()
         self.make_edit_task_modal()
-        self.movable_list = MovableListWidget(TaskWidget, ordered_tasks,
-                                              ordering_class=Task,
-                                              ordering_function=set_priority_by_order,
-                                              edit_function=self.edit_task)
+        self.gantt_list.set_nodes(ordered_tasks)
         return HTML(
             H1(f'Projekt: {self.project.name}'),
             self.search_slot,
             H3('Tasks', _style={'margin': '1em 0 .5em 0'}),
-            self.movable_list,
+            self.gantt_list,
             self.edit_task_modal,
         )

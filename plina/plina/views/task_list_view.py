@@ -144,7 +144,8 @@ class TaskListView(LonaView):
     def handle_request(self, request):
         ordered_tasks = self.load_tasks()
         self.make_edit_task_modal()
-        self.movable_list = MovableListWidget(TaskWidget, ordered_tasks,
+        self.movable_list = MovableListWidget(widget_class=TaskWidget,
+                                              items=ordered_tasks,
                                               ordering_class=Task,
                                               ordering_function=set_priority_by_order,
                                               edit_function=self.edit_task)
