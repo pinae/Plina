@@ -1,5 +1,5 @@
 from lona import RedirectResponse
-from lona.html import Node, CLICK
+from lona.html import CLICK
 from lona.static_files import StyleSheet
 from lona_picocss.html import Span, Icon, Button
 from widgets.tag_widget import TagWidget
@@ -7,9 +7,10 @@ from widgets.movable_list_widget import MovableListWidget
 from widgets.task_widget import TaskWidget
 from tasks.models import Task
 from tasks.sorters import set_priority_by_order
+from widgets.abstract_list_item import AbstractListItem
 
 
-class ProjectWidget(Node):
+class ProjectWidget(AbstractListItem):
     TAG_NAME = 'project-widget'
 
     STATIC_FILES = [

@@ -1,11 +1,12 @@
-from lona.html import Node, CLICK
+from lona.html import CLICK
 from lona.static_files import StyleSheet
 from lona_picocss.html import Span, Icon, Button
 from widgets.helpers import minutely_str, str_to_timedelta
 from widgets.tag_widget import TagWidget
+from widgets.abstract_list_item import AbstractListItem
 
 
-class TaskWidget(Node):
+class TaskWidget(AbstractListItem):
     TAG_NAME = 'task-widget'
 
     STATIC_FILES = [

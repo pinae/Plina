@@ -1,5 +1,7 @@
 from __future__ import annotations
+from typing import Type
 from lona.html import Node
+from widgets.abstract_list_item import AbstractListItem
 
 
 class AbstractList(Node):
@@ -18,7 +20,8 @@ class AbstractList(Node):
         self.widget_data = {'ids': [str(item.pk) for item in items]}
         self.nodes = nodes
 
-    def __init__(self, widget_class, items=None, load_children=None, edit_function=None, **kwargs):
+    def __init__(self, widget_class: Type[AbstractListItem],
+                 items=None, load_children=None, edit_function=None, **kwargs):
         super().__init__()
         self.widget_class = widget_class
         self.load_children = load_children
