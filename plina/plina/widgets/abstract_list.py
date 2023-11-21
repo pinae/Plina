@@ -1,13 +1,13 @@
 from __future__ import annotations
-from typing import Type
+from typing import Type, List
 from lona.html import Node
 from widgets.abstract_list_item import AbstractListItem
 from widgets.task_widget import TaskWidget
-from widgets.tag_widget import TagWidget
+from tasks.models import Project, Task
 
 
 class AbstractList(Node):
-    def set_nodes(self, items: list):
+    def set_nodes(self, items: List[Task | Project]):
         nodes = []
         for item in items:
             item_found = False
@@ -15,6 +15,8 @@ class AbstractList(Node):
                 if str(node.id_list) == str(item.pk):
                     item_found = True
                     node.set_header(item.header if 'header' in dir(item) else "")
+                    if type(item) is Project:
+                        node.set_header(item.name)
                     node.set_tags(list(item.tags.all()) if 'tags' in dir(item) else [])
                     if type(node) is TaskWidget:
                         node.set_duration(item.duration if 'duration' in dir(item) else "")
