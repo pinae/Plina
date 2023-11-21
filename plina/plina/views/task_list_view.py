@@ -127,6 +127,9 @@ class TaskListView(LonaView):
     def base_query():
         return Task.objects
 
+    def search_order(self, query):
+        return query.order_by('-priority')
+
     def search(self, task_info):
         query = self.base_query()
         if type(task_info['header']) is str and len(task_info['header']) > 0:
@@ -138,7 +141,7 @@ class TaskListView(LonaView):
                                  time_spent__lt=task_info['time_spent'] + timedelta(seconds=30))
         for tag_name in task_info['tags']:
             query = query.filter(tags__name=tag_name)
-        filtered_tasks = query.order_by('-priority').all()
+        filtered_tasks = self.search_order(query).all()
         self.movable_list.set_nodes(filtered_tasks)
 
     def handle_request(self, request):

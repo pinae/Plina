@@ -57,10 +57,8 @@ class ProjectWidget(AbstractListItem):
         super().__init__(*args, **kwargs)
         self.load_children_function = task_info['load_children_function']
         self.edit_function = task_info['edit_function']
-        self.header = Span(task_info["name"], _class=["header"])
         self.expand_icon = Icon("chevron-down" if not task_info['expanded'] else "chevron-up",
                                 stroke_width=2, color="#337d8d")
-        self.tag_list = Span([TagWidget(x) for x in task_info["tags"]])
         nodes = [Icon("move", stroke_width=2, color="#337d8d"), "&nbsp;"]
         if task_info['expandable'] and task_info['load_children_function'] is not None:
             nodes += [
@@ -90,3 +88,5 @@ class ProjectWidget(AbstractListItem):
             self.header, "&nbsp;",
             self.tag_list]
         self.nodes = nodes
+        self.set_header(task_info["name"])
+        self.set_tags(task_info["tags"])

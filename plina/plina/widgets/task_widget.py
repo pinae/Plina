@@ -1,9 +1,11 @@
+from __future__ import annotations
 from lona.html import CLICK
 from lona.static_files import StyleSheet
 from lona_picocss.html import Span, Icon, Button
 from widgets.helpers import minutely_str, str_to_timedelta
 from widgets.tag_widget import TagWidget
 from widgets.abstract_list_item import AbstractListItem
+from datetime import timedelta
 
 
 class TaskWidget(AbstractListItem):
@@ -39,14 +41,18 @@ class TaskWidget(AbstractListItem):
         else:
             self.edit_function(str(self.id_list))
 
+    def set_time_spent(self, new_time_spent: timedelta):
+        self.time_spent.nodes = [minutely_str(new_time_spent)]
+
+    def set_duration(self, new_duration: timedelta):
+        self.duration.nodes = [minutely_str(new_duration)]
+
     def __init__(self, task_info: dict, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.task_info = task_info
         self.edit_function = task_info['edit_function']
-        self.header = Span(task_info["header"], _class=["header"])
-        self.tag_list = Span([TagWidget(x) for x in task_info["tags"]])
-        self.time_spent = Span(minutely_str(task_info["time_spent"]))
-        self.duration = Span(minutely_str(task_info["duration"]))
+        self.time_spent = Span()
+        self.duration = Span()
         self.time_info = Span([self.time_spent, "/", self.duration])
         self.preview_mode = "preview" in task_info and task_info["preview"]
         nodes = [Icon("move", stroke_width=2, color="#337d8d"), "&nbsp;"]
@@ -66,3 +72,7 @@ class TaskWidget(AbstractListItem):
                        handle_click=self.handle_edit_click), "&nbsp;"]
         nodes += [self.header, "&nbsp;", self.tag_list, "&nbsp;", self.time_info]
         self.nodes = nodes
+        self.set_header(task_info["header"])
+        self.set_tags(task_info["tags"])
+        self.set_time_spent(task_info["time_spent"])
+        self.set_duration(task_info["duration"])

@@ -3,6 +3,14 @@ class MovableList {
         this.lona_window = lona_window;
     }
 
+    idInData(searchedID) {
+        let idFound = false;
+        for (let i = 0; i < this.data['items'].length; i++) {
+            if (searchedID === this.data['items'][i]['id']) idFound = true;
+        }
+        return idFound;
+    }
+
     dragendHandler(ev) {
         ev.preventDefault();
         ev.target.style.opacity = "100%";
@@ -20,7 +28,8 @@ class MovableList {
         ev.preventDefault();
         ev.stopPropagation();
         const dragItemID = ev.dataTransfer.getData("text/plain");
-        if (!this.data['ids'].includes(dragItemID)) {
+        console.log(this.idInData(dragItemID));
+        if (!this.idInData(dragItemID)) {
             return;
         }
         ev.dataTransfer.dropEffect = "move";

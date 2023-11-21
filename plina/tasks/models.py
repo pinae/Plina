@@ -38,6 +38,9 @@ class Task(models.Model):
     def set_project(self, project):
         project.add(self)
 
+    def has_project(self):
+        return hasattr(self, 'project_item') and self.project_item is not None
+
 
 class Project(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
