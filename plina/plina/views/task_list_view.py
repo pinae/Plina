@@ -14,6 +14,7 @@ from tasks.sorters import set_priority_by_order
 from django.db.models import Q
 from uuid import UUID
 from datetime import timedelta
+from tasks.planner import get_sorted_task_list
 
 
 class TaskListView(LonaView):
@@ -90,7 +91,7 @@ class TaskListView(LonaView):
 
     @staticmethod
     def load_tasks():
-        return Task.objects.order_by('-priority').all()
+        return get_sorted_task_list()
 
     def save_additions_after_id_is_set(self):
         for tag in self.current_task.tags.all():
