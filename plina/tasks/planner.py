@@ -1,5 +1,6 @@
 from typing import List
 from tasks.models import Project, Task
+from datetime import timedelta
 
 
 def get_sorted_task_list() -> List[Task]:
@@ -18,3 +19,11 @@ def get_sorted_task_list() -> List[Task]:
         if not inserted:
             tasks.append(no_project_task)
     return tasks
+
+
+def split_for_appointments(tasks: List[Task]) -> (List[Task], List[Task]):
+    appointments = []
+    for i, task in enumerate(tasks):
+        if task.duration is not None and task.duration > timedelta(seconds=0) and task.start_date is not None:
+            appointments.append(tasks.pop(i))
+    return appointments, tasks
