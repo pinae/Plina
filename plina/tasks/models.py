@@ -55,7 +55,7 @@ class Project(models.Model):
 
     @property
     def tasks(self):
-        return [pti.task for pti in self.task_list.order_by('order').all()]
+        return [pti.task for pti in self.task_list.order_by('order', '-task__priority').all()]
 
     def add(self, task):
         task_item = ProjectTaskItem(project=self, task=task, order=ProjectTaskItem.objects.filter(project=self).count())
