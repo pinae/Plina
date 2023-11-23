@@ -27,3 +27,7 @@ def split_for_appointments(tasks: List[Task]) -> (List[Task], List[Task]):
         if task.duration is not None and task.duration > timedelta(seconds=0) and task.start_date is not None:
             appointments.append(tasks.pop(i))
     return appointments, tasks
+
+
+def plan_untimed_tasks():
+    pass

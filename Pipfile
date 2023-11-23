@@ -10,6 +10,9 @@ lona-picocss = "*"
 lona-chartjs = "*"
 lona-django = "*"
 aiohttp-wsgi = "*"
+parsedatetime = "*"
+recurrent = "*"
+python-dateutil = "*"
 
 [dev-packages]
 
