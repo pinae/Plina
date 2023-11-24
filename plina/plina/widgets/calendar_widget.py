@@ -1,7 +1,10 @@
-from lona_picocss.html import Div
+from __future__ import annotations
+from typing import List
+from lona_picocss.html import Div, Span
 from lona.html import Node, CLICK
 from lona.static_files import StyleSheet, StaticFile
 from datetime import datetime, timedelta
+from tasks.models import Task, TimeBucket
 
 
 class CalendarWidget(Node):
@@ -32,20 +35,37 @@ class CalendarWidget(Node):
 
         self.nodes = []
 
-    def set_tasks(self, task_list):
+    def set_tasks_and_time_buckets(self, task_list: List[Task], time_buckets: List[TimeBucket] | None = None):
+        def top_offset(start: datetime) -> str:
+            return "{:d}px".format(round(
+                            (start-datetime(year=start.year, month=start.month, day=start.day, tzinfo=start.tzinfo))
+                            / timedelta(hours=1) * 60))
+
+        def height_from_duration(duration: timedelta) -> str:
+            return "{:d}px".format(round(duration / timedelta(hours=1) * 60))
+
         self.nodes = []
+        if type(time_buckets) is list:
+            for time_bucket in time_buckets:
+                self.nodes.append(
+                    Div(
+                        Span("Time-Bucket", _style={"width": height_from_duration(time_bucket.duration)}),
+                        _class=["time-bucket"],
+                        _style={
+                            "top": top_offset(time_bucket.start_date),
+                            "height": height_from_duration(time_bucket.duration),
+                        }
+                    )
+                )
         for task in task_list:
             self.nodes.append(
                 Div(
                     Div(task.header, _class=["task-header"]),
                     Div(task.description),
+                    _class=["task"],
                     _style={
-                        "margin-top": "{:d}px".format(round(
-                            (task.start_date-datetime(year=task.start_date.year, month=task.start_date.month,
-                                                      day=task.start_date.day, tzinfo=task.start_date.tzinfo))
-                            / timedelta(hours=1) * 60)
-                        ),
-                        "height": "{:d}px".format(round(task.duration / timedelta(hours=1) * 60))
+                        "top": top_offset(task.start_date),
+                        "height": height_from_duration(task.duration),
                     }
                 )
             )

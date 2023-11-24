@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Tag, Project, Task, ProjectTaskItem
+from .models import Tag, Project, Task, ProjectTaskItem, TimeBucketType, TimeBucket
 
 
 class ProjectRelationInline(admin.StackedInline):
@@ -19,6 +19,16 @@ class TaskAdmin(admin.ModelAdmin):
 
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
+    pass
+
+
+@admin.register(TimeBucketType)
+class TimeBucketTypeAdmin(admin.ModelAdmin):
+    pass
+
+
+@admin.register(TimeBucket)
+class TimeBucketAdmin(admin.ModelAdmin):
     pass
 
 

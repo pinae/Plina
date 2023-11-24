@@ -8,6 +8,7 @@ from datetime import timedelta, datetime
 from parsedatetime import Constants as pdtConstants
 from recurrent.event_parser import RecurringEvent
 from dateutil import rrule
+from plina.widgets.helpers import minutely_str
 from uuid import uuid4
 import re
 
@@ -172,6 +173,10 @@ class TimeBucketType(models.Model):
     start_times = models.CharField(max_length=512, default="")
     duration = models.DurationField(default=timedelta(hours=4))
 
+    def __str__(self):
+        return (f"{self.name}: ({minutely_str(self.duration)}) {self.start_times}" +
+                ",".join([f"#{tag.name}" for tag in self.tags.all()]))
+
     @property
     def hex_color(self) -> str:
         return "#" + self.color.hex()
@@ -200,3 +205,14 @@ class TimeBucket(models.Model):
     start_date = models.DateTimeField("start date", default=timezone.now())
     duration = models.DurationField(default=timedelta(hours=4))
     type = models.ForeignKey(to=TimeBucketType, related_name="buckets", on_delete=models.CASCADE, null=False)
+
+    def __str__(self):
+        return f"{self.start_date} - {self.end_date}: {self.type.name}"
+
+    @property
+    def end_date(self) -> datetime:
+        return self.start_date + self.duration
+
+    @end_date.setter
+    def set_end_date(self, new_end_date: datetime):
+        self.duration = new_end_date - self.start_date

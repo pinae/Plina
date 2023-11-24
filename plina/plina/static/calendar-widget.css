@@ -1,14 +1,15 @@
 .calendar-widget {
     display: block;
-    height: 1441px;
-    width: 250px;
+    height: 1440px;
+    width: 300px;
     background-image: url("/static/calendar-background.svg");
     background-repeat: repeat-y;
-    background-position-y: -59px;
-    padding: 1px 0 0 2px;
+    padding: 0 0 0 2px;
+    border-top: 1px solid #808080;
 }
 
 .calendar-widget div {
+    position: relative;
     background-color: #539dad;
     margin: 0 2px 0 2px;
     border-radius: 4px;
@@ -19,6 +20,29 @@
     overflow: clip;
 }
 
+.calendar-widget div.task {
+    left: 28px;
+    width: 266px;
+}
+
+.calendar-widget div.time-bucket {
+    left: -1px;
+    width: 26px;
+    overflow: hidden;
+}
+
+.calendar-widget div.time-bucket span {
+    transform: rotate(90deg);
+    transform-origin: 6px 12px;
+    position: relative;
+    display: inline-block;
+    font-weight: bold;
+}
+
 .calendar-widget .task-header {
     font-weight: bold;
+}
+
+.whole-calendar div div:last-child calendar-widget {
+    border-right: 2px solid #808080;
 }
