@@ -17,7 +17,7 @@ class CalendarView(LonaView):
         super().__init__(server, view_runtime, request)
         self.calendar_days = [
             {"name": WEEKDAYS[i], "widget": CalendarWidget()}
-            for i in range(3)
+            for i in range(4)
         ]
         self.query_tasks()
 

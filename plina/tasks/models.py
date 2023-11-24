@@ -174,7 +174,7 @@ class TimeBucketType(models.Model):
     duration = models.DurationField(default=timedelta(hours=4))
 
     def __str__(self):
-        return (f"{self.name}: ({minutely_str(self.duration)}) {self.start_times}" +
+        return (f"{self.name}: ({minutely_str(self.duration)}) {self.start_times} " +
                 ",".join([f"#{tag.name}" for tag in self.tags.all()]))
 
     @property
@@ -190,14 +190,15 @@ class TimeBucketType(models.Model):
     def generate_buckets(self, generation_range: timedelta, start: datetime = timezone.now()) -> List[TimeBucket]:
         consts = pdtConstants(localeID='de_DE', usePyICU=False)
         consts.use24 = True
-        r = RecurringEvent(now_date=timezone.now(), parse_constants=consts)
+        r = RecurringEvent(now_date=start, parse_constants=consts)
         r.parse(self.start_times)
-        rr = rrule.rrulestr(r.get_RFC_rrule())
+        rr = rrule.rrulestr(r.get_RFC_rrule(), dtstart=timezone.make_naive(start))
         buckets = []
         for start_date in rr.between(timezone.make_naive(start),
                                      timezone.make_naive(start) + generation_range,
                                      inc=True):
-            buckets.append(TimeBucket(start_date=start_date, duration=self.duration, type=self))
+            buckets.append(TimeBucket(start_date=timezone.make_aware(start_date, timezone=start.tzinfo),
+                                      duration=self.duration, type=self))
         return buckets
 
 

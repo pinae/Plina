@@ -9,7 +9,7 @@
 }
 
 .calendar-widget div {
-    position: relative;
+    position: absolute;
     background-color: #539dad;
     margin: 0 2px 0 2px;
     border-radius: 4px;
@@ -21,12 +21,12 @@
 }
 
 .calendar-widget div.task {
-    left: 28px;
+    left: 30px;
     width: 266px;
 }
 
 .calendar-widget div.time-bucket {
-    left: -1px;
+    left: 1px;
     width: 26px;
     overflow: hidden;
 }

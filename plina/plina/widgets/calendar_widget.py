@@ -23,6 +23,7 @@ class CalendarWidget(Node):
 
     CLASS_LIST = ['calendar-widget']
     EVENTS = [CLICK]
+    STYLE = {"position": "relative"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -49,7 +50,8 @@ class CalendarWidget(Node):
             for time_bucket in time_buckets:
                 self.nodes.append(
                     Div(
-                        Span("Time-Bucket", _style={"width": height_from_duration(time_bucket.duration)}),
+                        Span(time_bucket.type.name,
+                             _style={"width": height_from_duration(time_bucket.duration)}),
                         _class=["time-bucket"],
                         _style={
                             "top": top_offset(time_bucket.start_date),
