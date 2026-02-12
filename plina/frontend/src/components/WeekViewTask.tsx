@@ -72,6 +72,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight }
                 borderBottom: task.continues ? '3px double grey' : 'none',
                 overflow: 'hidden',
                 boxSizing: 'border-box',
+                borderRadius: '4px',
             }}
         >
             {/* Left Border */}
