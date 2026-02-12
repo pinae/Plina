@@ -8,9 +8,17 @@ from datetime import timedelta, datetime
 from parsedatetime import Constants as pdtConstants
 from recurrent.event_parser import RecurringEvent
 from dateutil import rrule
-from plina.widgets.helpers import minutely_str
 from uuid import uuid4
 import re
+
+
+def minutely_str(duration):
+    total_seconds = int(duration.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    if minutes == 0:
+        return f"{hours}h"
+    return f"{hours}h {minutes}m"
 
 
 class OptionallyColored(models.Model):
@@ -65,6 +73,7 @@ class Task(OptionallyColored):
     time_spent = models.DurationField(default=timedelta(seconds=0))
     priority = models.FloatField(default=5.0)
     tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
+    is_fixed = models.BooleanField(default=False)
 
     def __str__(self) -> str:
         return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
@@ -131,7 +140,7 @@ class Project(OptionallyColored):
     def remove(self, task: Task):
         try:
             pti = ProjectTaskItem.objects.get(project=self, task=task)
-            for subsequent_pti in ProjectTaskItem.objects.filter(project=self, order__gte=pti.order):
+            for subsequent_pti in ProjectTaskItem.objects.filter(project=self, order__gt=pti.order):
                 subsequent_pti.order = subsequent_pti.order - 1
                 subsequent_pti.save()
             pti.delete()
@@ -203,7 +212,7 @@ class TimeBucketType(models.Model):
 
 
 class TimeBucket(models.Model):
-    start_date = models.DateTimeField("start date", default=timezone.now())
+    start_date = models.DateTimeField("start date", default=timezone.now)
     duration = models.DurationField(default=timedelta(hours=4))
     type = models.ForeignKey(to=TimeBucketType, related_name="buckets", on_delete=models.CASCADE, null=False)
 

@@ -1,2 +1,9 @@
 lona>=1.15
-Django>=4.2.6
+django>=4.2.6
+lona-picocss
+lona-chartjs
+lona-django
+aiohttp-wsgi
+parsedatetime>=2.6
+recurrent>=0.4.1
+python-dateutil>=2.8.2
