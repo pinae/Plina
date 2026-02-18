@@ -3,7 +3,7 @@ import Layout from './components/Layout';
 import { Box, Tabs, Tab } from '@mui/material';
 import TaskList from './components/TaskList';
 import Calendar from './components/Calendar';
-import WeekView from './components/WeekView';
+import { WeekView } from './components/WeekView';
 
 function App() {
   const [tab, setTab] = useState(0);
@@ -11,6 +11,29 @@ function App() {
   const handleChange = (event: React.SyntheticEvent, newValue: number) => {
     setTab(newValue);
   };
+
+  const dummyTasks = [
+    {
+      title: 'Meeting with Client',
+      startTime: new Date().setHours(10, 0, 0, 0), // Today 10:00
+      duration: 60,
+      color: '#ff9800',
+      manuallySet: true,
+      description: 'Discuss project requirements',
+      tags: [],
+      continues: false,
+    },
+    {
+      title: 'Deep Work',
+      startTime: new Date().setHours(14, 0, 0, 0), // Today 14:00
+      duration: 120,
+      color: '#2196f3',
+      manuallySet: true,
+      description: 'Coding session',
+      tags: [],
+      continues: false,
+    }
+  ];
 
   return (
     <Layout fullWidth={tab === 0}>
@@ -22,7 +45,7 @@ function App() {
         </Tabs>
       </Box>
 
-      {tab === 0 && <WeekView />}
+      {tab === 0 && <WeekView tasks={dummyTasks} />}
       {tab === 1 && <Calendar />}
       {tab === 2 && <TaskList />}
     </Layout>
