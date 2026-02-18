@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import { WeekViewTask, type ViewTask } from './WeekViewTask';
 
 interface DayColumnProps {
@@ -37,19 +37,14 @@ export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, 
         let startMin = Math.min(startMinutesRaw, endMinutes);
         let endMin = Math.max(startMinutesRaw, endMinutes);
 
+        // Rounding logic matches previous implementation
         const durationRaw = endMin - startMin;
 
-        // If it's a click (very small movement), default to 1h
-        // Threshold: 10 minutes? Or just 0 check?
-        // User request: "Single Clicks inside the DayColumn also create a WeekViewTask but with a duration of one hour"
-        // "Drag and drop ... duration determined by height of press and release"
-
         let roundedStartMin = Math.round(startMin / 15) * 15;
-        let duration = 60;
+        let duration = 60; // Default click duration
 
         if (durationRaw > 15) {
             // It's a drag
-            // Also round start and duration?
             roundedStartMin = Math.round(startMin / 15) * 15;
             let roundedEndMin = Math.round(endMin / 15) * 15;
             duration = roundedEndMin - roundedStartMin;
@@ -64,17 +59,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, 
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', borderRight: '1px solid #333' }}>
-            {/* Header */}
-            <Box sx={{ p: 2, textAlign: 'center', borderBottom: '1px solid #333' }}>
-                <Typography variant="subtitle2" sx={{ color: '#aaa', fontWeight: 'bold' }}>
-                    {date.toLocaleDateString('de-DE', { weekday: 'short' }).toUpperCase()}
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 'normal' }}>
-                    {date.getDate().toString().padStart(2, '0')}
-                </Typography>
-            </Box>
-
-            {/* Content */}
+            {/* Content (Header responsibility moved to WeekView) */}
             <Box
                 data-testid="day-column-content"
                 ref={contentRef}
@@ -112,7 +97,13 @@ export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, 
 
                 {/* Tasks */}
                 {tasks.map((task, index) => (
-                    <Box key={index} onClick={(e) => e.stopPropagation()}>
+                    <Box
+                        key={index}
+                        // Stop propagation for both click and mousedown/up to prevent task creation when interacting with existing task
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onMouseUp={(e) => e.stopPropagation()}
+                    >
                         <WeekViewTask task={task} columnHeight={columnHeight} />
                     </Box>
                 ))}

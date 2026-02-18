@@ -15,7 +15,7 @@ function App() {
   const dummyTasks = [
     {
       title: 'Meeting with Client',
-      startTime: new Date().setHours(10, 0, 0, 0), // Today 10:00
+      startTime: new Date(new Date().setHours(10, 0, 0, 0)).toISOString(), // Today 10:00
       duration: 60,
       color: '#ff9800',
       manuallySet: true,
@@ -25,7 +25,7 @@ function App() {
     },
     {
       title: 'Deep Work',
-      startTime: new Date().setHours(14, 0, 0, 0), // Today 14:00
+      startTime: new Date(new Date().setHours(14, 0, 0, 0)).toISOString(), // Today 14:00
       duration: 120,
       color: '#2196f3',
       manuallySet: true,
@@ -45,7 +45,7 @@ function App() {
         </Tabs>
       </Box>
 
-      {tab === 0 && <WeekView tasks={dummyTasks} />}
+      {tab === 0 && <WeekView tasks={dummyTasks} initialDate={new Date()} />}
       {tab === 1 && <Calendar />}
       {tab === 2 && <TaskList />}
     </Layout>

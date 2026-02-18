@@ -19,7 +19,7 @@ export default function Layout({ children, fullWidth = false }: { children: Reac
     return (
         <ThemeProvider theme={theme}>
             <CssBaseline />
-            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100vh' }}>
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
                 <AppBar position="static">
                     <Toolbar>
                         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
