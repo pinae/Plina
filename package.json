@@ -1,0 +1,18 @@
+{
+    "name": "plina-monorepo",
+    "private": true,
+    "workspaces": [
+        "apps/*"
+    ],
+    "scripts": {
+        "build": "turbo run build",
+        "dev": "turbo run dev",
+        "lint": "turbo run lint",
+        "test": "turbo run test",
+        "clean": "turbo run clean"
+    },
+    "devDependencies": {
+        "turbo": "^2.1.0"
+    },
+    "packageManager": "yarn@1.22.22"
+}

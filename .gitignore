@@ -158,3 +158,18 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
+
+apps/backend/config/__pycache__/
+apps/backend/tasks/__pycache__/
+apps/backend/db.sqlite3
+apps/backend/test_e2e_db.sqlite3
+apps/backend/.coverage
+node_modules/
+.turbo/
+apps/frontend/playwright-report/
+apps/frontend/test-results/
+apps/frontend/coverage/
+*.pyc
+.idea/
+apps/backend/media/
+desc.txt

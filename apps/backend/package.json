@@ -1,0 +1,10 @@
+{
+  "name": "@plina/backend",
+  "private": true,
+  "scripts": {
+    "dev": "uv run python manage.py runserver",
+    "test": "uv run python manage.py test tasks",
+    "lint": "uv run flake8 .",
+    "build": "uv run python manage.py collectstatic --noinput"
+  }
+}
