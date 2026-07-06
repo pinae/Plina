@@ -74,6 +74,11 @@ class Task(OptionallyColored):
     priority = models.FloatField(default=5.0)
     tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
     is_fixed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField("completed at", blank=True, null=True, default=None)
+
+    @property
+    def is_done(self) -> bool:
+        return self.completed_at is not None
 
     def __str__(self) -> str:
         return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
@@ -175,6 +180,31 @@ def pre_task_delete(sender, instance: Task, using, **kwargs):
         pti.project.remove(instance)
 
 
+class TaskDependency(models.Model):
+    """A finish-to-start edge: ``successor`` may not start before ``predecessor`` is done.
+
+    The dependency graph must stay acyclic; cycle checks live in the service
+    layer (``services.graph``) and API validation. The database only enforces
+    what it can express cheaply: no self-edges, no duplicates.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    predecessor = models.ForeignKey(to=Task, related_name="outgoing_dependencies",
+                                    on_delete=models.CASCADE)
+    successor = models.ForeignKey(to=Task, related_name="incoming_dependencies",
+                                  on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["predecessor", "successor"],
+                                    name="unique_task_dependency"),
+            models.CheckConstraint(condition=~models.Q(predecessor=models.F("successor")),
+                                   name="no_self_dependency"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.predecessor.header} -> {self.successor.header}"
+
+
 class TimeBucketType(models.Model):
     name = models.CharField(max_length=512)
     color = models.BinaryField(max_length=3, default=b"\x53\x9d\xad")  # byte order: rgb
@@ -196,7 +226,9 @@ class TimeBucketType(models.Model):
             new_color = new_color[1:]
         self.color = bytes.fromhex(new_color)
 
-    def generate_buckets(self, generation_range: timedelta, start: datetime = timezone.now()) -> List[TimeBucket]:
+    def generate_buckets(self, generation_range: timedelta, start: datetime | None = None) -> List[TimeBucket]:
+        if start is None:
+            start = timezone.now()
         consts = pdtConstants(localeID='de_DE', usePyICU=False)
         consts.use24 = True
         r = RecurringEvent(now_date=start, parse_constants=consts)

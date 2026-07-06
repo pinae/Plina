@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Task, Project, Tag, TimeBucket, TimeBucketType
+from .models import Task, Project, Tag, TimeBucket, TimeBucketType, TaskDependency
+from .services.graph import would_create_cycle
 
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
@@ -12,12 +13,14 @@ class TaskSerializer(serializers.ModelSerializer):
         queryset=Tag.objects.all(), source='tags', many=True, write_only=True, required=False
     )
     hex_color = serializers.CharField(read_only=True)
+    is_done = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Task
         fields = [
             'id', 'header', 'description', 'start_date', 'duration',
-            'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'hex_color', 'is_fixed'
+            'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'hex_color', 'is_fixed',
+            'completed_at', 'is_done'
         ]
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -42,3 +45,34 @@ class TimeBucketSerializer(serializers.ModelSerializer):
     class Meta:
         model = TimeBucket
         fields = '__all__'
+
+
+class TaskDependencySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskDependency
+        fields = ['id', 'predecessor', 'successor']
+        validators = []  # duplicate/self checks are handled in validate() for clean errors
+
+    def validate(self, attrs):
+        predecessor = attrs['predecessor']
+        successor = attrs['successor']
+
+        if predecessor == successor:
+            raise serializers.ValidationError(
+                {"detail": "A task cannot depend on itself."}
+            )
+        if TaskDependency.objects.filter(predecessor=predecessor, successor=successor).exists():
+            raise serializers.ValidationError(
+                {"detail": "This dependency already exists."}
+            )
+
+        edges = TaskDependency.objects.values_list("predecessor_id", "successor_id")
+        cycle = would_create_cycle(edges, (predecessor.id, successor.id))
+        # UUIDs are serialized as strings in the JSON error payload.
+        cycle = [str(node) for node in cycle] if cycle is not None else None
+        if cycle is not None:
+            raise serializers.ValidationError({
+                "detail": "This dependency would create a cycle.",
+                "cycle": cycle,
+            })
+        return attrs

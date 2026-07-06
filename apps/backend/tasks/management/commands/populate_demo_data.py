@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
-from tasks.models import Task, Project, Tag, TimeBucket, TimeBucketType
+from tasks.models import Task, Project, Tag, TimeBucket, TimeBucketType, TaskDependency
 
 class Command(BaseCommand):
     help = 'Populates the database with demo data'
@@ -67,5 +67,52 @@ class Command(BaseCommand):
             priority=3.0,
             duration=timedelta(minutes=30))
         t4.tags.add(tag_general)
-        
+
+        # Dependency graph (two projects, per WP-1 / user story §3)
+        #
+        # Refactor Backend (chain):
+        #   Upgrade Django -> Design Schema -> Implement API -> Load Test
+        #                                  \-> Write Documentation
+        # Frontend Rewrite (diamond):
+        #   Setup React -> Build Components -> Wire API Client
+        #             \--> Style Guide ------^
+        t5 = Task.objects.create(
+            header="Design Schema", priority=9.0, duration=timedelta(hours=3),
+            latest_finish_date=now + timedelta(days=4))
+        t5.tags.add(tag_coding)
+        p_refactor.add(t5)
+
+        t6 = Task.objects.create(
+            header="Implement API", priority=8.0, duration=timedelta(hours=6),
+            latest_finish_date=now + timedelta(days=8))
+        t6.tags.add(tag_coding)
+        p_refactor.add(t6)
+
+        t7 = Task.objects.create(
+            header="Load Test", priority=6.0, duration=timedelta(hours=2),
+            latest_finish_date=now + timedelta(days=10))
+        t7.tags.add(tag_coding)
+        p_refactor.add(t7)
+
+        t8 = Task.objects.create(
+            header="Build Components", priority=7.0, duration=timedelta(hours=4))
+        t8.tags.add(tag_coding)
+        p_frontend.add(t8)
+
+        t9 = Task.objects.create(
+            header="Style Guide", priority=5.0, duration=timedelta(hours=2))
+        t9.tags.add(tag_general)
+        p_frontend.add(t9)
+
+        t10 = Task.objects.create(
+            header="Wire API Client", priority=7.0, duration=timedelta(hours=3))
+        t10.tags.add(tag_coding)
+        p_frontend.add(t10)
+
+        for predecessor, successor in [
+            (t1, t5), (t5, t6), (t6, t7), (t6, t4),   # backend chain + docs
+            (t2, t8), (t2, t9), (t8, t10), (t9, t10),  # frontend diamond
+        ]:
+            TaskDependency.objects.create(predecessor=predecessor, successor=successor)
+
         self.stdout.write(self.style.SUCCESS('Successfully populated demo data'))

@@ -1,12 +1,22 @@
-from rest_framework import viewsets
+from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Task, Project, Tag, TimeBucket
-from .serializers import TaskSerializer, ProjectSerializer, TagSerializer, TimeBucketSerializer
+from .models import Task, Project, Tag, TimeBucket, TaskDependency
+from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
+                          TimeBucketSerializer, TaskDependencySerializer)
 
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
+
+class DependencyViewSet(mixins.ListModelMixin,
+                        mixins.RetrieveModelMixin,
+                        mixins.CreateModelMixin,
+                        mixins.DestroyModelMixin,
+                        viewsets.GenericViewSet):
+    """Dependencies are edges: they are created and deleted, never edited."""
+    queryset = TaskDependency.objects.all()
+    serializer_class = TaskDependencySerializer
 
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
@@ -22,27 +32,22 @@ class TimeBucketViewSet(viewsets.ModelViewSet):
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from tasks.services.planner_service import rank_tasks, allocate_tasks
+from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks
 from django.utils import timezone
 from tasks.models import Task, TimeBucket
 
 class PlannerView(APIView):
     def get(self, request):
         now = timezone.now()
-        # Fetch tasks and buckets
-        # Logic: Filter tasks that are not done (naive implementation: all tasks for now)
-        tasks = list(Task.objects.all())
-        ranked_tasks = rank_tasks(tasks, now)
-        
-        # Create buckets if needed or fetch existing
-        # For this demo, we assume buckets exist or we generate some?
-        # The prompt says "Planning Tool... automatically plans".
-        # We'll just fetch existing buckets from DB for now.
+        snapshots = build_planning_tasks(
+            Task.objects.filter(completed_at=None).prefetch_related("tags")
+        )
+        ranked_tasks = rank_tasks(snapshots, now)
+
+        # NOTE (WP-3): will use services.bucket_service.gather_time_buckets over
+        # the planning horizon; for now only persisted buckets are considered.
         buckets = list(TimeBucket.objects.filter(start_date__gte=now).all())
-        if not buckets:
-            # Maybe generate some for demo purposes or return empty
-            pass
-            
+
         plan = allocate_tasks(buckets, ranked_tasks)
         
         # Serialize Plan

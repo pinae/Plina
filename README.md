@@ -127,7 +127,7 @@ architectural guidelines:
    ```
 2. Install dependencies (if not already installed):
    ```bash
-   uv install
+   uv sync
    ```
 3. Start the development server:
    ```bash
@@ -156,7 +156,7 @@ architectural guidelines:
 ### Backend Tests
 Run Django tests from the `apps/backend/` directory:
 ```bash
-python manage.py test tasks
+uv run python manage.py test tasks
 ```
 
 ### Frontend Tests

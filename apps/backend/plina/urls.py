@@ -17,7 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework import routers
-from tasks.api import TaskViewSet, ProjectViewSet, TagViewSet, TimeBucketViewSet, PlannerView
+from tasks.api import (TaskViewSet, ProjectViewSet, TagViewSet, TimeBucketViewSet,
+                       DependencyViewSet, PlannerView)
 from plina.django_views import forbidden_error_view, not_found_error_view, internal_error_view
 
 router = routers.DefaultRouter()
@@ -25,6 +26,7 @@ router.register(r'tasks', TaskViewSet)
 router.register(r'projects', ProjectViewSet)
 router.register(r'tags', TagViewSet)
 router.register(r'timebuckets', TimeBucketViewSet)
+router.register(r'dependencies', DependencyViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),
