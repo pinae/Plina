@@ -20,7 +20,7 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'header', 'description', 'start_date', 'duration',
             'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'hex_color', 'is_fixed',
-            'completed_at', 'is_done'
+            'is_appointment', 'completed_at', 'is_done'
         ]
 
 class ProjectSerializer(serializers.ModelSerializer):

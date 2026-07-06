@@ -32,9 +32,24 @@ class TimeBucketViewSet(viewsets.ModelViewSet):
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks
+from django.conf import settings
 from django.utils import timezone
+from datetime import timedelta
+from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks, UNBUCKETED
+from tasks.services.bucket_service import gather_time_buckets
 from tasks.models import Task, TimeBucket
+
+def _serialize_item(item):
+    return {
+        "task_id": item.task.id,
+        "header": item.task.header,
+        "start_time": item.start_time,
+        "duration": item.duration.total_seconds(),
+        "warnings": item.warnings,
+        "is_fixed": item.task.is_fixed,
+        "is_appointment": item.task.is_appointment,
+        "hex_color": item.task.hex_color,
+    }
 
 class PlannerView(APIView):
     def get(self, request):
@@ -44,27 +59,26 @@ class PlannerView(APIView):
         )
         ranked_tasks = rank_tasks(snapshots, now)
 
-        # NOTE (WP-3): will use services.bucket_service.gather_time_buckets over
-        # the planning horizon; for now only persisted buckets are considered.
-        buckets = list(TimeBucket.objects.filter(start_date__gte=now).all())
+        horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
+        buckets = gather_time_buckets(now, now + horizon)
+        edges = TaskDependency.objects.values_list("predecessor_id", "successor_id")
 
-        plan = allocate_tasks(buckets, ranked_tasks)
-        
-        # Serialize Plan
-        # Structure: key is bucket_id, value is list of items
-        serialized_plan = {}
-        for bucket_id, items in plan.items():
-            serialized_plan[bucket_id] = [
+        plan = allocate_tasks(buckets, ranked_tasks, edges)
+
+        return Response({
+            "appointments": [
+                _serialize_item(item)
+                for item in sorted(plan[UNBUCKETED], key=lambda i: i.start_time)
+            ],
+            "buckets": [
                 {
-                    "task_id": item.task.id,
-                    "header": item.task.header,
-                    "start_time": item.start_time,
-                    "duration": item.duration.total_seconds(),
-                    "warnings": item.warnings,
-                    "is_fixed": item.task.is_fixed,
-                    "hex_color": item.task.hex_color
+                    "id": bucket.id,
+                    "start_date": bucket.start_date,
+                    "end_date": bucket.end_date,
+                    "type_name": bucket.type.name,
+                    "hex_color": bucket.type.hex_color,
+                    "items": [_serialize_item(item) for item in plan[bucket.id]],
                 }
-                for item in items
-            ]
-            
-        return Response(serialized_plan)
+                for bucket in buckets
+            ],
+        })

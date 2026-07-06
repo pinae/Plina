@@ -130,3 +130,4 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+PLANNING_HORIZON_DAYS = 60  # planning window for generated buckets (A9); tune freely

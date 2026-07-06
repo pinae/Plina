@@ -93,6 +93,36 @@ class CapacityWindowConversionTest(TestCase):
         self.assertEqual(windows[0].tag_ids, frozenset({tag.id}))
 
 
+class UnparseableRecurrenceTest(TestCase):
+    """Regression: types without a (valid) recurrence rule must simply
+    generate no buckets instead of crashing the whole planner."""
+
+    def test_empty_start_times_generates_nothing(self):
+        bucket_type = TimeBucketType.objects.create(
+            name="Manual only", duration=timedelta(hours=2)  # start_times=""
+        )
+        self.assertEqual(
+            bucket_type.generate_buckets(generation_range=timedelta(days=7)), []
+        )
+
+    def test_garbage_start_times_generates_nothing(self):
+        bucket_type = TimeBucketType.objects.create(
+            name="Broken", start_times="blorp glorp", duration=timedelta(hours=2)
+        )
+        self.assertEqual(
+            bucket_type.generate_buckets(generation_range=timedelta(days=7)), []
+        )
+
+    def test_gather_survives_a_mix_of_valid_and_invalid_types(self):
+        TimeBucketType.objects.create(name="Manual only", duration=timedelta(hours=2))
+        TimeBucketType.objects.create(
+            name="Valid", start_times="every day at 09:00", duration=timedelta(hours=2)
+        )
+        now = timezone.now()
+        buckets = gather_time_buckets(now, now + timedelta(days=3))
+        self.assertGreaterEqual(len(buckets), 2)
+
+
 class GenerateBucketsDefaultArgTest(TestCase):
     """Regression: `start: datetime = timezone.now()` as a default argument is
     evaluated once at import time and silently freezes the anchor date."""

@@ -24,10 +24,10 @@ class Command(BaseCommand):
         tag_general = Tag.objects.create(name="general", color=b'\x33\xFF\x57') # Greenish
         
         # Bucket Types
-        bt_coding = TimeBucketType.objects.create(name="Deep Work", color=b'\x33\x57\xFF', duration=timedelta(hours=4))
+        bt_coding = TimeBucketType.objects.create(name="Deep Work", color=b"\x33\x57\xFF", start_times="every weekday at 09:00", duration=timedelta(hours=4))
         bt_coding.tags.add(tag_coding)
         
-        bt_general = TimeBucketType.objects.create(name="General", color=b'\x33\xFF\x57', duration=timedelta(hours=4))
+        bt_general = TimeBucketType.objects.create(name="General", color=b"\x33\xFF\x57", start_times="every day at 14:00", duration=timedelta(hours=4))
         
         # Buckets for next 2 days
         TimeBucket.objects.create(start_date=now + timedelta(hours=1), duration=timedelta(hours=3), type=bt_coding)
@@ -59,7 +59,9 @@ class Command(BaseCommand):
             header="Team Sync",
             priority=5.0,
             duration=timedelta(hours=1),
-            is_fixed=True)
+            start_date=(now + timedelta(days=1)).replace(hour=10, minute=0,
+                                                         second=0, microsecond=0),
+            is_appointment=True)
         t3.tags.add(tag_meeting)
         
         t4 = Task.objects.create(

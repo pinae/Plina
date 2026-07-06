@@ -74,6 +74,7 @@ class Task(OptionallyColored):
     priority = models.FloatField(default=5.0)
     tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
     is_fixed = models.BooleanField(default=False)
+    is_appointment = models.BooleanField(default=False)
     completed_at = models.DateTimeField("completed at", blank=True, null=True, default=None)
 
     @property
@@ -229,11 +230,16 @@ class TimeBucketType(models.Model):
     def generate_buckets(self, generation_range: timedelta, start: datetime | None = None) -> List[TimeBucket]:
         if start is None:
             start = timezone.now()
+        if not self.start_times.strip():
+            return []  # manual-only type: buckets are placed by hand
         consts = pdtConstants(localeID='de_DE', usePyICU=False)
         consts.use24 = True
         r = RecurringEvent(now_date=start, parse_constants=consts)
         r.parse(self.start_times)
-        rr = rrule.rrulestr(r.get_RFC_rrule(), dtstart=timezone.make_naive(start))
+        rfc_rule = r.get_RFC_rrule()
+        if rfc_rule is None:
+            return []  # not a recognizable recurrence rule
+        rr = rrule.rrulestr(rfc_rule, dtstart=timezone.make_naive(start))
         buckets = []
         for start_date in rr.between(timezone.make_naive(start),
                                      timezone.make_naive(start) + generation_range,
@@ -244,6 +250,7 @@ class TimeBucketType(models.Model):
 
 
 class TimeBucket(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     start_date = models.DateTimeField("start date", default=timezone.now)
     duration = models.DurationField(default=timedelta(hours=4))
     type = models.ForeignKey(to=TimeBucketType, related_name="buckets", on_delete=models.CASCADE, null=False)

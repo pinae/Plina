@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Typography, Paper, Box, Card, CardContent, Chip, Alert } from '@mui/material';
+import { useEffect, useState } from 'react';
+import { Typography, Paper, Box, Card, CardContent, Alert, Chip } from '@mui/material';
 import api from '../api';
 
 interface PlanItem {
@@ -8,75 +8,86 @@ interface PlanItem {
     start_time: string;
     duration: number; // seconds
     warnings: string[];
+    is_fixed: boolean;
+    is_appointment: boolean;
+    hex_color: string | null;
 }
 
-interface BucketPlan {
-    [bucket_id: string]: PlanItem[];
-}
-
-interface TimeBucket {
+interface PlannedBucket {
     id: string;
     start_date: string;
-    duration: string; // "P0DT04H00M00S" format from Django
-    type: {
-        id: string;
-        name: string;
-        hex_color: string;
-    };
+    end_date: string;
+    type_name: string;
+    hex_color: string | null;
+    items: PlanItem[];
+}
+
+interface Plan {
+    appointments: PlanItem[];
+    buckets: PlannedBucket[];
+}
+
+function ItemCard({ item }: { item: PlanItem }) {
+    return (
+        <Card sx={{ minWidth: 200, bgcolor: 'background.default' }}>
+            <CardContent>
+                <Typography variant="subtitle2">
+                    {item.header}
+                    {item.is_appointment && <Chip label="appointment" size="small" sx={{ ml: 1 }} />}
+                    {item.is_fixed && !item.is_appointment && <Chip label="fixed" size="small" sx={{ ml: 1 }} />}
+                </Typography>
+                <Typography variant="caption" display="block">
+                    {new Date(item.start_time).toLocaleString()} ({Math.round(item.duration / 60)}m)
+                </Typography>
+                {item.warnings.map(w => (
+                    <Alert severity="warning" key={w} sx={{ py: 0 }}>{w}</Alert>
+                ))}
+            </CardContent>
+        </Card>
+    );
 }
 
 export default function Calendar() {
-    const [plan, setPlan] = useState<BucketPlan>({});
-    const [buckets, setBuckets] = useState<TimeBucket[]>([]);
+    const [plan, setPlan] = useState<Plan>({ appointments: [], buckets: [] });
 
     useEffect(() => {
-        // Fetch Plan
         api.get('plan/')
-            .then(response => {
-                setPlan(response.data);
-            })
+            .then(response => setPlan(response.data))
             .catch(error => console.error("Error fetching plan:", error));
-
-        // Fetch Buckets info (to display headers/empty buckets)
-        api.get('timebuckets/')
-            .then(response => {
-                setBuckets(response.data);
-            })
-            .catch(error => console.error("Error fetching buckets:", error));
     }, []);
+
+    // Generated empty buckets far in the future are noise; show planned ones
+    // plus the next few empty ones so the user sees upcoming free capacity.
+    const nonEmpty = plan.buckets.filter(b => b.items.length > 0);
+    const upcomingEmpty = plan.buckets.filter(b => b.items.length === 0).slice(0, 5);
+    const visibleBuckets = [...nonEmpty, ...upcomingEmpty]
+        .sort((a, b) => a.start_date.localeCompare(b.start_date));
 
     return (
         <Box>
             <Typography variant="h5" gutterBottom>
                 Calendar Plan
             </Typography>
+            {plan.appointments.length > 0 && (
+                <Paper sx={{ p: 2, mb: 2, borderLeft: 6, borderColor: 'secondary.main' }}>
+                    <Typography variant="h6">Appointments</Typography>
+                    <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {plan.appointments.map((item, idx) => <ItemCard key={idx} item={item} />)}
+                    </Box>
+                </Paper>
+            )}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {buckets.map(bucket => {
-                    const items = plan[bucket.id] || [];
+                {visibleBuckets.map(bucket => {
                     const bucketStart = new Date(bucket.start_date);
-                    // Duration parsing is tricky if complex, but simple ISO string usually works or assume 4h.
-                    // For display, we just show Start Time.
-
                     return (
-                        <Paper key={bucket.id} sx={{ p: 2, borderLeft: 6, borderColor: bucket.type.hex_color || '#539dad' }}>
+                        <Paper key={bucket.id} sx={{ p: 2, borderLeft: 6, borderColor: bucket.hex_color || '#539dad' }}>
                             <Typography variant="h6">
-                                {bucketStart.toLocaleDateString()} {bucketStart.toLocaleTimeString()} - {bucket.type.name}
+                                {bucketStart.toLocaleDateString()} {bucketStart.toLocaleTimeString()} - {bucket.type_name}
                             </Typography>
                             <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                {items.length === 0 && <Typography variant="body2" color="text.secondary">Empty Bucket</Typography>}
-                                {items.map((item, idx) => (
-                                    <Card key={idx} sx={{ minWidth: 200, bgcolor: 'background.default' }}>
-                                        <CardContent>
-                                            <Typography variant="subtitle2">{item.header}</Typography>
-                                            <Typography variant="caption" display="block">
-                                                {new Date(item.start_time).toLocaleTimeString()} ({Math.round(item.duration / 60)}m)
-                                            </Typography>
-                                            {item.warnings.map(w => (
-                                                <Alert severity="warning" key={w} sx={{ py: 0 }}>{w}</Alert>
-                                            ))}
-                                        </CardContent>
-                                    </Card>
-                                ))}
+                                {bucket.items.length === 0 &&
+                                    <Typography variant="body2" color="text.secondary">Empty Bucket</Typography>}
+                                {bucket.items.map((item, idx) => <ItemCard key={idx} item={item} />)}
                             </Box>
                         </Paper>
                     );

@@ -10,7 +10,6 @@ from tasks.services.planner_service import (
     allocate_tasks,
     build_planning_tasks,
 )
-from tasks.services.graph import DependencyGraph
 
 
 class PlanningTaskSnapshotTest(TestCase):
@@ -110,7 +109,7 @@ class AllocationImmutabilityTest(TestCase):
     def test_partially_scheduled_task_keeps_its_duration(self):
         task = Task.objects.create(header="Long", duration=timedelta(hours=3))
 
-        allocate_tasks([self.bucket], [task], DependencyGraph({}, []))
+        allocate_tasks([self.bucket], [task])
 
         self.assertEqual(task.duration, timedelta(hours=3))
         task.refresh_from_db()
@@ -123,7 +122,7 @@ class AllocationImmutabilityTest(TestCase):
             time_spent=timedelta(hours=1, minutes=30),
         )
 
-        plan = allocate_tasks([self.bucket], [task], DependencyGraph({}, []))
+        plan = allocate_tasks([self.bucket], [task])
 
         items = plan[self.bucket.id]
         self.assertEqual(len(items), 1)
@@ -136,6 +135,6 @@ class AllocationImmutabilityTest(TestCase):
             completed_at=timezone.now(),
         )
 
-        plan = allocate_tasks([self.bucket], list(Task.objects.all()), DependencyGraph({}, []))
+        plan = allocate_tasks([self.bucket], list(Task.objects.all()))
 
         self.assertEqual(plan[self.bucket.id], [])

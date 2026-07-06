@@ -3,7 +3,6 @@ from django.utils import timezone
 from datetime import timedelta
 from tasks.models import Task, TimeBucket, TimeBucketType, Tag
 from tasks.services.planner_service import allocate_tasks
-from tasks.services.graph import DependencyGraph
 
 class PlannerAllocationTest(TestCase):
     def setUp(self):
@@ -42,7 +41,7 @@ class PlannerAllocationTest(TestCase):
         
         tasks = [self.task_general, self.task_coding] # General comes first in list
         
-        plan = allocate_tasks([bucket], tasks, DependencyGraph({}, []))
+        plan = allocate_tasks([bucket], tasks)
         
         # Expectation: Coding task allocated to Coding bucket, General task skipped or later?
         # Requirement: "Yes: Only consider tasks that share at least one tag"
@@ -60,7 +59,7 @@ class PlannerAllocationTest(TestCase):
         
         tasks = [self.task_coding, self.task_general]
         
-        plan = allocate_tasks([bucket], tasks, DependencyGraph({}, []))
+        plan = allocate_tasks([bucket], tasks)
         
 
 
@@ -81,7 +80,7 @@ class PlannerAllocationTest(TestCase):
         # We manually rank them so Long Task is first
         tasks = [long_task, other_task]
         
-        plan = allocate_tasks([bucket1, bucket2], tasks, DependencyGraph({}, []))
+        plan = allocate_tasks([bucket1, bucket2], tasks)
         
         # Bucket 1 should have 1h of Long Task
         b1_items = plan.get(bucket1.id, [])
@@ -100,7 +99,7 @@ class PlannerAllocationTest(TestCase):
         )
         long_task = Task.objects.create(header="Long Task", duration=timedelta(minutes=30))
         
-        plan = allocate_tasks([bucket], [long_task], DependencyGraph({}, []))
+        plan = allocate_tasks([bucket], [long_task])
         
         # Should not fit because bucket < 15 mins and task > bucket
         self.assertEqual(len(plan.get(bucket.id, [])), 0)
@@ -117,7 +116,7 @@ class PlannerAllocationTest(TestCase):
             latest_finish_date=self.now + timedelta(minutes=30)
         )
         
-        plan = allocate_tasks([bucket], [task], DependencyGraph({}, []))
+        plan = allocate_tasks([bucket], [task])
         items = plan.get(bucket.id, [])
         self.assertEqual(len(items), 1)
         self.assertTrue(hasattr(items[0], 'warnings'))
