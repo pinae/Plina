@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, Iterable, List, Union
+from typing import Dict, Iterable, List, Union, Set
 from uuid import UUID
 
 from django.utils import timezone
 
 from tasks.models import Task, TimeBucket
+from tasks.services.graph import DependencyGraph
 
 #: Estimate used for tasks the user has not sized yet.
 DEFAULT_DURATION_ESTIMATE = timedelta(hours=1)
@@ -123,19 +124,29 @@ class _AllocationState:
     Keeps the remaining durations in a local dict so the immutable snapshots
     (and the underlying models) are never touched.
     """
-
-    def __init__(self, snapshots: List[PlanningTask]):
+    def __init__(self, snapshots: List[PlanningTask], graph: DependencyGraph):
         self.queue: List[PlanningTask] = list(snapshots)
         self.remaining: Dict[UUID, timedelta] = {
             snapshot.id: snapshot.remaining_duration for snapshot in snapshots
         }
+        self.completed_at: Dict[UUID, datetime] = {}
+        self.graph = graph
         self.last_task: PlanningTask | None = None
 
     def remaining_of(self, snapshot: PlanningTask) -> timedelta:
-        return self.remaining[snapshot.id]
+        return self.remaining.get(snapshot.id, timedelta(0))
 
-    def consume(self, snapshot: PlanningTask, amount: timedelta) -> None:
+    def consume(self, snapshot: PlanningTask, amount: timedelta, current_time: datetime) -> None:
         self.remaining[snapshot.id] -= amount
+        if self.remaining[snapshot.id] <= timedelta(0):
+            self.completed_at[snapshot.id] = current_time
+
+    def is_eligible(self, snapshot: PlanningTask, bucket_start: datetime) -> bool:
+        predecessors = self.graph.predecessors.get(snapshot.id, [])
+        for pred_id in predecessors:
+            if pred_id not in self.completed_at or self.completed_at[pred_id] > bucket_start:
+                return False
+        return True
 
 
 def _matches_affinity(snapshot: PlanningTask, bucket_tag_ids: frozenset) -> bool:
@@ -146,7 +157,6 @@ def _matches_affinity(snapshot: PlanningTask, bucket_tag_ids: frozenset) -> bool
 
 def _apply_stickiness(queue: List[PlanningTask], state: _AllocationState,
                       bucket_tag_ids: frozenset) -> List[PlanningTask]:
-    """Move the previously worked-on task to the front if it may continue here."""
     last = state.last_task
     if last is None or last not in queue:
         return queue
@@ -158,57 +168,94 @@ def _apply_stickiness(queue: List[PlanningTask], state: _AllocationState,
 
 
 def allocate_tasks(buckets: List[TimeBucket],
-                   tasks: List[Union[Task, PlanningTask]]) -> Dict[object, List[PlanItem]]:
-    """Pack ranked tasks into buckets (greedy, chronological).
-
-    Respects tag affinity, prefers continuing the previous task (stickiness)
-    and enforces a minimum quantum of :data:`MIN_TASK_SLICE`.
-
-    Returns a mapping ``{bucket_id: [PlanItem, ...]}``.  Input model instances
-    are snapshotted first and are guaranteed to stay unmodified.
-    """
+                   tasks: List[Union[Task, PlanningTask]],
+                   graph: DependencyGraph) -> Dict[object, List[PlanItem]]:
     snapshots = [
         task if isinstance(task, PlanningTask) else PlanningTask.from_task(task)
         for task in tasks
         if isinstance(task, PlanningTask) or not task.is_done
     ]
     snapshots = [s for s in snapshots if s.remaining_duration > timedelta(0)]
-    state = _AllocationState(snapshots)
 
-    plan: Dict[object, List[PlanItem]] = {}
-    for bucket in sorted(buckets, key=lambda b: b.start_date):
-        plan[bucket.id] = _fill_bucket(bucket, state)
+    plan: Dict[object, List[PlanItem]] = {bucket.id: [] for bucket in buckets}
+
+    # 1. Pre-place appointments (start_date set, not necessarily fixed by tracking)
+    appointments = [s for s in snapshots if s.start_date is not None and not s.is_fixed]
+    for appt in appointments:
+        plan["appointments"] = plan.get("appointments", [])
+        plan["appointments"].append(PlanItem(appt.source, appt.start_date, appt.remaining_duration))
+        snapshots.remove(appt)
+
+    # 2. Setup state for fluid and fixed tasks
+    state = _AllocationState(snapshots, graph)
+    sorted_buckets = sorted(buckets, key=lambda b: b.start_date)
+
+    for bucket in sorted_buckets:
+        _fill_bucket(bucket, state, plan, appointments)
+
     return plan
 
 
-def _fill_bucket(bucket: TimeBucket, state: _AllocationState) -> List[PlanItem]:
+def _fill_bucket(bucket: TimeBucket, state: _AllocationState, plan: Dict[object, List[PlanItem]],
+                 appointments: List[PlanningTask]) -> None:
     bucket_tag_ids = frozenset(tag.id for tag in bucket.type.tags.all())
-    queue = _apply_stickiness(state.queue, state, bucket_tag_ids)
 
-    bucket_plan: List[PlanItem] = []
-    deferred: List[PlanningTask] = []
+    # Pre-place Fixed Tasks (is_fixed=True) first for this bucket
+    fixed_tasks = [t for t in state.queue if t.is_fixed]
     current_time = bucket.start_date
 
-    for snapshot in queue:
+    for fixed in fixed_tasks:
+        needed = state.remaining_of(fixed)
+        if needed <= timedelta(0):
+            continue
+
         free_time = bucket.end_date - current_time
+        if free_time <= timedelta(0):
+            continue
+
+        slice_duration = min(needed, free_time)
+        plan[bucket.id].append(PlanItem(fixed.source, current_time, slice_duration))
+        current_time += slice_duration
+        state.consume(fixed, slice_duration, current_time)
+        state.last_task = fixed
+
+    # Filter out fluid tasks that are not eligible yet (predecessors unfinished)
+    eligible_fluid_queue = [t for t in state.queue if not t.is_fixed and state.is_eligible(t, bucket.start_date)]
+    queue = _apply_stickiness(eligible_fluid_queue, state, bucket_tag_ids)
+
+    deferred: List[PlanningTask] = [t for t in state.queue if
+                                    not t.is_fixed and not state.is_eligible(t, bucket.start_date)]
+    deferred.extend([t for t in state.queue if t.is_fixed and state.remaining_of(t) > timedelta(0)])
+
+    for snapshot in queue:
+        # Check against appointment overlaps within this bucket
+        free_time = bucket.end_date - current_time
+
+        # Simplified for now: subtract appointment times if they fall in this bucket.
+        # In a fully rigorous interval tree, we would fragment the free_time around appointments.
+        for appt in appointments:
+            if appt.start_date and current_time <= appt.start_date < bucket.end_date:
+                overlap = min(bucket.end_date, appt.start_date + appt.remaining_duration) - max(current_time,
+                                                                                                appt.start_date)
+                free_time -= overlap
+
         needed = state.remaining_of(snapshot)
 
         if not _matches_affinity(snapshot, bucket_tag_ids) or free_time <= timedelta(0):
             deferred.append(snapshot)
             continue
+
         if free_time < MIN_TASK_SLICE and needed > free_time:
-            # Leftover gap is too small to be worth a context switch.
             deferred.append(snapshot)
             continue
 
         slice_duration = min(needed, free_time)
-        bucket_plan.append(PlanItem(snapshot.source, current_time, slice_duration))
+        plan[bucket.id].append(PlanItem(snapshot.source, current_time, slice_duration))
         current_time += slice_duration
-        state.consume(snapshot, slice_duration)
+        state.consume(snapshot, slice_duration, current_time)
         state.last_task = snapshot
 
         if state.remaining_of(snapshot) > timedelta(0):
             deferred.append(snapshot)
 
     state.queue = deferred
-    return bucket_plan
