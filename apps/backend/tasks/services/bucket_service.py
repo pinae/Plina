@@ -11,6 +11,23 @@ from datetime import datetime
 from typing import List
 
 from tasks.models import TimeBucket, TimeBucketType
+from tasks.services.graph import CapacityWindow
+
+
+def capacity_windows(buckets: List[TimeBucket]) -> List[CapacityWindow]:
+    """Convert buckets into pure :class:`CapacityWindow` objects.
+
+    This is the boundary between the ORM and the pure analysis functions in
+    ``services.graph``: everything past this point is database-free.
+    """
+    return [
+        CapacityWindow(
+            start=bucket.start_date,
+            end=bucket.end_date,
+            tag_ids=frozenset(tag.id for tag in bucket.type.tags.all()),
+        )
+        for bucket in buckets
+    ]
 
 
 def _overlaps(a: TimeBucket, b: TimeBucket) -> bool:

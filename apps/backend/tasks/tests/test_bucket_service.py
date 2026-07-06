@@ -70,6 +70,29 @@ class GatherTimeBucketsTest(TestCase):
         self.assertEqual(TimeBucket.objects.count(), 0)
 
 
+class CapacityWindowConversionTest(TestCase):
+    def test_buckets_convert_to_pure_capacity_windows(self):
+        from tasks.models import Tag
+        from tasks.services.bucket_service import capacity_windows
+
+        tag = Tag.objects.create(name="deep")
+        bucket_type = TimeBucketType.objects.create(
+            name="Deep", duration=timedelta(hours=2), start_times="every day at 09:00"
+        )
+        bucket_type.tags.add(tag)
+        start = timezone.now() + timedelta(days=1)
+        bucket = TimeBucket.objects.create(
+            start_date=start, duration=timedelta(hours=2), type=bucket_type
+        )
+
+        windows = capacity_windows([bucket])
+
+        self.assertEqual(len(windows), 1)
+        self.assertEqual(windows[0].start, start)
+        self.assertEqual(windows[0].end, start + timedelta(hours=2))
+        self.assertEqual(windows[0].tag_ids, frozenset({tag.id}))
+
+
 class GenerateBucketsDefaultArgTest(TestCase):
     """Regression: `start: datetime = timezone.now()` as a default argument is
     evaluated once at import time and silently freezes the anchor date."""

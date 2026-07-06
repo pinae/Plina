@@ -41,6 +41,16 @@ class PlanningTaskSnapshotTest(TestCase):
         with self.assertRaises(FrozenInstanceError):
             snapshot.priority = 99.0
 
+    def test_snapshot_carries_project_id(self):
+        from tasks.models import Project
+        project = Project.objects.create(name="P")
+        task = Task.objects.create(header="In project", duration=timedelta(hours=1))
+        project.add(task)
+        orphan = Task.objects.create(header="No project", duration=timedelta(hours=1))
+
+        self.assertEqual(PlanningTask.from_task(task).project_id, project.id)
+        self.assertIsNone(PlanningTask.from_task(orphan).project_id)
+
     def test_remaining_duration_subtracts_time_spent(self):
         task = Task.objects.create(
             header="Half done",

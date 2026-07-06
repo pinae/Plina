@@ -45,12 +45,14 @@ class PlanningTask:
     is_fixed: bool
     start_date: datetime | None
     remaining_duration: timedelta
+    project_id: UUID | None
     source: Task = field(compare=False, repr=False)
 
     @classmethod
     def from_task(cls, task: Task) -> "PlanningTask":
         estimated = task.duration if task.duration is not None else DEFAULT_DURATION_ESTIMATE
         remaining = max(estimated - task.time_spent, timedelta(0))
+        project = task.project
         return cls(
             id=task.id,
             header=task.header,
@@ -60,6 +62,7 @@ class PlanningTask:
             is_fixed=task.is_fixed,
             start_date=task.start_date,
             remaining_duration=remaining,
+            project_id=project.id if project is not None else None,
             source=task,
         )
 

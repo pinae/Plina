@@ -1,5 +1,6 @@
 {
   "name": "@plina/backend",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "uv run python manage.py runserver",
