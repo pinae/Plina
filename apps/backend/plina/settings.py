@@ -131,3 +131,4 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 PLANNING_HORIZON_DAYS = 60  # planning window for generated buckets (A9); tune freely
+MAX_PLAN_ALTERNATIVES = 4  # chooser cap (A11); expected to be tuned after real-world use

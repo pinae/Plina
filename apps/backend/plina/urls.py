@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework import routers
 from tasks.api import (TaskViewSet, ProjectViewSet, TagViewSet, TimeBucketViewSet,
-                       DependencyViewSet, PlannerView)
+                       DependencyViewSet, PlannerView, PlanAlternativesView)
 from plina.django_views import forbidden_error_view, not_found_error_view, internal_error_view
 
 router = routers.DefaultRouter()
@@ -30,6 +30,7 @@ router.register(r'dependencies', DependencyViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),
+    path('api/plan/alternatives/', PlanAlternativesView.as_view(), name='plan-alternatives'),
     path('api/plan/', PlannerView.as_view()),
     
     # admin

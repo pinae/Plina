@@ -27,10 +27,6 @@ WEIGHT_PRIORITY = 1.0
 WEIGHT_DEADLINE = 10.0
 OVERDUE_SCORE_BOOST = WEIGHT_DEADLINE * 100
 
-#: Plan key for items that live at calendar level, outside any bucket
-#: (appointments have their own time and ignore buckets entirely).
-UNBUCKETED = None
-
 
 @dataclass(frozen=True)
 class PlanningTask:
@@ -121,6 +117,26 @@ class PlanItem:
 
     def __repr__(self) -> str:
         return f"<PlanItem: {self.task.header} at {self.start_time}>"
+
+
+#: Plan key for items that live at calendar level, outside any bucket
+#: (appointments have their own time and ignore buckets entirely).
+UNBUCKETED = None
+
+
+@dataclass(frozen=True)
+class AllocationConfig:
+    """Tunable allocation behavior; presets (WP-4) vary these knobs.
+
+    ``min_task_slice``: minimum quantum for starting a task in a leftover gap.
+    ``project_stickiness``: after finishing a task, prefer tasks of the same
+    project before switching, on top of regular task stickiness.
+    """
+    min_task_slice: timedelta = MIN_TASK_SLICE
+    project_stickiness: bool = False
+
+
+DEFAULT_CONFIG = AllocationConfig()
 
 
 @dataclass
@@ -240,9 +256,11 @@ def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
 
 
 def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
-               segment: _Segment, at: datetime) -> PlanningTask | None:
+               segment: _Segment, at: datetime,
+               config: AllocationConfig) -> PlanningTask | None:
     """First candidate in ranked order; the previously worked-on task wins
-    ties to avoid context switches (stickiness)."""
+    ties to avoid context switches (stickiness).  With project stickiness,
+    same-project candidates win before other projects get a turn."""
     free = segment.end - at
 
     def is_candidate(snapshot: PlanningTask) -> bool:
@@ -251,12 +269,17 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
             return False
         if not _matches_affinity(snapshot, segment.tag_ids):
             return False
-        if free < MIN_TASK_SLICE and needed > free:
+        if free < config.min_task_slice and needed > free:
             return False  # leftover gap too small to be worth a context switch
         return run.is_eligible(snapshot, at)
 
-    if run.last_task is not None and run.last_task in queue and is_candidate(run.last_task):
-        return run.last_task
+    last = run.last_task
+    if last is not None and last in queue and is_candidate(last):
+        return last
+    if config.project_stickiness and last is not None and last.project_id is not None:
+        for snapshot in queue:
+            if snapshot.project_id == last.project_id and is_candidate(snapshot):
+                return snapshot
     for snapshot in queue:
         if is_candidate(snapshot):
             return snapshot
@@ -264,7 +287,8 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
 
 
 def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
-                   edges: Iterable = ()) -> Dict[object, List[PlanItem]]:
+                   edges: Iterable = (),
+                   config: AllocationConfig = DEFAULT_CONFIG) -> Dict[object, List[PlanItem]]:
     """Pack ranked tasks into buckets, honoring dependencies and pre-placements.
 
     * Appointments (``is_appointment`` + ``start_date``) occupy exactly their
@@ -309,7 +333,7 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
     for segment in segments:
         current_time = segment.start
         while current_time < segment.end:
-            snapshot = _pick_next(queue, run, segment, current_time)
+            snapshot = _pick_next(queue, run, segment, current_time, config)
             if snapshot is None:
                 break
             slice_duration = min(run.remaining[snapshot.id], segment.end - current_time)
