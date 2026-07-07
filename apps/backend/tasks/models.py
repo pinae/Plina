@@ -265,3 +265,55 @@ class TimeBucket(models.Model):
     @end_date.setter
     def set_end_date(self, new_end_date: datetime):
         self.duration = new_end_date - self.start_date
+
+
+class Plan(models.Model):
+    """One stored schedule: a valid topological ordering packed into buckets.
+
+    Several unaccepted candidate plans coexist while the user chooses; on
+    acceptance the chosen plan survives alone (A4).  Accepting never fixes
+    tasks — fluidity is preserved, only tracking/manual placement anchors.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    label = models.CharField(max_length=512)
+    is_accepted = models.BooleanField(default=False)
+    feasible = models.BooleanField(default=True)
+    #: Generation parameters ({"preset": ..., "focus_task_ids": [...]}) so a
+    #: recalculation can preserve the spirit of the accepted choice.
+    config = models.JSONField(default=dict)
+    #: Metadata of not-yet-materialized (generated) buckets used by entries:
+    #: {bucket_key: {"start_date": iso, "duration_seconds": int, "type_id": str}}.
+    #: Consumed when the plan is accepted (A8: materialize on acceptance).
+    buckets_snapshot = models.JSONField(default=dict)
+    metrics = models.JSONField(default=dict)
+    warnings = models.JSONField(default=list)
+
+    def __str__(self) -> str:
+        marker = "✓ " if self.is_accepted else ""
+        return f"{marker}{self.label} ({self.created_at:%Y-%m-%d %H:%M})"
+
+
+class PlanEntry(models.Model):
+    """One contiguous slice of a task inside the plan.
+
+    ``bucket`` is null for appointments (calendar-level) and for slices in
+    buckets that have not been materialized yet — those carry ``bucket_key``
+    referencing the plan's ``buckets_snapshot`` until acceptance.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    plan = models.ForeignKey(to=Plan, related_name="entries", on_delete=models.CASCADE)
+    task = models.ForeignKey(to=Task, related_name="plan_entries", on_delete=models.CASCADE)
+    bucket = models.ForeignKey(to=TimeBucket, related_name="plan_entries",
+                               null=True, blank=True, on_delete=models.SET_NULL)
+    bucket_key = models.UUIDField(null=True, blank=True, default=None)
+    start = models.DateTimeField()
+    duration = models.DurationField()
+    order = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["order"]
+        verbose_name_plural = "plan entries"
+
+    def __str__(self) -> str:
+        return f"[{self.order}] {self.task.header} at {self.start}"

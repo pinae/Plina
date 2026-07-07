@@ -60,6 +60,10 @@ class PlanAlternative:
     ordering: Tuple
     metrics: PlanMetrics
     warnings: List[PlanWarning]
+    #: Generation parameters, persisted with the plan (WP-5) so recalculation
+    #: can rebuild the same ranking after tasks change.
+    preset: str = "deadline_safe"
+    focus_task_ids: frozenset = frozenset()
 
     @property
     def feasible(self) -> bool:
@@ -291,6 +295,7 @@ def generate_alternatives(snapshots: List[PlanningTask], buckets: List,
         alternatives.append(PlanAlternative(
             label=candidate.label, plan=plan, ordering=ordering,
             metrics=metrics, warnings=warnings,
+            preset=candidate.preset, focus_task_ids=candidate.focus_task_ids,
         ))
 
     return _select(alternatives, max_alternatives)

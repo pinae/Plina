@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework import routers
 from tasks.api import (TaskViewSet, ProjectViewSet, TagViewSet, TimeBucketViewSet,
-                       DependencyViewSet, PlannerView, PlanAlternativesView)
+                       DependencyViewSet, PlannerView, PlanAlternativesView, PlanViewSet)
 from plina.django_views import forbidden_error_view, not_found_error_view, internal_error_view
 
 router = routers.DefaultRouter()
@@ -27,6 +27,7 @@ router.register(r'projects', ProjectViewSet)
 router.register(r'tags', TagViewSet)
 router.register(r'timebuckets', TimeBucketViewSet)
 router.register(r'dependencies', DependencyViewSet)
+router.register(r'plans', PlanViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),

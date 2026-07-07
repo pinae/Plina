@@ -1,7 +1,7 @@
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Task, Project, Tag, TimeBucket, TaskDependency
+from .models import Task, Project, Tag, TimeBucket, TaskDependency, Plan
 from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
                           TimeBucketSerializer, TaskDependencySerializer)
 
@@ -37,7 +37,7 @@ from django.utils import timezone
 from datetime import timedelta
 from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks, UNBUCKETED
 from tasks.services.bucket_service import gather_time_buckets
-from tasks.models import Task, TimeBucket
+from tasks.models import Task, TimeBucket, TaskDependency, Plan
 
 def _serialize_item(item):
     return {
@@ -51,8 +51,64 @@ def _serialize_item(item):
         "hex_color": item.task.hex_color,
     }
 
+def _entry_warnings(entry):
+    deadline = entry.task.latest_finish_date
+    if deadline and entry.start + entry.duration > deadline:
+        return ["Deadline exceeded"]
+    return []
+
+
+def _serialize_entry(entry):
+    return {
+        "task_id": entry.task.id,
+        "header": entry.task.header,
+        "start_time": entry.start,
+        "duration": entry.duration.total_seconds(),
+        "warnings": _entry_warnings(entry),
+        "is_fixed": entry.task.is_fixed,
+        "is_appointment": entry.task.is_appointment,
+        "hex_color": entry.task.hex_color,
+        "order": entry.order,
+    }
+
+
 class PlannerView(APIView):
+    def _accepted_plan_response(self, plan):
+        entries = list(plan.entries.select_related("task", "bucket__type").all())
+        appointments = sorted(
+            (e for e in entries if e.bucket is None and e.task.is_appointment),
+            key=lambda e: e.start,
+        )
+        by_bucket = {}
+        for entry in entries:
+            if entry.bucket is not None:
+                by_bucket.setdefault(entry.bucket, []).append(entry)
+        return Response({
+            "accepted_plan_id": plan.id,
+            "appointments": [_serialize_entry(e) for e in appointments],
+            "buckets": [
+                {
+                    "id": bucket.id,
+                    "start_date": bucket.start_date,
+                    "end_date": bucket.end_date,
+                    "type_name": bucket.type.name,
+                    "hex_color": bucket.type.hex_color,
+                    "items": [
+                        _serialize_entry(e)
+                        for e in sorted(bucket_entries, key=lambda e: e.start)
+                    ],
+                }
+                for bucket, bucket_entries in sorted(
+                    by_bucket.items(), key=lambda pair: pair[0].start_date
+                )
+            ],
+        })
+
     def get(self, request):
+        accepted = Plan.objects.filter(is_accepted=True).first()
+        if accepted is not None:
+            return self._accepted_plan_response(accepted)
+
         now = timezone.now()
         snapshots = build_planning_tasks(
             Task.objects.filter(completed_at=None).prefetch_related("tags")
@@ -66,6 +122,7 @@ class PlannerView(APIView):
         plan = allocate_tasks(buckets, ranked_tasks, edges)
 
         return Response({
+            "accepted_plan_id": None,
             "appointments": [
                 _serialize_item(item)
                 for item in sorted(plan[UNBUCKETED], key=lambda i: i.start_time)
@@ -91,8 +148,7 @@ class PlanAlternativesView(APIView):
     this endpoint is a pure computation.
     """
 
-    def get(self, request):
-        from tasks.models import Project
+    def _compute(self):
         from tasks.services.alternatives import generate_alternatives
 
         now = timezone.now()
@@ -104,8 +160,23 @@ class PlanAlternativesView(APIView):
         edges = list(
             TaskDependency.objects.values_list("predecessor_id", "successor_id")
         )
+        return generate_alternatives(snapshots, buckets, edges, now), buckets
 
-        alternatives = generate_alternatives(snapshots, buckets, edges, now)
+    def get(self, request):
+        """Preview: compute without storing."""
+        alternatives, buckets = self._compute()
+        return self._respond(alternatives, buckets, plan_ids=None)
+
+    def post(self, request):
+        """Compute, store as candidate plans (replacing unaccepted ones) and
+        return them with their ids for the accept flow (WP-5)."""
+        from tasks.services.plan_store import store_alternatives
+        alternatives, buckets = self._compute()
+        plans = store_alternatives(alternatives, buckets)
+        return self._respond(alternatives, buckets, plan_ids=[plan.id for plan in plans])
+
+    def _respond(self, alternatives, buckets, plan_ids):
+        from tasks.models import Project
 
         project_names = {
             project.id: project.name for project in Project.objects.all()
@@ -168,8 +239,31 @@ class PlanAlternativesView(APIView):
                 "buckets": planned_buckets,
             }
 
-        return Response({
-            "alternatives": [
-                serialize_alternative(alternative) for alternative in alternatives
-            ],
-        })
+        payload = [serialize_alternative(a) for a in alternatives]
+        if plan_ids is not None:
+            for entry, plan_id in zip(payload, plan_ids):
+                entry["id"] = plan_id
+        return Response({"alternatives": payload})
+
+
+class PlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Plan
+        fields = ['id', 'label', 'is_accepted', 'feasible', 'created_at',
+                  'metrics', 'warnings']
+
+
+class PlanViewSet(mixins.ListModelMixin,
+                  mixins.RetrieveModelMixin,
+                  viewsets.GenericViewSet):
+    """Stored plans (candidates + the accepted one).  Plans are produced by
+    POST /api/plan/alternatives/ and chosen via the accept action; they are
+    never edited directly."""
+    queryset = Plan.objects.all()
+    serializer_class = PlanSerializer
+
+    @action(detail=True, methods=["post"])
+    def accept(self, request, pk=None):
+        from tasks.services.plan_store import accept_plan
+        plan = accept_plan(self.get_object())
+        return Response(PlanSerializer(plan).data)
