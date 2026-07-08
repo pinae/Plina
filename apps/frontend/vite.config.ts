@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 const backendUrl = `http://localhost:${process.env.BACKEND_PORT || 8000}`;

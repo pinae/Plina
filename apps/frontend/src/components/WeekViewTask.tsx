@@ -27,23 +27,6 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight }
     const top = (minutesSinceMidnight / dayDurationMinutes) * columnHeight;
     const height = (task.duration / dayDurationMinutes) * columnHeight;
 
-    // 2. Color Logic
-    const getTaskColor = () => {
-        if (task.manuallySet) {
-            return task.color;
-        }
-        // Simple pastel logic: mix with white or use opacity?
-        // Let's use a simple approach: if hex, we can try to lighten it.
-        // For now, let's assume we just return a different color or style.
-        // But to satisfy the test "not.toHaveStyle({ backgroundColor: task.color })", we need to change it.
-        // A robust way is to use a library or simple hex manipulation.
-        // Let's just modify the hex to be lighter/pastel-like if possible, or use a dummy pastel conversion for now.
-        // Actually, let's just use CSS filter or opacity for pastel effect if we don't have a helper.
-        // But the requirement says "color can be modified to a pastel version". 
-        // Let's assume we append "80" for 50% opacity if valid hex 6 chars, or use mix-blend-mode.
-        // Check test expectation: mock logic.
-        return task.color; // We will handle this with style/className or helper.
-    };
 
     // We'll use a style object for the backgroundColor to allow testing.
     // If not manuallySet, we can set opacity or use a computed color.
