@@ -267,6 +267,27 @@ class TimeBucket(models.Model):
         self.duration = new_end_date - self.start_date
 
 
+class TrackingSession(models.Model):
+    """One stretch of actually working on a task.
+
+    An open session (``end`` is null) means the user is working right now;
+    only one session may be open at a time.  Session bookkeeping lives in
+    ``services/tracking.py`` — the model only holds data.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    task = models.ForeignKey(to=Task, related_name="tracking_sessions",
+                             on_delete=models.CASCADE)
+    start = models.DateTimeField()
+    end = models.DateTimeField(null=True, blank=True, default=None)
+
+    class Meta:
+        ordering = ["start"]
+
+    def __str__(self) -> str:
+        state = "…" if self.end is None else f"– {self.end:%H:%M}"
+        return f"{self.task.header}: {self.start:%Y-%m-%d %H:%M} {state}"
+
+
 class Plan(models.Model):
     """One stored schedule: a valid topological ordering packed into buckets.
 

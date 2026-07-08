@@ -9,6 +9,48 @@ class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
+    def _tracking_response(self, task, extra=None):
+        payload = {"task": TaskSerializer(task).data}
+        if extra:
+            payload.update(extra)
+        return Response(payload)
+
+    @action(detail=True, methods=["post"], url_path="track/start")
+    def track_start(self, request, pk=None):
+        from tasks.services.tracking import TrackingError, start_tracking
+        task = self.get_object()
+        try:
+            start_tracking(task)
+        except TrackingError as error:
+            return Response(error.payload, status=error.status)
+        task.refresh_from_db()
+        return self._tracking_response(task)
+
+    @action(detail=True, methods=["post"], url_path="track/stop")
+    def track_stop(self, request, pk=None):
+        from tasks.services.tracking import TrackingError, stop_tracking
+        task = self.get_object()
+        try:
+            stop_tracking(task)
+        except TrackingError as error:
+            return Response(error.payload, status=error.status)
+        task.refresh_from_db()
+        return self._tracking_response(task)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        from tasks.services.tracking import TrackingError, complete_task
+        task = self.get_object()
+        try:
+            task, alternatives, buckets = complete_task(task)
+        except TrackingError as error:
+            return Response(error.payload, status=error.status)
+        serialized = serialize_alternatives(
+            alternatives, buckets,
+            plan_ids=[alternative.plan_id for alternative in alternatives],
+        ) if alternatives else []
+        return self._tracking_response(task, extra={"alternatives": serialized})
+
 class DependencyViewSet(mixins.ListModelMixin,
                         mixins.RetrieveModelMixin,
                         mixins.CreateModelMixin,
@@ -176,74 +218,79 @@ class PlanAlternativesView(APIView):
         return self._respond(alternatives, buckets, plan_ids=[plan.id for plan in plans])
 
     def _respond(self, alternatives, buckets, plan_ids):
-        from tasks.models import Project
+        payload = serialize_alternatives(alternatives, buckets, plan_ids)
+        return Response({"alternatives": payload})
 
-        project_names = {
-            project.id: project.name for project in Project.objects.all()
-        }
-        buckets_by_id = {bucket.id: bucket for bucket in buckets}
 
-        def serialize_alternative(alternative):
-            planned_buckets = [
+def serialize_alternatives(alternatives, buckets, plan_ids=None):
+    from tasks.models import Project
+
+    project_names = {
+    project.id: project.name for project in Project.objects.all()
+    }
+    buckets_by_id = {bucket.id: bucket for bucket in buckets}
+
+    def serialize_alternative(alternative):
+        planned_buckets = [
+            {
+                "id": bucket_id,
+                "start_date": buckets_by_id[bucket_id].start_date,
+                "end_date": buckets_by_id[bucket_id].end_date,
+                "type_name": buckets_by_id[bucket_id].type.name,
+                "hex_color": buckets_by_id[bucket_id].type.hex_color,
+                "items": [_serialize_item(item) for item in items],
+            }
+            for bucket_id, items in alternative.plan.items()
+            if bucket_id is not UNBUCKETED and items
+        ]
+        planned_buckets.sort(key=lambda bucket: bucket["start_date"])
+        metrics = alternative.metrics
+        return {
+            "label": alternative.label,
+            "feasible": alternative.feasible,
+            "warnings": [
                 {
-                    "id": bucket_id,
-                    "start_date": buckets_by_id[bucket_id].start_date,
-                    "end_date": buckets_by_id[bucket_id].end_date,
-                    "type_name": buckets_by_id[bucket_id].type.name,
-                    "hex_color": buckets_by_id[bucket_id].type.hex_color,
-                    "items": [_serialize_item(item) for item in items],
+                    "task_id": warning.task_id,
+                    "header": warning.header,
+                    "kind": warning.kind,
+                    "deadline": warning.deadline,
+                    "projected_finish": warning.projected_finish,
                 }
-                for bucket_id, items in alternative.plan.items()
-                if bucket_id is not UNBUCKETED and items
-            ]
-            planned_buckets.sort(key=lambda bucket: bucket["start_date"])
-            metrics = alternative.metrics
-            return {
-                "label": alternative.label,
-                "feasible": alternative.feasible,
-                "warnings": [
+                for warning in alternative.warnings
+            ],
+            "metrics": {
+                "min_slack_seconds": (
+                    metrics.min_slack.total_seconds()
+                    if metrics.min_slack is not None else None
+                ),
+                "context_switches": metrics.context_switches,
+                "priority_earliness_hours": metrics.priority_earliness_hours,
+                "project_finishes": [
                     {
-                        "task_id": warning.task_id,
-                        "header": warning.header,
-                        "kind": warning.kind,
-                        "deadline": warning.deadline,
-                        "projected_finish": warning.projected_finish,
+                        "project_id": project_id,
+                        "name": project_names.get(project_id, ""),
+                        "finish": finish,
                     }
-                    for warning in alternative.warnings
-                ],
-                "metrics": {
-                    "min_slack_seconds": (
-                        metrics.min_slack.total_seconds()
-                        if metrics.min_slack is not None else None
-                    ),
-                    "context_switches": metrics.context_switches,
-                    "priority_earliness_hours": metrics.priority_earliness_hours,
-                    "project_finishes": [
-                        {
-                            "project_id": project_id,
-                            "name": project_names.get(project_id, ""),
-                            "finish": finish,
-                        }
-                        for project_id, finish in sorted(
-                            metrics.project_finishes.items(),
-                            key=lambda pair: pair[1],
-                        )
-                    ],
-                },
-                "appointments": [
-                    _serialize_item(item)
-                    for item in sorted(
-                        alternative.plan[UNBUCKETED], key=lambda i: i.start_time
+                    for project_id, finish in sorted(
+                        metrics.project_finishes.items(),
+                        key=lambda pair: pair[1],
                     )
                 ],
-                "buckets": planned_buckets,
-            }
+            },
+            "appointments": [
+                _serialize_item(item)
+                for item in sorted(
+                    alternative.plan[UNBUCKETED], key=lambda i: i.start_time
+                )
+            ],
+            "buckets": planned_buckets,
+        }
 
-        payload = [serialize_alternative(a) for a in alternatives]
-        if plan_ids is not None:
-            for entry, plan_id in zip(payload, plan_ids):
-                entry["id"] = plan_id
-        return Response({"alternatives": payload})
+    payload = [serialize_alternative(a) for a in alternatives]
+    if plan_ids is not None:
+        for entry, plan_id in zip(payload, plan_ids):
+            entry["id"] = plan_id
+    return payload
 
 
 class PlanSerializer(serializers.ModelSerializer):

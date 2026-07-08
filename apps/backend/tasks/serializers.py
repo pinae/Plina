@@ -14,13 +14,18 @@ class TaskSerializer(serializers.ModelSerializer):
     )
     hex_color = serializers.CharField(read_only=True)
     is_done = serializers.BooleanField(read_only=True)
+    active_tracking_start = serializers.SerializerMethodField()
+
+    def get_active_tracking_start(self, task):
+        session = task.tracking_sessions.filter(end=None).first()
+        return session.start if session is not None else None
 
     class Meta:
         model = Task
         fields = [
             'id', 'header', 'description', 'start_date', 'duration',
             'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'hex_color', 'is_fixed',
-            'is_appointment', 'completed_at', 'is_done'
+            'is_appointment', 'completed_at', 'is_done', 'active_tracking_start'
         ]
 
 class ProjectSerializer(serializers.ModelSerializer):
