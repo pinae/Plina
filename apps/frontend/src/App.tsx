@@ -4,6 +4,7 @@ import { Box, Tabs, Tab } from '@mui/material';
 import TaskList from './components/TaskList';
 import Calendar from './components/Calendar';
 import { WeekView } from './components/WeekView';
+import DependencyEditor from './components/DependencyEditor';
 
 function App() {
   const [tab, setTab] = useState(0);
@@ -36,18 +37,20 @@ function App() {
   ];
 
   return (
-    <Layout fullWidth={tab === 0}>
+    <Layout fullWidth={tab === 0 || tab === 3}>
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
         <Tabs value={tab} onChange={handleChange} aria-label="plina tabs">
           <Tab label="Week Overview" />
           <Tab label="Calendar Plan" />
           <Tab label="Task List" />
+          <Tab label="Dependencies" />
         </Tabs>
       </Box>
 
       {tab === 0 && <WeekView tasks={dummyTasks} initialDate={new Date()} />}
       {tab === 1 && <Calendar />}
       {tab === 2 && <TaskList />}
+      {tab === 3 && <DependencyEditor />}
     </Layout>
   );
 }
