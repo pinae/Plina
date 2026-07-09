@@ -32,7 +32,7 @@ import {
     stopTracking,
     updateTask,
 } from './api';
-import type { DependencyCycleError, TaskWrite, TrackingBlockedError } from './types';
+import type { Dependency, DependencyCycleError, TaskWrite, TrackingBlockedError } from './types';
 
 export const queryKeys = {
     plan: ['plan'] as const,
@@ -136,14 +136,37 @@ export const useDeleteTask = () => {
 };
 
 export const useCreateDependency = () => {
-    const invalidate = useInvalidate();
+    const client = useQueryClient();
     return useMutation<
         Awaited<ReturnType<typeof createDependency>>,
         AxiosError<DependencyCycleError>,
-        { predecessor: string; successor: string }
+        { predecessor: string; successor: string },
+        { previous: Dependency[] | undefined }
     >({
         mutationFn: createDependency,
-        onSuccess: () => invalidate(queryKeys.dependencies, queryKeys.plan),
+        // Optimistic: the edge appears in the graph immediately; a rejected
+        // request (e.g. cycle) rolls the cache back to the snapshot.
+        onMutate: async edge => {
+            await client.cancelQueries({ queryKey: queryKeys.dependencies });
+            const previous = client.getQueryData<Dependency[]>(queryKeys.dependencies);
+            const optimistic: Dependency = {
+                id: `optimistic-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                ...edge,
+            };
+            client.setQueryData<Dependency[]>(
+                queryKeys.dependencies,
+                (current = []) => [...current, optimistic],
+            );
+            return { previous };
+        },
+        onError: (_error, _edge, context) => {
+            client.setQueryData(queryKeys.dependencies, context?.previous);
+        },
+        onSettled: () =>
+            Promise.all([
+                client.invalidateQueries({ queryKey: queryKeys.dependencies }),
+                client.invalidateQueries({ queryKey: queryKeys.plan }),
+            ]),
     });
 };
 

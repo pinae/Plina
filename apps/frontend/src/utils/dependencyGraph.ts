@@ -20,6 +20,7 @@ export interface TaskNodeData extends Record<string, unknown> {
     projectColor: string | null;
     projectName: string | null;
     isDone: boolean;
+    inCycle?: boolean;
 }
 
 export type TaskFlowNode = Node<TaskNodeData, 'task'>;
@@ -86,7 +87,41 @@ export function buildFlowGraph(
             source: dep.predecessor,
             target: dep.successor,
             markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+            // Optimistic edges (not yet persisted) animate until confirmed.
+            animated: dep.id.startsWith('optimistic-'),
         }));
 
     return { nodes: layout(nodes, edges), edges };
+}
+
+const CYCLE_COLOR = '#d32f2f';
+
+/** Marks the nodes on `cyclePath` and the edges connecting consecutive
+ *  members red, so the user sees exactly the loop the server rejected. */
+export function applyCycleHighlight(
+    nodes: TaskFlowNode[],
+    edges: Edge[],
+    cyclePath: string[] | null,
+): { nodes: TaskFlowNode[]; edges: Edge[] } {
+    if (!cyclePath || cyclePath.length === 0) return { nodes, edges };
+    const members = new Set(cyclePath);
+    const pairs = new Set(
+        cyclePath.slice(0, -1).map((id, i) => `${id}->${cyclePath[i + 1]}`),
+    );
+    return {
+        nodes: nodes.map(node =>
+            members.has(node.id)
+                ? { ...node, data: { ...node.data, inCycle: true } }
+                : node,
+        ),
+        edges: edges.map(edge =>
+            pairs.has(`${edge.source}->${edge.target}`)
+                ? {
+                    ...edge,
+                    animated: true,
+                    style: { ...edge.style, stroke: CYCLE_COLOR, strokeWidth: 2.5 },
+                }
+                : edge,
+        ),
+    };
 }

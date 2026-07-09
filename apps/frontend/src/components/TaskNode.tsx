@@ -11,16 +11,18 @@ export interface TaskNodeCardProps {
     projectColor: string | null;
     projectName: string | null;
     isDone: boolean;
+    inCycle?: boolean;
 }
 
 /** Pure presentational card — rendered inside the flow node and unit-tested
  *  standalone (React Flow context not required). */
 export function TaskNodeCard({
-    header, durationLabel, projectColor, projectName, isDone,
+    header, durationLabel, projectColor, projectName, isDone, inCycle = false,
 }: TaskNodeCardProps) {
     return (
         <Box
             data-testid="task-node-card"
+            data-in-cycle={inCycle ? 'true' : 'false'}
             sx={{
                 width: NODE_WIDTH,
                 height: NODE_HEIGHT,
@@ -28,8 +30,8 @@ export function TaskNodeCard({
                 borderRadius: 1.5,
                 overflow: 'hidden',
                 bgcolor: 'background.paper',
-                border: 1,
-                borderColor: 'divider',
+                border: inCycle ? 2 : 1,
+                borderColor: inCycle ? 'error.main' : 'divider',
                 boxShadow: 1,
                 opacity: isDone ? 0.45 : 1,
             }}
