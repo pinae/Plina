@@ -1,23 +1,11 @@
 import React from 'react';
 import { AppBar, Toolbar, Typography, Container, Box, CssBaseline } from '@mui/material';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
-
-const theme = createTheme({
-    palette: {
-        mode: 'dark',
-        primary: {
-            main: '#539dad',
-        },
-        background: {
-            default: '#121212',
-            paper: '#1e1e1e',
-        },
-    },
-});
+import { ThemeProvider } from '@mui/material/styles';
+import { appTheme } from '../theme';
 
 export default function Layout({ children, fullWidth = false }: { children: React.ReactNode; fullWidth?: boolean }) {
     return (
-        <ThemeProvider theme={theme}>
+        <ThemeProvider theme={appTheme}>
             <CssBaseline />
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
                 <AppBar position="static">

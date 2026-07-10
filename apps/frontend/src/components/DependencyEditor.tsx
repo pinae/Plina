@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
     Alert, Box, Button, CircularProgress, Snackbar, Typography,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import {
     Background, Controls, MiniMap, Panel, ReactFlow,
@@ -29,6 +30,7 @@ export default function DependencyEditor() {
     const projects = useProjects();
     const editing = useDependencyEditing();
     const [addOpen, setAddOpen] = useState(false);
+    const colorMode = useTheme().palette.mode;
 
     const graph = useMemo(() => {
         const built = buildFlowGraph(
@@ -64,6 +66,7 @@ export default function DependencyEditor() {
                 onEdgesChange={onEdgesChange}
                 onConnect={editing.onConnect}
                 onEdgesDelete={editing.onEdgesDelete}
+                colorMode={colorMode}
                 deleteKeyCode={['Backspace', 'Delete']}
                 nodesDraggable
                 nodesConnectable

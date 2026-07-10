@@ -5,6 +5,11 @@ import {
 
 import { useAcceptPlan, useComputeAlternatives } from '../queries';
 import { PlanChooser } from './PlanChooser';
+import type { PlanAlternative } from '../types';
+
+const hasScheduledWork = (alternative: PlanAlternative) =>
+    alternative.appointments.length > 0
+    || alternative.buckets.some(bucket => bucket.items.length > 0);
 
 interface PlanChooserDialogProps {
     open: boolean;
@@ -56,10 +61,17 @@ export function PlanChooserDialog({ open, onClose, onAccepted }: PlanChooserDial
         });
     };
 
+    const nothingSchedulable =
+        compute.isSuccess && alternatives.length > 0
+        && alternatives.every(alternative => !hasScheduledWork(alternative));
+
     // Single valid ordering: accept it without showing a fake choice.
+    // Never auto-accept an *empty* plan though — that would silently do
+    // nothing (the no-buckets trap); explain the situation instead.
     useEffect(() => {
         if (
             compute.isSuccess && alternatives.length === 1
+            && hasScheduledWork(alternatives[0])
             && alternatives[0].id && !autoAccepted.current
         ) {
             autoAccepted.current = true;
@@ -68,13 +80,13 @@ export function PlanChooserDialog({ open, onClose, onAccepted }: PlanChooserDial
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [compute.isSuccess, alternatives]);
 
-    const showCards = compute.isSuccess && alternatives.length > 1;
+    const showCards = compute.isSuccess && alternatives.length > 1 && !nothingSchedulable;
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
             <DialogTitle>How do you want to plan?</DialogTitle>
             <DialogContent>
-                {(compute.isPending || (compute.isSuccess && alternatives.length === 1)) && (
+                {(compute.isPending || (compute.isSuccess && alternatives.length === 1 && !nothingSchedulable)) && (
                     <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
                         <CircularProgress />
                     </Box>
@@ -85,6 +97,20 @@ export function PlanChooserDialog({ open, onClose, onAccepted }: PlanChooserDial
                 {compute.isSuccess && alternatives.length === 0 && (
                     <Alert severity="info">
                         Nothing to plan — add tasks and time buckets first.
+                    </Alert>
+                )}
+                {nothingSchedulable && (
+                    <Alert severity="warning">
+                        Your tasks could not be scheduled because there is no
+                        available time: create recurring time buckets (or place
+                        some by hand) so Plina has somewhere to put your work.
+                        Unscheduled: {
+                            [...new Set(
+                                alternatives.flatMap(a => a.warnings)
+                                    .filter(w => w.kind === 'unplanned_within_horizon')
+                                    .map(w => w.header),
+                            )].join(', ')
+                        }
                     </Alert>
                 )}
                 {showCards && (

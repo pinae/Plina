@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from '@mui/material/styles';
+import { appTheme } from '../theme';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -81,7 +83,11 @@ function wrapper({ children }: { children: ReactNode }) {
     const client = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+        <ThemeProvider theme={appTheme}>
+            <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        </ThemeProvider>
+    );
 }
 
 describe('DependencyEditor', () => {
@@ -93,5 +99,15 @@ describe('DependencyEditor', () => {
         );
         expect(screen.getByText('Design Schema')).toBeInTheDocument();
         expect(screen.getAllByTestId('task-node-card')).toHaveLength(2);
+    });
+});
+
+describe('DependencyEditor theming', () => {
+    it('renders React Flow in dark mode to match the app theme', async () => {
+        const { container } = render(<DependencyEditor />, { wrapper });
+        await waitFor(() =>
+            expect(screen.getByText('Upgrade Django')).toBeInTheDocument(),
+        );
+        expect(container.querySelector('.react-flow')?.classList.contains('dark')).toBe(true);
     });
 });

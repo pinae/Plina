@@ -231,3 +231,49 @@ describe('PlanChooserDialog', () => {
         expect(screen.queryAllByTestId('plan-alternative-card')).toHaveLength(0);
     });
 });
+
+describe('PlanChooserDialog with nothing schedulable (no-buckets trap)', () => {
+    const server2 = setupServer(
+        http.post(`${API}/plan/alternatives/`, () =>
+            HttpResponse.json({
+                alternatives: [
+                    alternative('plan-empty', 'Deadline-safe', {
+                        feasible: false,
+                        buckets: [],
+                        warnings: [{
+                            task_id: 't1', header: 'Design Schema',
+                            kind: 'unplanned_within_horizon',
+                            deadline: null, projected_finish: null,
+                        }],
+                        metrics: {
+                            min_slack_seconds: null, context_switches: 0,
+                            priority_earliness_hours: null, project_finishes: [],
+                        },
+                    }),
+                ],
+            }),
+        ),
+        http.post(`${API}/plans/:id/accept/`, () => {
+            throw new Error('an empty plan must never be auto-accepted');
+        }),
+    );
+    beforeAll(() => server2.listen({ onUnhandledRequest: 'error' }));
+    afterEach(() => server2.resetHandlers());
+    afterAll(() => server2.close());
+
+    it('explains the situation instead of silently accepting an empty plan', async () => {
+        const onAccepted = vi.fn();
+        render(
+            <PlanChooserDialog open onClose={() => { }} onAccepted={onAccepted} />,
+            { wrapper },
+        );
+
+        await waitFor(() =>
+            expect(screen.getByText(/could not be scheduled/i)).toBeInTheDocument(),
+        );
+        expect(screen.getByText(/time bucket/i)).toBeInTheDocument();
+        expect(screen.getByText(/Design Schema/)).toBeInTheDocument();
+        expect(onAccepted).not.toHaveBeenCalled();
+        expect(screen.queryAllByTestId('plan-alternative-card')).toHaveLength(0);
+    });
+});
