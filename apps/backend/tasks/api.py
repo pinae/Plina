@@ -1,9 +1,11 @@
+from rest_framework.views import APIView
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Task, Project, Tag, TimeBucket, TaskDependency, Plan
+from .models import Task, Project, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
 from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
-                          TimeBucketSerializer, TaskDependencySerializer)
+                          TimeBucketSerializer, TimeBucketTypeSerializer,
+                          TaskDependencySerializer)
 
 class RecalculatingModelViewSet(viewsets.ModelViewSet):
     """A7: schedule-relevant CRUD triggers a recalculation of the accepted plan."""
@@ -91,6 +93,24 @@ class ProjectViewSet(viewsets.ModelViewSet):
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
+
+class TimeBucketTypeViewSet(RecalculatingModelViewSet):
+    queryset = TimeBucketType.objects.all()
+    serializer_class = TimeBucketTypeSerializer
+
+
+class RecurrencePreviewView(APIView):
+    """Live preview for the bucket-type form: the next occurrences of a
+    recurrence string, or the parser error explaining why there are none."""
+
+    def post(self, request):
+        from .services.bucket_service import RecurrenceError, preview_occurrences
+        try:
+            occurrences = preview_occurrences(request.data.get("start_times", ""))
+        except RecurrenceError as error:
+            return Response({"detail": str(error)}, status=400)
+        return Response({"occurrences": [occ.isoformat() for occ in occurrences]})
+
 
 class TimeBucketViewSet(RecalculatingModelViewSet):
     queryset = TimeBucket.objects.all()

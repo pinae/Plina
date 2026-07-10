@@ -12,7 +12,7 @@
 export interface Tag {
     id: string;
     name: string;
-    color: string | null;
+    hex_color: string;
 }
 
 export interface Task {
@@ -31,6 +31,7 @@ export interface Task {
     completed_at: string | null;
     is_done: boolean;
     active_tracking_start: string | null;
+    project_id: string | null;
 }
 
 /** Fields accepted when creating/updating a task (tag_ids is write-only). */
@@ -46,6 +47,30 @@ export interface TaskWrite {
     is_fixed?: boolean;
     is_appointment?: boolean;
     completed_at?: string | null;
+    project_id?: string | null;
+}
+
+export interface TagWrite {
+    name: string;
+    hex_color?: string;
+}
+
+export interface ProjectWrite {
+    name: string;
+    description?: string;
+    priority?: number;
+    tag_ids?: string[];
+}
+
+export interface BucketTypeWrite {
+    name: string;
+    start_times: string;
+    duration: string;
+    tag_ids?: string[];
+}
+
+export interface RecurrencePreview {
+    occurrences: string[];
 }
 
 export interface Project {

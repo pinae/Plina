@@ -1,47 +1,43 @@
-import { useEffect, useState } from 'react';
-import { Typography, Paper, List, ListItem, ListItemText, Chip, Box } from '@mui/material';
-import api from '../api';
-
-interface Tag {
-    id: string;
-    name: string;
-    hex_color: string;
-}
-
-interface Task {
-    id: string;
-    header: string;
-    description: string;
-    priority: number;
-    tags: Tag[];
-    hex_color: string;
-    start_date: string | null;
-    duration: string | null;
-    latest_finish_date: string | null;
-}
+import { useState } from 'react';
+import { Typography, Paper, List, ListItem, ListItemText, Chip, Box, Button, Stack } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import { useTasks } from '../queries';
+import type { Task } from '../types';
+import { TaskFormDialog } from './TaskFormDialog';
+import { BucketTypeFormDialog, ProjectFormDialog, TagFormDialog } from './BucketTypeFormDialog';
 
 export default function TaskList() {
-    const [tasks, setTasks] = useState<Task[]>([]);
-
-    useEffect(() => {
-        api.get('tasks/')
-            .then(response => {
-                setTasks(response.data);
-            })
-            .catch(error => {
-                console.error("Error fetching tasks:", error);
-            });
-    }, []);
+    const tasksQuery = useTasks();
+    const tasks = tasksQuery.data ?? [];
+    const [dialog, setDialog] = useState<'task' | 'project' | 'tag' | 'bucketType' | null>(null);
+    const [editTask, setEditTask] = useState<Task | null>(null);
+    const close = () => { setDialog(null); setEditTask(null); };
 
     return (
         <Box>
             <Typography variant="h5" gutterBottom>
                 Task List
             </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+                <Button variant="contained" size="small" startIcon={<AddIcon />}
+                    onClick={() => setDialog('task')}>Add task</Button>
+                <Button variant="outlined" size="small" startIcon={<AddIcon />}
+                    onClick={() => setDialog('project')}>Add project</Button>
+                <Button variant="outlined" size="small" startIcon={<AddIcon />}
+                    onClick={() => setDialog('tag')}>Add tag</Button>
+                <Button variant="outlined" size="small" startIcon={<AddIcon />}
+                    onClick={() => setDialog('bucketType')}>Add bucket type</Button>
+            </Stack>
+            {(dialog === 'task' || editTask !== null) && (
+                <TaskFormDialog open onClose={close} task={editTask ?? undefined} />
+            )}
+            {dialog === 'project' && <ProjectFormDialog open onClose={close} />}
+            {dialog === 'tag' && <TagFormDialog open onClose={close} />}
+            {dialog === 'bucketType' && <BucketTypeFormDialog open onClose={close} />}
             <Paper>
                 <List>
                     {tasks.map(task => (
-                        <ListItem key={task.id} divider>
+                        <ListItem key={task.id} divider onClick={() => setEditTask(task)} sx={{ cursor: 'pointer' }}>
                             <ListItemText
                                 primary={
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

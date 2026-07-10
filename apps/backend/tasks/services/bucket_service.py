@@ -7,7 +7,7 @@ in-memory until a plan that uses them is accepted.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 
 from tasks.models import TimeBucket, TimeBucketType
@@ -57,3 +57,25 @@ def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
             generated.append(candidate)
 
     return sorted(persisted + generated, key=lambda bucket: bucket.start_date)
+
+
+class RecurrenceError(ValueError):
+    """The given string is not a recognizable recurrence rule."""
+
+
+def preview_occurrences(start_times: str, count: int = 5) -> List[datetime]:
+    """The next ``count`` occurrences of a recurrence string, for form preview.
+
+    Raises :class:`RecurrenceError` for empty/unparseable rules — unlike
+    ``generate_buckets``, the preview must *tell* the user what is wrong.
+    """
+    if not start_times.strip():
+        raise RecurrenceError("Please enter a recurrence rule, e.g. “every weekday at 09:00”.")
+    probe = TimeBucketType(name="preview", start_times=start_times,
+                           duration=timedelta(hours=1))
+    buckets = probe.generate_buckets(generation_range=timedelta(days=366))
+    if not buckets:
+        raise RecurrenceError(
+            f"“{start_times}” is not a recognizable recurrence rule."
+        )
+    return [bucket.start_date for bucket in buckets[:count]]

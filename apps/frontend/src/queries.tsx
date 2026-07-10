@@ -19,7 +19,10 @@ import {
     acceptPlan,
     completeTask,
     computeAlternatives,
+    createBucketType,
     createDependency,
+    createProject,
+    createTag,
     createTask,
     deleteDependency,
     deleteTask,
@@ -197,3 +200,28 @@ export function AppQueryProvider({ children }: { children: ReactNode }) {
         </QueryClientProvider>
     );
 }
+
+export const useCreateTag = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: createTag,
+        onSuccess: () => invalidate(queryKeys.tags),
+    });
+};
+
+export const useCreateProject = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: createProject,
+        onSuccess: () => invalidate(queryKeys.projects),
+    });
+};
+
+export const useCreateBucketType = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: createBucketType,
+        // A7: new recurring capacity changes what can be planned.
+        onSuccess: () => invalidate(queryKeys.plan),
+    });
+};

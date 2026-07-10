@@ -1,12 +1,16 @@
 import axios from 'axios';
 import type {
     AlternativesResponse,
+    BucketTypeWrite,
     CompleteResponse,
     Dependency,
     PlanResponse,
     Project,
+    ProjectWrite,
+    RecurrencePreview,
     StoredPlan,
     Tag,
+    TagWrite,
     Task,
     TaskWrite,
     TimeBucket,
@@ -88,3 +92,16 @@ export const fetchProjects = () =>
 
 export const fetchTimeBuckets = () =>
     api.get<TimeBucket[]>('timebuckets/').then(r => r.data);
+
+export const createTag = (tag: TagWrite) =>
+    api.post<Tag>('tags/', tag).then(r => r.data);
+
+export const createProject = (project: ProjectWrite) =>
+    api.post<Project>('projects/', project).then(r => r.data);
+
+export const createBucketType = (bucketType: BucketTypeWrite) =>
+    api.post('buckettypes/', bucketType).then(r => r.data);
+
+export const previewRecurrence = (startTimes: string) =>
+    api.post<RecurrencePreview>('recurrence-preview/', { start_times: startTimes })
+        .then(r => r.data);

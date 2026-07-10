@@ -15,7 +15,7 @@ import { useDependencyEditing } from '../hooks/useDependencyEditing';
 import { applyCycleHighlight, buildFlowGraph, type TaskFlowNode } from '../utils/dependencyGraph';
 import type { Edge } from '@xyflow/react';
 import { nodeTypes } from './TaskNode';
-import { AddTaskDialog } from './AddTaskDialog';
+import { TaskFormDialog } from './TaskFormDialog';
 
 /**
  * WP-8/9: the dependency graph editor.
@@ -87,7 +87,7 @@ export default function DependencyEditor() {
                     </Button>
                 </Panel>
             </ReactFlow>
-            <AddTaskDialog open={addOpen} onClose={() => setAddOpen(false)} />
+            {addOpen && <TaskFormDialog open onClose={() => setAddOpen(false)} />}
             <Snackbar
                 open={editing.toast !== null}
                 autoHideDuration={6000}

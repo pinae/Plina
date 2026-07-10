@@ -19,7 +19,7 @@ import { useDependencies, useCreateDependency } from './queries';
 import { useDependencyEditing } from './hooks/useDependencyEditing';
 import { applyCycleHighlight, buildFlowGraph } from './utils/dependencyGraph';
 import { TaskNodeCard } from './components/TaskNode';
-import { AddTaskDialog } from './components/AddTaskDialog';
+import { TaskFormDialog } from './components/TaskFormDialog';
 import type { Dependency, Task } from './types';
 
 const API = 'http://localhost:8000/api';
@@ -34,6 +34,7 @@ function task(id: string, header: string): Task {
         latest_finish_date: null, time_spent: '00:00:00', priority: 5,
         tags: [], hex_color: null, is_fixed: false, is_appointment: false,
         completed_at: null, is_done: false, active_tracking_start: null,
+        project_id: null,
     };
 }
 
@@ -41,6 +42,8 @@ let createdTasks: unknown[] = [];
 
 const server = setupServer(
     http.get(`${API}/dependencies/`, () => HttpResponse.json(serverEdges)),
+    http.get(`${API}/tags/`, () => HttpResponse.json([])),
+    http.get(`${API}/projects/`, () => HttpResponse.json([])),
     http.post(`${API}/tasks/`, async ({ request }) => {
         const body = await request.json();
         createdTasks.push(body);
@@ -225,9 +228,9 @@ describe('TaskNodeCard cycle state', () => {
     });
 });
 
-describe('AddTaskDialog', () => {
+describe('TaskFormDialog (create path from the editor)', () => {
     it('creates a task with the entered header', async () => {
-        render(<AddTaskDialog open onClose={() => { }} />, { wrapper });
+        render(<TaskFormDialog open onClose={() => { }} />, { wrapper });
 
         fireEvent.change(screen.getByLabelText(/header/i), {
             target: { value: 'Write tests' },

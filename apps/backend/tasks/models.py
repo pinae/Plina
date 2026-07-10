@@ -230,6 +230,7 @@ class TimeBucketType(models.Model):
     def generate_buckets(self, generation_range: timedelta, start: datetime | None = None) -> List[TimeBucket]:
         if start is None:
             start = timezone.now()
+        start = start.replace(second=0, microsecond=0)
         if not self.start_times.strip():
             return []  # manual-only type: buckets are placed by hand
         consts = pdtConstants(localeID='de_DE', usePyICU=False)

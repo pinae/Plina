@@ -23,7 +23,7 @@ function task(id: string, header: string, done = false): Task {
         latest_finish_date: null, time_spent: '00:00:00', priority: 5,
         tags: [], hex_color: null, is_fixed: false, is_appointment: false,
         completed_at: done ? '2026-07-01T10:00:00Z' : null, is_done: done,
-        active_tracking_start: null,
+        active_tracking_start: null, project_id: null,
     };
 }
 
