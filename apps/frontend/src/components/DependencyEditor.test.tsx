@@ -67,7 +67,7 @@ const server = setupServer(
         HttpResponse.json([
             {
                 id: 'p1', name: 'Refactor Backend', description: '', tags: [],
-                priority: 8, order: ['t1', 't2'], hex_color: '#3357ff',
+                priority: 8, order: 0, task_ids: ['t1', 't2'], hex_color: '#3357ff',
             },
         ]),
     ),

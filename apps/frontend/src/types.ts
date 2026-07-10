@@ -54,7 +54,10 @@ export interface Project {
     description: string;
     tags: Tag[];
     priority: number;
-    order: string[];
+    /** Project-level ordering integer (not the task list!). */
+    order: number;
+    /** Task ids in project order — the task->project mapping. */
+    task_ids: string[];
     hex_color: string | null;
 }
 

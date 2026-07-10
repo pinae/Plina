@@ -6,6 +6,7 @@ import Calendar from './components/Calendar';
 import { WeekView } from './components/WeekView';
 import DependencyEditor from './components/DependencyEditor';
 import { PlanChooserDialog } from './components/PlanChooserDialog';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from '@mui/material';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 
@@ -65,10 +66,12 @@ function App() {
         onAccepted={() => setTab(0)}
       />
 
-      {tab === 0 && <WeekView tasks={dummyTasks} initialDate={new Date()} />}
-      {tab === 1 && <Calendar />}
-      {tab === 2 && <TaskList />}
-      {tab === 3 && <DependencyEditor />}
+      <ErrorBoundary key={tab}>
+        {tab === 0 && <WeekView tasks={dummyTasks} initialDate={new Date()} />}
+        {tab === 1 && <Calendar />}
+        {tab === 2 && <TaskList />}
+        {tab === 3 && <DependencyEditor />}
+      </ErrorBoundary>
     </Layout>
   );
 }

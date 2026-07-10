@@ -28,7 +28,7 @@ export type TaskFlowNode = Node<TaskNodeData, 'task'>;
 function projectLookup(projects: Project[]): Map<string, Project> {
     const byTask = new Map<string, Project>();
     for (const project of projects) {
-        for (const taskId of project.order) {
+        for (const taskId of project.task_ids ?? []) {
             byTask.set(taskId, project);
         }
     }

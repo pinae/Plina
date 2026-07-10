@@ -31,10 +31,14 @@ class TaskSerializer(serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)
     hex_color = serializers.CharField(read_only=True)
+    task_ids = serializers.SerializerMethodField()
+
+    def get_task_ids(self, project):
+        return [task.id for task in project.tasks]
 
     class Meta:
         model = Project
-        fields = ['id', 'name', 'description', 'tags', 'priority', 'order', 'hex_color']
+        fields = ['id', 'name', 'description', 'tags', 'priority', 'order', 'task_ids', 'hex_color']
 
 class TimeBucketTypeSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)

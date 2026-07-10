@@ -122,3 +122,27 @@ class DemoDataDependenciesTest(TestCase):
                 would_create_cycle(remaining, edge),
                 f"Demo data contains a cycle through edge {edge}",
             )
+
+
+class ProjectTaskIdsSerializationTest(TestCase):
+    """Regression (WP-8/10 blank-page bug): the frontend needs a task->project
+    mapping; the serializer must expose the ordered task ids."""
+
+    def test_project_payload_contains_ordered_task_ids(self):
+        from rest_framework.test import APIClient
+        from tasks.models import Project
+
+        project = Project.objects.create(name="P")
+        first = Task.objects.create(header="First")
+        second = Task.objects.create(header="Second")
+        project.add(first)
+        project.add(second)
+
+        response = APIClient().get(f"/api/projects/{project.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["task_ids"], [first.id, second.id]
+        )
+        # `order` stays the project-level ordering integer, untouched.
+        self.assertEqual(response.data["order"], 0)

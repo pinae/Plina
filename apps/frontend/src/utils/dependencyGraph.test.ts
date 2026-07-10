@@ -31,8 +31,8 @@ function dependency(id: string, predecessor: string, successor: string): Depende
     return { id, predecessor, successor };
 }
 
-function project(id: string, name: string, order: string[], color: string): Project {
-    return { id, name, description: '', tags: [], priority: 5, order, hex_color: color };
+function project(id: string, name: string, taskIds: string[], color: string): Project {
+    return { id, name, description: '', tags: [], priority: 5, order: 0, task_ids: taskIds, hex_color: color };
 }
 
 const overlap = (a: { x: number; y: number }, b: { x: number; y: number }) =>
@@ -86,5 +86,30 @@ describe('buildFlowGraph', () => {
         expect(byId.a.isDone).toBe(false);
         expect(byId.b.isDone).toBe(true);
         expect(byId.b.projectColor).toBeNull();
+    });
+});
+
+
+describe('buildFlowGraph with the real project payload (blank-page regression)', () => {
+    it('does not crash on the numeric `order` field and maps via task_ids', () => {
+        const tasks = [task('a', 'Design Schema')];
+        const realProject = {
+            id: 'p1', name: 'Webshop', description: '', tags: [],
+            priority: 9, order: 0, task_ids: ['a'], hex_color: '#3357ff',
+        };
+
+        const { nodes } = buildFlowGraph(tasks, [], [realProject]);
+
+        expect(nodes[0].data.projectColor).toBe('#3357ff');
+        expect(nodes[0].data.projectName).toBe('Webshop');
+    });
+
+    it('tolerates projects without task_ids instead of crashing', () => {
+        const broken = {
+            id: 'p1', name: 'Old server', description: '', tags: [],
+            priority: 5, order: 0, hex_color: null,
+        } as unknown as Project;
+
+        expect(() => buildFlowGraph([task('a', 'A')], [], [broken])).not.toThrow();
     });
 });
