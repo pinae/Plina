@@ -5,7 +5,23 @@ from .models import Task, Project, Tag, TimeBucket, TaskDependency, Plan
 from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
                           TimeBucketSerializer, TaskDependencySerializer)
 
-class TaskViewSet(viewsets.ModelViewSet):
+class RecalculatingModelViewSet(viewsets.ModelViewSet):
+    """A7: schedule-relevant CRUD triggers a recalculation of the accepted plan."""
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        recalculate_accepted_plan()
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        recalculate_accepted_plan()
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        recalculate_accepted_plan()
+
+
+class TaskViewSet(RecalculatingModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
@@ -60,6 +76,14 @@ class DependencyViewSet(mixins.ListModelMixin,
     queryset = TaskDependency.objects.all()
     serializer_class = TaskDependencySerializer
 
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        recalculate_accepted_plan()
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        recalculate_accepted_plan()
+
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
@@ -68,7 +92,7 @@ class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
 
-class TimeBucketViewSet(viewsets.ModelViewSet):
+class TimeBucketViewSet(RecalculatingModelViewSet):
     queryset = TimeBucket.objects.all()
     serializer_class = TimeBucketSerializer
 
@@ -79,6 +103,7 @@ from django.utils import timezone
 from datetime import timedelta
 from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks, UNBUCKETED
 from tasks.services.bucket_service import gather_time_buckets
+from tasks.services.plan_store import recalculate_accepted_plan
 from tasks.models import Task, TimeBucket, TaskDependency, Plan
 
 def _serialize_item(item):
@@ -134,7 +159,9 @@ class PlannerView(APIView):
                     "start_date": bucket.start_date,
                     "end_date": bucket.end_date,
                     "type_name": bucket.type.name,
+                    "type_id": bucket.type_id,
                     "hex_color": bucket.type.hex_color,
+                    "persisted": True,
                     "items": [
                         _serialize_entry(e)
                         for e in sorted(bucket_entries, key=lambda e: e.start)
@@ -175,7 +202,9 @@ class PlannerView(APIView):
                     "start_date": bucket.start_date,
                     "end_date": bucket.end_date,
                     "type_name": bucket.type.name,
+                    "type_id": bucket.type_id,
                     "hex_color": bucket.type.hex_color,
+                    "persisted": not bucket._state.adding,
                     "items": [_serialize_item(item) for item in plan[bucket.id]],
                 }
                 for bucket in buckets

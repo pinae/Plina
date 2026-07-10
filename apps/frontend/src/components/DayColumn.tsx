@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Box } from '@mui/material';
-import { WeekViewTask, type ViewTask } from './WeekViewTask';
+import { WeekViewTask, type ViewTask, type TaskActions } from './WeekViewTask';
+import { dropTimeFromOffset, type DayZone } from '../utils/planToWeek';
 
 interface DayColumnProps {
     date: Date;
@@ -8,9 +9,13 @@ interface DayColumnProps {
     currentTime: Date | null;
     onCreateTask: (start: Date, duration: number) => void;
     columnHeight: number;
+    zones?: DayZone[];
+    actions?: TaskActions;
+    onDropTask?: (taskId: string, start: Date) => void;
+    onZoneClick?: (zone: DayZone) => void;
 }
 
-export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, onCreateTask, columnHeight }) => {
+export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, onCreateTask, columnHeight, zones = [], actions, onDropTask, onZoneClick }) => {
     const contentRef = useRef<HTMLDivElement>(null);
     const dragStartRef = useRef<number | null>(null);
 
@@ -64,9 +69,45 @@ export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, 
                 data-testid="day-column-content"
                 ref={contentRef}
                 sx={{ position: 'relative', height: columnHeight, flexGrow: 1, cursor: 'pointer' }}
+                onDragOver={event => { if (onDropTask) event.preventDefault(); }}
+                onDrop={event => {
+                    if (!onDropTask) return;
+                    const taskId = event.dataTransfer.getData('text/plina-task');
+                    if (!taskId) return;
+                    event.preventDefault();
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    onDropTask(taskId, dropTimeFromOffset(date, event.clientY - bounds.top, columnHeight));
+                }}
                 onMouseDown={handleMouseDown}
                 onMouseUp={handleMouseUp}
             >
+                {/* Bucket zones (background, behind tasks) */}
+                {zones.map(zone => (
+                    <Box
+                        key={zone.id}
+                        data-testid="bucket-zone"
+                        onClick={event => {
+                            if (!onZoneClick) return;
+                            event.stopPropagation();
+                            onZoneClick(zone);
+                        }}
+                        sx={{
+                            position: 'absolute',
+                            top: `${(zone.topMinutes / 1440) * columnHeight}px`,
+                            height: `${(zone.heightMinutes / 1440) * columnHeight}px`,
+                            width: '100%',
+                            backgroundColor: `${zone.color}22`,
+                            borderLeft: `3px solid ${zone.color}`,
+                            boxSizing: 'border-box',
+                            zIndex: 0,
+                        }}
+                    >
+                        <Box component="span" sx={{ fontSize: '0.65rem', color: zone.color, pl: 0.5 }}>
+                            {zone.label}
+                        </Box>
+                    </Box>
+                ))}
+
                 {/* Hour Dividers */}
                 {Array.from({ length: 24 }).map((_, i) => (
                     <Box
@@ -104,7 +145,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, 
                         onMouseDown={(e) => e.stopPropagation()}
                         onMouseUp={(e) => e.stopPropagation()}
                     >
-                        <WeekViewTask task={task} columnHeight={columnHeight} />
+                        <WeekViewTask task={task} columnHeight={columnHeight} actions={actions} />
                     </Box>
                 ))}
             </Box>

@@ -110,7 +110,10 @@ export interface PlannedBucket {
     start_date: string;
     end_date: string;
     type_name: string;
+    type_id: number;
     hex_color: string | null;
+    /** False for generated (not yet materialized) buckets. */
+    persisted: boolean;
     items: PlanItem[];
 }
 

@@ -30,7 +30,7 @@ const planPayload: PlanResponse = {
             id: 'bucket-1',
             start_date: '2026-07-08T09:00:00Z',
             end_date: '2026-07-08T13:00:00Z',
-            type_name: 'Daily',
+            type_name: 'Daily', type_id: 1, persisted: true,
             hex_color: '#539dad',
             items: [
                 {

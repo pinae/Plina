@@ -20,6 +20,31 @@ class TaskSerializer(serializers.ModelSerializer):
         session = task.tracking_sessions.filter(end=None).first()
         return session.start if session is not None else None
 
+    def validate(self, attrs):
+        instance = self.instance
+        if instance is None:
+            return attrs
+        placing = 'start_date' in attrs or 'is_fixed' in attrs
+        start = attrs.get('start_date', instance.start_date)
+        fixed = attrs.get('is_fixed', instance.is_fixed)
+        if placing and start is not None and fixed:
+            from .services.plan_store import find_placement_conflict
+            conflict = find_placement_conflict(instance, start)
+            if conflict is not None:
+                predecessor, available_from = conflict
+                raise serializers.ValidationError({
+                    'detail': (
+                        f'“{instance.header}” cannot start before its '
+                        f'predecessor “{predecessor.header}” is done.'
+                    ),
+                    'predecessor': {
+                        'id': str(predecessor.id),
+                        'header': predecessor.header,
+                    },
+                    'available_from': available_from.isoformat(),
+                })
+        return attrs
+
     class Meta:
         model = Task
         fields = [
@@ -50,10 +75,15 @@ class TimeBucketTypeSerializer(serializers.ModelSerializer):
 
 class TimeBucketSerializer(serializers.ModelSerializer):
     type = TimeBucketTypeSerializer(read_only=True)
-    
+    type_id = serializers.PrimaryKeyRelatedField(
+        queryset=TimeBucketType.objects.all(), source='type', write_only=True)
+    # Explicit id so a generated bucket can be materialized under its
+    # pre-assigned UUID (A8) by POSTing it back.
+    id = serializers.UUIDField(required=False)
+
     class Meta:
         model = TimeBucket
-        fields = '__all__'
+        fields = ['id', 'start_date', 'duration', 'type', 'type_id']
 
 
 class TaskDependencySerializer(serializers.ModelSerializer):

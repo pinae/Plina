@@ -37,7 +37,7 @@ function alternative(
             {
                 id: 'b1',
                 start_date: '2026-07-08T09:00:00Z', end_date: '2026-07-08T13:00:00Z',
-                type_name: 'Daily', hex_color: '#539dad',
+                type_name: 'Daily', type_id: 1, hex_color: '#539dad', persisted: true,
                 items: [
                     {
                         task_id: 't1', header: 'Design Schema',
@@ -56,7 +56,7 @@ function alternative(
             {
                 id: 'b2',
                 start_date: '2026-07-09T09:00:00Z', end_date: '2026-07-09T13:00:00Z',
-                type_name: 'Daily', hex_color: '#539dad',
+                type_name: 'Daily', type_id: 1, hex_color: '#539dad', persisted: true,
                 items: [
                     {
                         task_id: 't3', header: 'Load Test',

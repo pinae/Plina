@@ -221,3 +221,30 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
     plan.feasible = not warnings
     plan.save(update_fields=["metrics", "warnings", "feasible"])
     return plan
+
+
+def find_placement_conflict(task: Task, start: datetime):
+    """Manual placement guard (§6 fixing rules): placing ``task`` at ``start``
+    is invalid if an *unfinished* predecessor's accepted-plan allocation ends
+    after ``start``.  Returns ``(predecessor, available_from)`` or ``None``.
+
+    Permissive when there is no accepted plan or the predecessor has no
+    entries in it — without plan information no ordering can be guaranteed,
+    and blocking would make manual planning impossible before the first
+    acceptance.
+    """
+    plan = Plan.objects.filter(is_accepted=True).first()
+    if plan is None:
+        return None
+    predecessors = Task.objects.filter(
+        outgoing_dependencies__successor=task, completed_at=None
+    )
+    worst = None
+    for predecessor in predecessors:
+        entries = list(plan.entries.filter(task=predecessor))
+        if not entries:
+            continue
+        end = max(entry.start + entry.duration for entry in entries)
+        if start < end and (worst is None or end > worst[1]):
+            worst = (predecessor, end)
+    return worst

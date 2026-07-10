@@ -1,5 +1,8 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, IconButton, Typography } from '@mui/material';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
+import CheckIcon from '@mui/icons-material/Check';
 
 export interface ViewTask {
     title: string;
@@ -10,14 +13,27 @@ export interface ViewTask {
     description: string;
     tags: string[]; // colors
     continues: boolean;
+    /** Backend task id — present when rendered from a real plan (WP-11). */
+    taskId?: string;
+    isAppointment?: boolean;
+    /** Per-task tracking state; falls back to actions.trackingActive. */
+    trackingActive?: boolean;
+}
+
+export interface TaskActions {
+    trackingActive: boolean;
+    onTrackStart: (taskId: string) => void;
+    onTrackStop: (taskId: string) => void;
+    onComplete: (taskId: string) => void;
 }
 
 export interface WeekViewTaskProps {
     task: ViewTask;
     columnHeight: number;
+    actions?: TaskActions;
 }
 
-export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight }) => {
+export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions }) => {
     // 1. Calculate Positioning
     const date = new Date(task.startTime);
     const minutesSinceMidnight = date.getHours() * 60 + date.getMinutes();
@@ -43,6 +59,10 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight }
     return (
         <Box
             data-testid="week-view-task"
+            draggable={Boolean(task.taskId && !task.isAppointment)}
+            onDragStart={event => {
+                if (task.taskId) event.dataTransfer.setData('text/plina-task', task.taskId);
+            }}
             sx={{
                 position: 'absolute',
                 top: `${top}px`,
@@ -77,6 +97,31 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight }
                 >
                     {task.title}
                 </Typography>
+                {actions && task.taskId && !task.isAppointment && (
+                    <Box sx={{ display: 'flex', gap: 0.25 }}>
+                        {(task.trackingActive ?? actions.trackingActive) ? (
+                            <IconButton
+                                size="small" aria-label="stop tracking"
+                                onClick={() => actions.onTrackStop(task.taskId!)}
+                            >
+                                <StopIcon fontSize="inherit" />
+                            </IconButton>
+                        ) : (
+                            <IconButton
+                                size="small" aria-label="start tracking"
+                                onClick={() => actions.onTrackStart(task.taskId!)}
+                            >
+                                <PlayArrowIcon fontSize="inherit" />
+                            </IconButton>
+                        )}
+                        <IconButton
+                            size="small" aria-label="complete"
+                            onClick={() => actions.onComplete(task.taskId!)}
+                        >
+                            <CheckIcon fontSize="inherit" />
+                        </IconButton>
+                    </Box>
+                )}
                 <Typography
                     variant="body2"
                     sx={{

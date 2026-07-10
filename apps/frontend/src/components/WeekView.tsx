@@ -3,6 +3,9 @@ import { Box, Button, Typography } from '@mui/material';
 import { DayColumn } from './DayColumn';
 import type { ViewTask } from './WeekViewTask';
 import { splitTaskAcrossDays } from '../utils/taskSplitter';
+import type { TaskActions } from './WeekViewTask';
+import type { BucketZone, DayZone } from '../utils/planToWeek';
+import { zonesForDay } from '../utils/planToWeek';
 
 // Helper to get Monday of the current week (assuming Mon start)
 const getMonday = (d: Date) => {
@@ -21,9 +24,13 @@ const addDays = (date: Date, days: number) => {
 interface WeekViewProps {
     tasks: ViewTask[];
     initialDate?: Date;
+    zones?: BucketZone[];
+    actions?: TaskActions;
+    onDropTask?: (taskId: string, start: Date) => void;
+    onZoneClick?: (zone: DayZone) => void;
 }
 
-export const WeekView: React.FC<WeekViewProps> = ({ tasks, initialDate = new Date() }) => {
+export const WeekView: React.FC<WeekViewProps> = ({ tasks, initialDate = new Date(), zones = [], actions, onDropTask, onZoneClick }) => {
     const [currentDate, setCurrentDate] = useState(initialDate);
 
     const weekStart = getMonday(currentDate);
@@ -104,6 +111,10 @@ export const WeekView: React.FC<WeekViewProps> = ({ tasks, initialDate = new Dat
                                 currentTime={new Date()} // Only show on today
                                 onCreateTask={(start, duration) => console.log('Create', start, duration)}
                                 columnHeight={1440}
+                                zones={zonesForDay(zones, day)}
+                                actions={actions}
+                                onDropTask={onDropTask}
+                                onZoneClick={onZoneClick}
                             />
                         </Box>
                     );
