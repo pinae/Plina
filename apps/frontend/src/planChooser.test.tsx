@@ -193,7 +193,7 @@ describe('PlanChooserDialog', () => {
             ),
             acceptHandler,
             http.get(`${API}/plan/`, () =>
-                HttpResponse.json({ accepted_plan_id: 'plan-a', appointments: [], buckets: [] }),
+                HttpResponse.json({ accepted_plan_id: 'plan-a', warnings: [], appointments: [], buckets: [] }),
             ),
         );
         const onAccepted = vi.fn();
@@ -217,7 +217,7 @@ describe('PlanChooserDialog', () => {
             ),
             acceptHandler,
             http.get(`${API}/plan/`, () =>
-                HttpResponse.json({ accepted_plan_id: 'plan-only', appointments: [], buckets: [] }),
+                HttpResponse.json({ accepted_plan_id: 'plan-only', warnings: [], appointments: [], buckets: [] }),
             ),
         );
         const onAccepted = vi.fn();

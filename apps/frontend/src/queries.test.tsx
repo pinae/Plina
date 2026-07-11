@@ -24,6 +24,7 @@ const API = 'http://localhost:8000/api';
 
 const planPayload: PlanResponse = {
     accepted_plan_id: null,
+    warnings: [],
     appointments: [],
     buckets: [
         {

@@ -25,6 +25,38 @@ If the algorithm detects that hard constraints (deadlines) cannot be met given
 the available time buckets and task durations, it proactively warns the user, 
 prompting a manual review of priorities or deadlines.
 
+### Task Dependencies and Alternative Plans
+
+Tasks form a directed acyclic graph (DAG): an edge A -> B means
+*finish-to-start* — B may not be scheduled before all planned work of A is
+allocated. Every valid plan is therefore a topological ordering of the
+remaining tasks packed into time buckets. The graph is edited visually in
+the **Dependencies** tab (a node editor); attempts to close a cycle are
+rejected by the server with the exact offending path, which the editor
+highlights in red.
+
+A DAG usually admits many valid orderings, and that is the product:
+wherever the graph leaves a real choice (independent branches at the
+frontier), Plina computes up to `MAX_PLAN_ALTERNATIVES` meaningfully
+different plans — focus-per-branch and weight presets (deadline-safe /
+priority-first / flow) — deduplicates them by ordering, and presents them
+as cards with metrics (minimum slack, context switches, projected finish
+date per project). A strict chain yields exactly one plan and is accepted
+silently: no fake choices.
+
+Fluidity principle: accepting a plan fixes nothing. A task is anchored only
+when time tracking starts on it (or it is dragged manually — the server
+rejects placements that would violate the dependency order). Completing a
+task recalculates the plan and, when the new frontier forks, immediately
+offers fresh choices. Feasibility warnings ("Project X can't finish by ...")
+surface as a banner with remedy shortcuts, and the Week view can jump to
+the first day with free capacity.
+
+Try it: `uv run python manage.py populate_demo_data` sets up the full demo
+(two projects, a dependency diamond, tagged recurring buckets, one fixed
+appointment), then use "Plan my week" in the frontend.
+
+
 ### Core Data Structures (Domain Model)
 
 The system is built on Django, utilizing the following primary models to 

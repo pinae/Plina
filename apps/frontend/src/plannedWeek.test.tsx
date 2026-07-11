@@ -23,6 +23,7 @@ import type { PlanResponse, Task } from './types';
 
 const planPayload: PlanResponse = {
     accepted_plan_id: 'plan-1',
+    warnings: [],
     appointments: [
         {
             task_id: 'meet', header: 'Team Sync',
@@ -256,5 +257,88 @@ describe('PlannedWeekView', () => {
             expect(screen.getAllByTestId('plan-alternative-card')).toHaveLength(2),
         );
         expect(screen.getByText('Start with “Implement API”')).toBeInTheDocument();
+    });
+});
+
+import { firstFreeDay } from './utils/planToWeek';
+import type { PlannedBucket } from './types';
+
+function emptyBucket(id: string, day: string): PlannedBucket {
+    return {
+        id, start_date: `${day}T09:00:00`, end_date: `${day}T13:00:00`,
+        type_name: 'Daily', type_id: 1, hex_color: '#539dad',
+        persisted: false, items: [],
+    };
+}
+
+describe('firstFreeDay (A9)', () => {
+    const from = new Date('2026-07-08T08:00:00');
+
+    it('finds the first bucket day without planned work', () => {
+        const plan: PlanResponse = {
+            ...planPayload,
+            buckets: [...planPayload.buckets, emptyBucket('b-free', '2026-07-10')],
+        };
+        expect(firstFreeDay(plan, from)?.getDate()).toBe(10);
+    });
+
+    it('skips days blocked by an appointment', () => {
+        const plan: PlanResponse = {
+            ...planPayload,
+            appointments: [
+                ...planPayload.appointments,
+                { ...planPayload.appointments[0], start_time: '2026-07-10T10:00:00' },
+            ],
+            buckets: [
+                ...planPayload.buckets,
+                emptyBucket('b-free1', '2026-07-10'),
+                emptyBucket('b-free2', '2026-07-11'),
+            ],
+        };
+        expect(firstFreeDay(plan, from)?.getDate()).toBe(11);
+    });
+
+    it('returns null when every bucket day is planned', () => {
+        expect(firstFreeDay(planPayload, from)).toBeNull();
+    });
+});
+
+describe('feasibility banner and jump button', () => {
+    it('shows the warning with remedy shortcuts and opens the bucket form', async () => {
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                ...planPayload,
+                warnings: [{
+                    task_id: 't9', header: 'Load test', kind: 'deadline_missed',
+                    deadline: '2026-07-20T00:00:00', projected_finish: '2026-07-22T15:00:00',
+                }],
+            })),
+            http.get(`${API}/tags/`, () => HttpResponse.json([])),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        await waitFor(() =>
+            expect(screen.getByText(/Load test.*can't finish by/i)).toBeInTheDocument(),
+        );
+        fireEvent.click(screen.getByRole('button', { name: /add time buckets/i }));
+        expect(await screen.findByLabelText(/recurrence/i)).toBeInTheDocument();
+    });
+
+    it('jumps the week to the first free day', async () => {
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                ...planPayload,
+                buckets: [...planPayload.buckets, emptyBucket('b-free', '2026-07-16')],
+            })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+
+        fireEvent.click(screen.getByRole('button', { name: /first free day/i }));
+
+        // Week of Jul 16 2026: Mon 13.7. - Sun 19.7.2026 in the header range.
+        await waitFor(() =>
+            expect(screen.getByText(/13\.7\. - 19\.7\.2026/)).toBeInTheDocument(),
+        );
     });
 });

@@ -7,10 +7,12 @@ import {
 import api from '../api';
 import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../queries';
 import { usePlacement } from '../hooks/usePlacement';
-import { bucketsToZones, planToViewTasks, type DayZone } from '../utils/planToWeek';
+import { bucketsToZones, firstFreeDay, planToViewTasks, type DayZone } from '../utils/planToWeek';
 import type { PlanAlternative } from '../types';
 import { WeekView } from './WeekView';
 import { PlanChooser } from './PlanChooser';
+import { FeasibilityBanner } from './FeasibilityBanner';
+import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { useQueryClient } from '@tanstack/react-query';
 
 function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => void }) {
@@ -95,6 +97,7 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
     const [choices, setChoices] = useState<PlanAlternative[] | null>(null);
     const [editingZone, setEditingZone] = useState<DayZone | null>(null);
     const [actionToast, setActionToast] = useState<string | null>(null);
+    const [weekAnchor, setWeekAnchor] = useState<Date | undefined>(initialDate);
 
     const viewTasks = useMemo(
         () => (plan.data ? planToViewTasks(plan.data) : []),
@@ -102,6 +105,10 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
     );
     const zones = useMemo(
         () => (plan.data ? bucketsToZones(plan.data) : []),
+        [plan.data],
+    );
+    const freeDay = useMemo(
+        () => (plan.data ? firstFreeDay(plan.data, new Date()) : null),
         [plan.data],
     );
     const trackedTaskId = useMemo(
@@ -153,13 +160,26 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
 
     return (
         <>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 1 }}>
+                <Box sx={{ flexGrow: 1 }}>
+                    <FeasibilityBanner warnings={plan.data?.warnings ?? []} />
+                </Box>
+                <Button
+                    size="small" variant="outlined" startIcon={<SkipNextIcon />}
+                    disabled={freeDay === null}
+                    onClick={() => freeDay && setWeekAnchor(freeDay)}
+                >
+                    Jump to first free day
+                </Button>
+            </Box>
             <WeekView
+                key={weekAnchor?.toISOString() ?? 'initial'}
                 tasks={viewTasks.map(task => ({
                     ...task,
                     // The card of the actively tracked task offers ⏹.
                     trackingActive: task.taskId === trackedTaskId,
                 }))}
-                initialDate={initialDate}
+                initialDate={weekAnchor}
                 zones={zones}
                 actions={actions}
                 onDropTask={placement.placeTask}

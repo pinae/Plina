@@ -1,120 +1,93 @@
+"""Demo data: the Mara story from the development plan (§3 user story).
+
+Two projects — the deadline-driven "Webshop Relaunch" chain (with a diamond)
+and the loosely coupled "Company Blog" — plus tagged recurring buckets and a
+fixed Thursday client call.  Running this on a fresh database sets the stage
+for the full walkthrough: plan → choose → track → complete → choose again.
+"""
+from datetime import timedelta
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from datetime import timedelta
-from tasks.models import Task, Project, Tag, TimeBucket, TimeBucketType, TaskDependency
+
+from tasks.models import (Plan, Project, Tag, Task, TaskDependency,
+                          TimeBucket, TimeBucketType, TrackingSession)
+
 
 class Command(BaseCommand):
-    help = 'Populates the database with demo data'
+    help = 'Populates the database with the Mara-story demo data'
 
     def handle(self, *args, **kwargs):
         self.stdout.write("Populating demo data...")
-        
-        # Cleanup
-        Task.objects.all().delete()
-        Project.objects.all().delete()
-        Tag.objects.all().delete()
-        TimeBucket.objects.all().delete()
-        TimeBucketType.objects.all().delete()
-        
-        now = timezone.now()
-        
-        # Tags
-        tag_coding = Tag.objects.create(name="coding", color=b'\x33\x57\xFF') # Blueish
-        tag_meeting = Tag.objects.create(name="meeting", color=b'\xFF\x57\x33') # Reddish
-        tag_general = Tag.objects.create(name="general", color=b'\x33\xFF\x57') # Greenish
-        
-        # Bucket Types
-        bt_coding = TimeBucketType.objects.create(name="Deep Work", color=b"\x33\x57\xFF", start_times="every weekday at 09:00", duration=timedelta(hours=4))
-        bt_coding.tags.add(tag_coding)
-        
-        bt_general = TimeBucketType.objects.create(name="General", color=b"\x33\xFF\x57", start_times="every day at 14:00", duration=timedelta(hours=4))
-        
-        # Buckets for next 2 days
-        TimeBucket.objects.create(start_date=now + timedelta(hours=1), duration=timedelta(hours=3), type=bt_coding)
-        TimeBucket.objects.create(start_date=now + timedelta(hours=5), duration=timedelta(hours=2), type=bt_general)
-        TimeBucket.objects.create(start_date=now + timedelta(days=1, hours=9), duration=timedelta(hours=4), type=bt_coding)
-        
-        # Projects
-        p_refactor = Project.objects.create(name="Refactor Backend", priority=9.0)
-        p_frontend = Project.objects.create(name="Frontend Rewrite", priority=8.0)
-        
-        # Tasks
-        t1 = Task.objects.create(
-            header="Upgrade Django",
-            priority=10.0,
-            duration=timedelta(hours=2),
-            latest_finish_date=now + timedelta(days=2))
-        t1.tags.add(tag_coding)
-        p_refactor.add(t1)
-        
-        t2 = Task.objects.create(
-            header="Setup React",
-            priority=8.0,
-            duration=timedelta(minutes=45),
-            latest_finish_date=now + timedelta(days=5))
-        t2.tags.add(tag_coding)
-        p_frontend.add(t2)
-        
-        t3 = Task.objects.create(
-            header="Team Sync",
-            priority=5.0,
-            duration=timedelta(hours=1),
-            start_date=(now + timedelta(days=1)).replace(hour=10, minute=0,
-                                                         second=0, microsecond=0),
-            is_appointment=True)
-        t3.tags.add(tag_meeting)
-        
-        t4 = Task.objects.create(
-            header="Write Documentation",
-            priority=3.0,
-            duration=timedelta(minutes=30))
-        t4.tags.add(tag_general)
 
-        # Dependency graph (two projects, per WP-1 / user story §3)
-        #
-        # Refactor Backend (chain):
-        #   Upgrade Django -> Design Schema -> Implement API -> Load Test
-        #                                  \-> Write Documentation
-        # Frontend Rewrite (diamond):
-        #   Setup React -> Build Components -> Wire API Client
-        #             \--> Style Guide ------^
-        t5 = Task.objects.create(
-            header="Design Schema", priority=9.0, duration=timedelta(hours=3),
-            latest_finish_date=now + timedelta(days=4))
-        t5.tags.add(tag_coding)
-        p_refactor.add(t5)
+        for model in (TrackingSession, Plan, TaskDependency, Task, Project,
+                      TimeBucket, TimeBucketType, Tag):
+            model.objects.all().delete()
 
-        t6 = Task.objects.create(
-            header="Implement API", priority=8.0, duration=timedelta(hours=6),
-            latest_finish_date=now + timedelta(days=8))
-        t6.tags.add(tag_coding)
-        p_refactor.add(t6)
+        now = timezone.localtime()
 
-        t7 = Task.objects.create(
-            header="Load Test", priority=6.0, duration=timedelta(hours=2),
-            latest_finish_date=now + timedelta(days=10))
-        t7.tags.add(tag_coding)
-        p_refactor.add(t7)
+        tag_deep = Tag.objects.create(name="deep-work", color=b'\x33\x57\xFF')
+        tag_writing = Tag.objects.create(name="writing", color=b'\x8e\x44\xad')
+        tag_meeting = Tag.objects.create(name="meeting", color=b'\xFF\x57\x33')
 
-        t8 = Task.objects.create(
-            header="Build Components", priority=7.0, duration=timedelta(hours=4))
-        t8.tags.add(tag_coding)
-        p_frontend.add(t8)
+        webshop = Project.objects.create(name="Webshop Relaunch", priority=9.0)
+        blog = Project.objects.create(name="Company Blog", priority=5.0)
 
-        t9 = Task.objects.create(
-            header="Style Guide", priority=5.0, duration=timedelta(hours=2))
-        t9.tags.add(tag_general)
-        p_frontend.add(t9)
+        def task(header, hours, priority, project=None, tag=None, **kwargs):
+            created = Task.objects.create(
+                header=header, duration=timedelta(hours=hours),
+                priority=priority, **kwargs,
+            )
+            if project:
+                project.add(created)
+            if tag:
+                created.tags.add(tag)
+            return created
 
-        t10 = Task.objects.create(
-            header="Wire API Client", priority=7.0, duration=timedelta(hours=3))
-        t10.tags.add(tag_coding)
-        p_frontend.add(t10)
+        # Webshop Relaunch: chain with a diamond, hard deadline in 3 weeks.
+        schema = task("Design schema", 4, 9.0, webshop, tag_deep)
+        api = task("Implement API", 8, 9.0, webshop, tag_deep)
+        checkout = task("Build checkout UI", 6, 8.0, webshop)
+        payment = task("Payment integration", 6, 8.0, webshop)
+        load_test = task("Load test", 4, 7.0, webshop,
+                         latest_finish_date=now + timedelta(days=21))
+
+        # Company Blog: one dependency, two independent articles.
+        research = task("Research CMS options", 3, 6.0, blog, tag_writing)
+        compare = task("Write CMS comparison", 4, 6.0, blog, tag_writing)
+        task("Article: Scheduling like a CPU", 3, 5.0, blog, tag_writing)
+        task("Article: The joy of fluid planning", 3, 4.0, blog, tag_writing)
 
         for predecessor, successor in [
-            (t1, t5), (t5, t6), (t6, t7), (t6, t4),   # backend chain + docs
-            (t2, t8), (t2, t9), (t8, t10), (t9, t10),  # frontend diamond
+            (schema, api), (api, checkout), (checkout, payment),
+            (api, payment),                       # the diamond arm
+            (payment, load_test), (research, compare),
         ]:
-            TaskDependency.objects.create(predecessor=predecessor, successor=successor)
+            TaskDependency.objects.create(predecessor=predecessor,
+                                          successor=successor)
+
+        # Recurring capacity (per the story: mornings deep, afternoons open,
+        # Tuesday evening for writing).
+        mornings = TimeBucketType.objects.create(
+            name="Weekday Mornings", start_times="every weekday at 09:00",
+            duration=timedelta(hours=4), color=b'\x33\x57\xFF')
+        mornings.tags.add(tag_deep)
+        TimeBucketType.objects.create(
+            name="Weekday Afternoons", start_times="every weekday at 14:00",
+            duration=timedelta(hours=3), color=b'\x53\x9d\xad')
+        writing_evening = TimeBucketType.objects.create(
+            name="Tuesday Writing", start_times="every tuesday at 19:00",
+            duration=timedelta(hours=2), color=b'\x8e\x44\xad')
+        writing_evening.tags.add(tag_writing)
+
+        # The fixed Thursday client call (appointment: ignores buckets).
+        days_until_thursday = (3 - now.weekday()) % 7 or 7
+        call = task(
+            "Client call", 1, 5.0, tag=tag_meeting, is_appointment=True,
+            start_date=(now + timedelta(days=days_until_thursday)).replace(
+                hour=10, minute=0, second=0, microsecond=0),
+        )
+        call.description = "Weekly sync with the webshop client."
+        call.save()
 
         self.stdout.write(self.style.SUCCESS('Successfully populated demo data'))

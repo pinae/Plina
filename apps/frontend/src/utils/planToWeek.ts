@@ -90,3 +90,26 @@ export function dropTimeFromOffset(
     time.setHours(0, snapped, 0, 0);
     return time;
 }
+
+/** A9: the first day (>= `from`) that offers bucket capacity but carries no
+ *  planned work and no appointment — "when am I free for a new project?". */
+export function firstFreeDay(plan: PlanResponse, from: Date): Date | null {
+    const dayKey = (date: Date) => date.toDateString();
+    const blocked = new Set(
+        plan.appointments.map(item => dayKey(new Date(item.start_time))),
+    );
+    const byDay = new Map<string, { date: Date; hasItems: boolean }>();
+    for (const bucket of plan.buckets) {
+        const date = new Date(bucket.start_date);
+        const key = dayKey(date);
+        const entry = byDay.get(key) ?? { date, hasItems: false };
+        entry.hasItems = entry.hasItems || bucket.items.length > 0;
+        byDay.set(key, entry);
+    }
+    const start = new Date(from);
+    start.setHours(0, 0, 0, 0);
+    const candidates = [...byDay.values()]
+        .filter(day => day.date >= start && !day.hasItems && !blocked.has(dayKey(day.date)))
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
+    return candidates[0]?.date ?? null;
+}

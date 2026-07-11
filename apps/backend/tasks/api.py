@@ -170,8 +170,29 @@ class PlannerView(APIView):
         for entry in entries:
             if entry.bucket is not None:
                 by_bucket.setdefault(entry.bucket, []).append(entry)
+        # A9: also expose the *empty* upcoming buckets so the client can
+        # find the first free day; entry-buckets keep their items.
+        horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
+        now = timezone.now()
+        occupied_ids = {bucket.id for bucket in by_bucket}
+        free_buckets = [
+            {
+                "id": bucket.id,
+                "start_date": bucket.start_date,
+                "end_date": bucket.end_date,
+                "type_name": bucket.type.name,
+                "type_id": bucket.type_id,
+                "hex_color": bucket.type.hex_color,
+                "persisted": not bucket._state.adding,
+                "items": [],
+            }
+            for bucket in gather_time_buckets(now, now + horizon)
+            if bucket.id not in occupied_ids
+        ]
+
         return Response({
             "accepted_plan_id": plan.id,
+            "warnings": plan.warnings,
             "appointments": [_serialize_entry(e) for e in appointments],
             "buckets": [
                 {
@@ -190,7 +211,7 @@ class PlannerView(APIView):
                 for bucket, bucket_entries in sorted(
                     by_bucket.items(), key=lambda pair: pair[0].start_date
                 )
-            ],
+            ] + sorted(free_buckets, key=lambda b: b["start_date"]),
         })
 
     def get(self, request):
@@ -212,6 +233,7 @@ class PlannerView(APIView):
 
         return Response({
             "accepted_plan_id": None,
+            "warnings": [],
             "appointments": [
                 _serialize_item(item)
                 for item in sorted(plan[UNBUCKETED], key=lambda i: i.start_time)

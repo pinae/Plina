@@ -145,6 +145,8 @@ export interface PlannedBucket {
 /** GET /api/plan/ — the accepted plan, or a live computation as fallback. */
 export interface PlanResponse {
     accepted_plan_id: string | null;
+    /** Feasibility warnings of the accepted plan (empty in fallback mode). */
+    warnings: PlanWarning[];
     appointments: PlanItem[];
     buckets: PlannedBucket[];
 }
