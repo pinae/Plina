@@ -109,6 +109,7 @@ const server = setupServer(
         return HttpResponse.json(planPayload);
     }),
     http.get(`${API}/tasks/`, () => HttpResponse.json([] as Task[])),
+    http.get(`${API}/projects/`, () => HttpResponse.json([])),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
