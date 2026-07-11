@@ -15,12 +15,12 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 
-import { useDependencies, useCreateDependency } from './queries';
-import { useDependencyEditing } from './hooks/useDependencyEditing';
-import { applyCycleHighlight, buildFlowGraph } from './utils/dependencyGraph';
-import { TaskNodeCard } from './components/TaskNode';
-import { TaskFormDialog } from './components/TaskFormDialog';
-import type { Dependency, Task } from './types';
+import { useDependencies, useCreateDependency } from '../../queries.tsx';
+import { useDependencyEditing } from '../../hooks/useDependencyEditing.ts';
+import { applyCycleHighlight, buildFlowGraph } from '../../utils/dependencyGraph.ts';
+import { TaskNodeCard } from '../TaskNode/TaskNode.tsx';
+import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
+import type { Dependency, Task } from '../../types.ts';
 
 const API = 'http://localhost:8000/api';
 

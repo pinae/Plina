@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { DayColumn } from './DayColumn';
-import type { ViewTask } from './WeekViewTask';
+import { DayColumn } from './DayColumn.tsx';
+import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
 
 // Mock WeekViewTask
 vi.mock('./WeekViewTask', () => ({

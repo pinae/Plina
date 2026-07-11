@@ -6,8 +6,8 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import FlagIcon from '@mui/icons-material/Flag';
 import { format } from 'date-fns';
 
-import type { PlanAlternative, PlanWarning } from '../types';
-import { formatSlack, miniTimeline, slackSeverity } from '../utils/planChooser';
+import type { PlanAlternative, PlanWarning } from '../../types.ts';
+import { formatSlack, miniTimeline, slackSeverity } from '../../utils/planChooser.ts';
 
 function warningText(warning: PlanWarning): string {
     if (warning.kind === 'deadline_missed') {

@@ -1,14 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@mui/material/styles';
-import { appTheme } from '../theme';
+import { appTheme } from '../../theme.ts';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 
-import { TaskNodeCard } from './TaskNode';
-import DependencyEditor from './DependencyEditor';
+import { TaskNodeCard } from '../TaskNode/TaskNode.tsx';
+import DependencyEditor from './DependencyEditor.tsx';
 
 describe('TaskNodeCard', () => {
     it('shows header and duration chip with the project color bar', () => {

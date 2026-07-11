@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
-import { DayColumn } from './DayColumn';
-import type { ViewTask } from './WeekViewTask';
-import { splitTaskAcrossDays } from '../utils/taskSplitter';
-import type { TaskActions } from './WeekViewTask';
-import type { BucketZone, DayZone } from '../utils/planToWeek';
-import { zonesForDay } from '../utils/planToWeek';
+import { DayColumn } from '../DayColumn/DayColumn.tsx';
+import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
+import { splitTaskAcrossDays } from '../../utils/taskSplitter.ts';
+import type { TaskActions } from '../WeekViewTask/WeekViewTask.tsx';
+import type { BucketZone, DayZone } from '../../utils/planToWeek.ts';
+import { zonesForDay } from '../../utils/planToWeek.ts';
 
 // Helper to get Monday of the current week (assuming Mon start)
 const getMonday = (d: Date) => {

@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Box } from '@mui/material';
-import { WeekViewTask, type ViewTask, type TaskActions } from './WeekViewTask';
-import { dropTimeFromOffset, type DayZone } from '../utils/planToWeek';
+import { WeekViewTask, type ViewTask, type TaskActions } from '../WeekViewTask/WeekViewTask.tsx';
+import { dropTimeFromOffset, type DayZone } from '../../utils/planToWeek.ts';
 
 interface DayColumnProps {
     date: Date;

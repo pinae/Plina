@@ -3,7 +3,7 @@ import {
     Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField,
 } from '@mui/material';
 
-import { useCreateTask } from '../queries';
+import { useCreateTask } from '../../queries.tsx';
 
 interface AddTaskDialogProps {
     open: boolean;

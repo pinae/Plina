@@ -4,14 +4,14 @@ import {
     DialogContent, DialogTitle, Snackbar, TextField,
 } from '@mui/material';
 
-import api from '../api';
-import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../queries';
-import { usePlacement } from '../hooks/usePlacement';
-import { bucketsToZones, firstFreeDay, planToViewTasks, type DayZone } from '../utils/planToWeek';
-import type { PlanAlternative } from '../types';
-import { WeekView } from './WeekView';
-import { PlanChooser } from './PlanChooser';
-import { FeasibilityBanner } from './FeasibilityBanner';
+import api from '../../api.ts';
+import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
+import { usePlacement } from '../../hooks/usePlacement.ts';
+import { bucketsToZones, firstFreeDay, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
+import type { PlanAlternative } from '../../types.ts';
+import { WeekView } from '../WeekView/WeekView.tsx';
+import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
+import { FeasibilityBanner } from '../FeasibilityBanner/FeasibilityBanner.tsx';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { useQueryClient } from '@tanstack/react-query';
 

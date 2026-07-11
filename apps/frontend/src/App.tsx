@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import Layout from './components/Layout';
+import Layout from './components/Layout/Layout.tsx';
 import { Box, Tabs, Tab } from '@mui/material';
-import TaskList from './components/TaskList';
-import Calendar from './components/Calendar';
-import PlannedWeekView from './components/PlannedWeekView';
-import DependencyEditor from './components/DependencyEditor';
-import { PlanChooserDialog } from './components/PlanChooserDialog';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import TaskList from './components/TaskList/TaskList.tsx';
+import Calendar from './components/Calendar/Calendar.tsx';
+import PlannedWeekView from './components/PlannedWeekView/PlannedWeekView.tsx';
+import DependencyEditor from './components/DependencyEditor/DependencyEditor.tsx';
+import { PlanChooserDialog } from './components/PlanChooserDialog/PlanChooserDialog.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary.tsx';
 import { Button } from '@mui/material';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 

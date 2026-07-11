@@ -1,10 +1,10 @@
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { WeekView } from './WeekView';
-import type { ViewTask } from './WeekViewTask';
+import { WeekView } from './WeekView.tsx';
+import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
 
 // Mock DayColumn to simplify WeekView tests and avoid deep rendering issues
-vi.mock('./DayColumn', () => ({
+vi.mock('../DayColumn/DayColumn', () => ({
     DayColumn: () => (
         <div data-testid="day-column">
             DayColumn

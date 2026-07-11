@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Typography, Paper, List, ListItem, ListItemText, Chip, Box, Button, Stack } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import { useTasks } from '../queries';
-import type { Task } from '../types';
-import { TaskFormDialog } from './TaskFormDialog';
-import { BucketTypeFormDialog, ProjectFormDialog, TagFormDialog } from './BucketTypeFormDialog';
+import { useTasks } from '../../queries.tsx';
+import type { Task } from '../../types.ts';
+import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
+import { BucketTypeFormDialog, ProjectFormDialog, TagFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 
 export default function TaskList() {
     const tasksQuery = useTasks();

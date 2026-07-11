@@ -13,10 +13,10 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 
-import TaskList from './components/TaskList';
-import { TaskFormDialog } from './components/TaskFormDialog';
-import { BucketTypeFormDialog } from './components/BucketTypeFormDialog';
-import type { Tag, Task } from './types';
+import TaskList from '../TaskList/TaskList.tsx';
+import { TaskFormDialog } from './TaskFormDialog.tsx';
+import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
+import type { Tag, Task } from '../../types.ts';
 
 const API = 'http://localhost:8000/api';
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppBar, Toolbar, Typography, Container, Box, CssBaseline } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
-import { appTheme } from '../theme';
+import { appTheme } from '../../theme.ts';
 
 export default function Layout({ children, fullWidth = false }: { children: React.ReactNode; fullWidth?: boolean }) {
     return (

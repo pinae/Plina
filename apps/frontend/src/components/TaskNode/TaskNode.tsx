@@ -2,8 +2,8 @@ import { memo } from 'react';
 import { Box, Chip, Tooltip, Typography } from '@mui/material';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 
-import type { TaskFlowNode } from '../utils/dependencyGraph';
-import { NODE_HEIGHT, NODE_WIDTH } from '../utils/dependencyGraph';
+import type { TaskFlowNode } from '../../utils/dependencyGraph.ts';
+import { NODE_HEIGHT, NODE_WIDTH } from '../../utils/dependencyGraph.ts';
 
 export interface TaskNodeCardProps {
     header: string;

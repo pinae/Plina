@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { Alert, AlertTitle, Button, Stack } from '@mui/material';
 import { format } from 'date-fns';
 
-import { useProjects, useTasks } from '../queries';
-import type { PlanWarning } from '../types';
-import { TaskFormDialog } from './TaskFormDialog';
-import { BucketTypeFormDialog } from './BucketTypeFormDialog';
+import { useProjects, useTasks } from '../../queries.tsx';
+import type { PlanWarning } from '../../types.ts';
+import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
+import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 
 /**
  * WP-13: the accepted plan's feasibility warnings, surfaced globally with

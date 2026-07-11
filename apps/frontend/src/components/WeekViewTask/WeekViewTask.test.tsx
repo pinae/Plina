@@ -1,6 +1,6 @@
 import { render, screen, cleanup } from '@testing-library/react';
 import { describe, it, expect, afterEach } from 'vitest';
-import { WeekViewTask, type ViewTask } from './WeekViewTask';
+import { WeekViewTask, type ViewTask } from './WeekViewTask.tsx';
 
 // Helper function to create a mock task
 const createMockTask = (overrides?: Partial<ViewTask>): ViewTask => ({

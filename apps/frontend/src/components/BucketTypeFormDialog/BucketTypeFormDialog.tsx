@@ -5,8 +5,8 @@ import {
     Select, TextField,
 } from '@mui/material';
 
-import { previewRecurrence } from '../api';
-import { useCreateBucketType, useCreateProject, useCreateTag, useTags } from '../queries';
+import { previewRecurrence } from '../../api.ts';
+import { useCreateBucketType, useCreateProject, useCreateTag, useTags } from '../../queries.tsx';
 
 interface FormDialogProps {
     open: boolean;

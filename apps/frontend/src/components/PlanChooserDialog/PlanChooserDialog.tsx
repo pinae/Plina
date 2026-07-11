@@ -3,9 +3,9 @@ import {
     Alert, Box, CircularProgress, Dialog, DialogContent, DialogTitle,
 } from '@mui/material';
 
-import { useAcceptPlan, useComputeAlternatives } from '../queries';
-import { PlanChooser } from './PlanChooser';
-import type { PlanAlternative } from '../types';
+import { useAcceptPlan, useComputeAlternatives } from '../../queries.tsx';
+import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
+import type { PlanAlternative } from '../../types.ts';
 
 const hasScheduledWork = (alternative: PlanAlternative) =>
     alternative.appointments.length > 0

@@ -1,6 +1,6 @@
 /** WP-11: pure mapping from the plan payload to Week view structures. */
 import type { PlanItem, PlanResponse } from '../types';
-import type { ViewTask } from '../components/WeekViewTask';
+import type { ViewTask } from '../components/WeekViewTask/WeekViewTask.tsx';
 
 const FALLBACK_COLOR = '#539dad';
 

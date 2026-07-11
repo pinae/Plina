@@ -13,10 +13,10 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
-import { formatSlack, miniTimeline, slackSeverity } from './utils/planChooser';
-import { PlanChooser } from './components/PlanChooser';
-import { PlanChooserDialog } from './components/PlanChooserDialog';
-import type { PlanAlternative } from './types';
+import { formatSlack, miniTimeline, slackSeverity } from '../../utils/planChooser.ts';
+import { PlanChooser } from './PlanChooser.tsx';
+import { PlanChooserDialog } from '../PlanChooserDialog/PlanChooserDialog.tsx';
+import type { PlanAlternative } from '../../types.ts';
 
 function alternative(
     id: string, label: string,

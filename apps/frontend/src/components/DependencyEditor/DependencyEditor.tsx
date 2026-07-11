@@ -10,12 +10,12 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { useDependencies, useProjects, useTasks } from '../queries';
-import { useDependencyEditing } from '../hooks/useDependencyEditing';
-import { applyCycleHighlight, buildFlowGraph, type TaskFlowNode } from '../utils/dependencyGraph';
+import { useDependencies, useProjects, useTasks } from '../../queries.tsx';
+import { useDependencyEditing } from '../../hooks/useDependencyEditing.ts';
+import { applyCycleHighlight, buildFlowGraph, type TaskFlowNode } from '../../utils/dependencyGraph.ts';
 import type { Edge } from '@xyflow/react';
-import { nodeTypes } from './TaskNode';
-import { TaskFormDialog } from './TaskFormDialog';
+import { nodeTypes } from '../TaskNode/TaskNode.tsx';
+import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 
 /**
  * WP-8/9: the dependency graph editor.

@@ -15,11 +15,11 @@ import type { ReactNode } from 'react';
 
 import {
     bucketsToZones, dropTimeFromOffset, planToViewTasks, zonesForDay,
-} from './utils/planToWeek';
-import { usePlacement } from './hooks/usePlacement';
-import { WeekViewTask } from './components/WeekViewTask';
-import PlannedWeekView from './components/PlannedWeekView';
-import type { PlanResponse, Task } from './types';
+} from '../../utils/planToWeek.ts';
+import { usePlacement } from '../../hooks/usePlacement.ts';
+import { WeekViewTask } from '../WeekViewTask/WeekViewTask.tsx';
+import PlannedWeekView from './PlannedWeekView.tsx';
+import type { PlanResponse, Task } from '../../types.ts';
 
 const planPayload: PlanResponse = {
     accepted_plan_id: 'plan-1',
@@ -260,8 +260,8 @@ describe('PlannedWeekView', () => {
     });
 });
 
-import { firstFreeDay } from './utils/planToWeek';
-import type { PlannedBucket } from './types';
+import { firstFreeDay } from '../../utils/planToWeek.ts';
+import type { PlannedBucket } from '../../types.ts';
 
 function emptyBucket(id: string, day: string): PlannedBucket {
     return {

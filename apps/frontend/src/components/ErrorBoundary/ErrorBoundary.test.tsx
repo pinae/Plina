@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ErrorBoundary } from './ErrorBoundary';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 
 function Bomb(): never {
     throw new Error('project.order is not iterable');

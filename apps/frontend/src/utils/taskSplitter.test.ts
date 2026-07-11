@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { splitTaskAcrossDays } from './taskSplitter';
-import type { ViewTask } from '../components/WeekViewTask';
+import type { ViewTask } from '../components/WeekViewTask/WeekViewTask.tsx';
 
 // Helper to create a task
 const createTask = (title: string, startIso: string, duration: number): ViewTask => ({

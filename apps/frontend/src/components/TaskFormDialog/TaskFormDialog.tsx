@@ -5,9 +5,9 @@ import {
     Select, Slider, TextField, Typography,
 } from '@mui/material';
 
-import { useCreateTask, useProjects, useTags, useUpdateTask } from '../queries';
-import type { Task, TaskWrite } from '../types';
-import { parseDurationMinutes } from '../utils/duration';
+import { useCreateTask, useProjects, useTags, useUpdateTask } from '../../queries.tsx';
+import type { Task, TaskWrite } from '../../types.ts';
+import { parseDurationMinutes } from '../../utils/duration.ts';
 
 interface TaskFormDialogProps {
     open: boolean;

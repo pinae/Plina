@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Typography, Paper, Box, Card, CardContent, Alert, Chip } from '@mui/material';
-import api from '../api';
+import api from '../../api.ts';
 
 interface PlanItem {
     task_id: string;

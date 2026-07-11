@@ -1,4 +1,4 @@
-import type { ViewTask } from '../components/WeekViewTask';
+import type { ViewTask } from '../components/WeekViewTask/WeekViewTask.tsx';
 
 export const splitTaskAcrossDays = (task: ViewTask): ViewTask[] => {
     const segments: ViewTask[] = [];
