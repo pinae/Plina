@@ -11,21 +11,29 @@ export interface BucketBlockProps {
     columnHeight: number;
     /** Open the edit dialog (plain click). */
     onEdit?: (zone: DayZone) => void;
-    /** Commit a move/resize: new start (minutes from midnight) and duration. */
-    onChange?: (zone: DayZone, startMinutes: number, durationMinutes: number) => void;
+    /** Commit a move/resize: the new start (full Date) and duration (minutes). */
+    onChange?: (zone: DayZone, start: Date, durationMinutes: number) => void;
+    /** Map a pointer clientX to the day it is over (for cross-day moves). */
+    resolveDay?: (clientX: number) => Date | null;
 }
 
 const RESIZE_HANDLE_PX = 8;
 
 /** A single bucket occurrence in a day's bucket column — click to edit, drag
- *  the body to move it, drag the top/bottom edge to change its duration. */
-export const BucketBlock: React.FC<BucketBlockProps> = ({ zone, columnHeight, onEdit, onChange }) => {
+ *  the body to move it (across days too), drag the top/bottom edge to change
+ *  its duration. */
+export const BucketBlock: React.FC<BucketBlockProps> = ({ zone, columnHeight, onEdit, onChange, resolveDay }) => {
     const { preview, startDrag } = useVerticalDrag({
         startMinutes: zone.topMinutes,
         durationMinutes: zone.heightMinutes,
         columnHeight,
         onClick: () => onEdit?.(zone),
-        onCommit: result => onChange?.(zone, result.startMinutes, result.durationMinutes),
+        onCommit: (result, ctx) => {
+            const day = (ctx.mode === 'move' && resolveDay?.(ctx.clientX)) || zone.start;
+            const start = new Date(day);
+            start.setHours(0, result.startMinutes, 0, 0);
+            onChange?.(zone, start, result.durationMinutes);
+        },
     });
 
     const top = minutesToPixels(preview?.startMinutes ?? zone.topMinutes, columnHeight);

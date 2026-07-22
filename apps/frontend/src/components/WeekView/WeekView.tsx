@@ -31,7 +31,7 @@ interface WeekViewProps {
     zones?: BucketZone[];
     actions?: TaskActions;
     onZoneClick?: (zone: DayZone) => void;
-    onZoneChange?: (zone: DayZone, startMinutes: number, durationMinutes: number) => void;
+    onZoneChange?: (zone: DayZone, start: Date, durationMinutes: number) => void;
     onCreateTask?: (start: Date, duration: number) => void;
     onTaskEdit?: (taskId: string) => void;
     onTaskChange?: (taskId: string, start: Date, durationMinutes: number) => void;
@@ -48,6 +48,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
     // 1 = fit the whole day; > 1 = zoomed in (day taller than the viewport).
     const [zoom, setZoom] = useState(1);
     const zoomRef = useRef(1);
+    const gridRef = useRef<HTMLDivElement>(null);
 
     const columnHeight = Math.round(fitHeight * zoom);
 
@@ -99,6 +100,22 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
     const days = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
 
+    // Map a pointer's horizontal position to the day column under it, so a task
+    // or bucket can be dragged across days (the time comes from the vertical
+    // drag; this only decides which day it lands on).  Called from drag
+    // handlers, never during render.
+    const resolveDay = (clientX: number): Date | null => {
+        const el = gridRef.current;
+        if (!el || days.length !== 7) return null;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0) return null;
+        let index = Math.floor((clientX - rect.left) / (rect.width / 7));
+        index = Math.max(0, Math.min(6, index));
+        const day = new Date(days[index]);
+        day.setHours(0, 0, 0, 0);
+        return day;
+    };
+
     const formatRange = (start: Date, end: Date) => {
         const formatDateSimple = (d: Date) => `${d.getDate()}.${d.getMonth() + 1}.`;
         const formatDateFull = (d: Date) => `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
@@ -137,7 +154,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
             {/* Week Grid (scrollable; wheel zooms) */}
             <Box ref={scrollRef} data-testid="week-scroll" sx={{ display: 'flex', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'auto' }}>
-                <Box data-testid="week-grid" data-column-height={columnHeight} sx={{ display: 'flex', width: '100%', height: columnHeight, flexShrink: 0 }}>
+                <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight} sx={{ display: 'flex', width: '100%', height: columnHeight, flexShrink: 0 }}>
                     {days.map((day, index) => {
                         const dayTasks = allSegments.filter(task => {
                             const taskDate = new Date(task.startTime);
@@ -160,6 +177,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                     onZoneChange={onZoneChange}
                                     onTaskEdit={onTaskEdit}
                                     onTaskChange={onTaskChange}
+                                    resolveDay={resolveDay}
                                 />
                             </Box>
                         );

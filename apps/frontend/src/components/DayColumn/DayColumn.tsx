@@ -13,9 +13,11 @@ interface DayColumnProps {
     zones?: DayZone[];
     actions?: TaskActions;
     onZoneClick?: (zone: DayZone) => void;
-    onZoneChange?: (zone: DayZone, startMinutes: number, durationMinutes: number) => void;
+    onZoneChange?: (zone: DayZone, start: Date, durationMinutes: number) => void;
     onTaskEdit?: (taskId: string) => void;
     onTaskChange?: (taskId: string, start: Date, durationMinutes: number) => void;
+    /** Map a pointer clientX to the day it is over (for cross-day moves). */
+    resolveDay?: (clientX: number) => Date | null;
 }
 
 /** Width of the narrow bucket column that keeps buckets reachable even when a
@@ -29,7 +31,7 @@ const BUCKET_COLUMN_WIDTH = 42;
  */
 export const DayColumn: React.FC<DayColumnProps> = ({
     date, tasks, currentTime, onCreateTask, columnHeight, zones = [],
-    actions, onZoneClick, onZoneChange, onTaskEdit, onTaskChange,
+    actions, onZoneClick, onZoneChange, onTaskEdit, onTaskChange, resolveDay,
 }) => {
     const dragStartRef = useRef<number | null>(null);
 
@@ -104,6 +106,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({
                         columnHeight={columnHeight}
                         onEdit={onZoneClick}
                         onChange={onZoneChange}
+                        resolveDay={resolveDay}
                     />
                 ))}
             </Box>
@@ -123,6 +126,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({
                         actions={actions}
                         onEdit={onTaskEdit}
                         onChange={onTaskChange}
+                        resolveDay={resolveDay}
                     />
                 ))}
             </Box>

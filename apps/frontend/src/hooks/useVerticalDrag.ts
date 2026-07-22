@@ -14,12 +14,20 @@ import { applyDrag, pixelsToMinutes, type DragMode, type DragResult } from '../u
 
 const MOVE_THRESHOLD_PX = 3;
 
+/** Where the pointer ended, plus which kind of drag it was — lets the caller
+ *  resolve a horizontal (cross-day) move from clientX. */
+export interface DragCommitContext {
+    mode: DragMode;
+    clientX: number;
+    clientY: number;
+}
+
 interface Args {
     startMinutes: number;
     durationMinutes: number;
     /** Pixel height of a full 1440-minute day (current zoom). */
     columnHeight: number;
-    onCommit: (result: DragResult) => void;
+    onCommit: (result: DragResult, ctx: DragCommitContext) => void;
     /** Fired when a "move" press ends without dragging (a plain click). */
     onClick?: () => void;
     /** Notified when a drag starts (true) and ends (false). */
@@ -60,11 +68,16 @@ export function useVerticalDrag({
                 return;
             }
             const result = compute(ev.clientY);
-            if (
+            const ctx = { mode, clientX: ev.clientX, clientY: ev.clientY };
+            // A move always commits once dragged — the target day may differ
+            // even when the time is unchanged. A resize only commits on change.
+            if (mode === 'move') {
+                onCommit(result, ctx);
+            } else if (
                 result.startMinutes !== startMinutes
                 || result.durationMinutes !== durationMinutes
             ) {
-                onCommit(result);
+                onCommit(result, ctx);
             }
         };
         window.addEventListener('mousemove', onMove);

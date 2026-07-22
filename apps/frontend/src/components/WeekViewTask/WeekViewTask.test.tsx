@@ -110,6 +110,24 @@ describe('WeekViewTask', () => {
         expect(duration).toBe(60); // duration unchanged by a move
     });
 
+    it('moves the task to another day when dragged horizontally (multi-day)', () => {
+        const onChange = vi.fn();
+        const resolveDay = vi.fn(() => new Date('2024-01-05T00:00:00'));
+        const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={task} columnHeight={1440} onChange={onChange} resolveDay={resolveDay} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600, clientX: 900 });
+        fireEvent.mouseUp(window, { clientY: 600, clientX: 900 });
+
+        expect(resolveDay).toHaveBeenCalled();
+        const [id, start, duration] = onChange.mock.calls[0];
+        expect(id).toBe('t1');
+        expect((start as Date).getDate()).toBe(5);   // moved to Jan 5
+        expect((start as Date).getHours()).toBe(10); // 09:00 + 60min vertical
+        expect(duration).toBe(60);
+    });
+
     it('resizes from the bottom handle, keeping the start and growing duration', () => {
         const onChange = vi.fn();
         const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });

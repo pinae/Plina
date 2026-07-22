@@ -174,9 +174,7 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
     const editingTask = tasks.data?.find(task => task.id === editingTaskId) ?? null;
 
     // Move/resize a bucket by drag: persist the new start + duration.
-    const changeZone = (zone: DayZone, startMinutes: number, durationMinutes: number) => {
-        const start = new Date(zone.start);
-        start.setHours(0, startMinutes, 0, 0);
+    const changeZone = (zone: DayZone, start: Date, durationMinutes: number) => {
         saveBucket(client, zone, start.toISOString(), minutesToDurationString(durationMinutes))
             .catch(() => setActionToast('Could not move the bucket.'));
     };

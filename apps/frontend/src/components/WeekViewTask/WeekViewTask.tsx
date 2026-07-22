@@ -38,11 +38,13 @@ export interface WeekViewTaskProps {
     onEdit?: (taskId: string) => void;
     /** Commit a move or resize: new start time and duration (minutes). */
     onChange?: (taskId: string, start: Date, durationMinutes: number) => void;
+    /** Map a pointer clientX to the day it is over (for cross-day moves). */
+    resolveDay?: (clientX: number) => Date | null;
 }
 
 const RESIZE_HANDLE_PX = 8;
 
-export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange }) => {
+export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay }) => {
     const date = new Date(task.startTime);
     const startMinutes = date.getHours() * 60 + date.getMinutes();
     // A press on the body detects a click (edit) or a move (needs onChange);
@@ -50,18 +52,19 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
     const canInteract = Boolean(task.taskId && (onEdit || onChange));
     const canResize = Boolean(task.taskId && onChange);
 
-    const commit = (start: number, duration: number) => {
-        if (!task.taskId || !onChange) return;
-        const newStart = new Date(date);
-        newStart.setHours(0, start, 0, 0);
-        onChange(task.taskId, newStart, duration);
-    };
-
     const { preview, startDrag } = useVerticalDrag({
         startMinutes,
         durationMinutes: task.duration,
         columnHeight,
-        onCommit: result => commit(result.startMinutes, result.durationMinutes),
+        onCommit: (result, ctx) => {
+            if (!task.taskId || !onChange) return;
+            // A horizontal move lands on the day under the pointer; the time
+            // comes from the vertical drag. Resize stays on the task's day.
+            const day = (ctx.mode === 'move' && resolveDay?.(ctx.clientX)) || date;
+            const newStart = new Date(day);
+            newStart.setHours(0, result.startMinutes, 0, 0);
+            onChange(task.taskId, newStart, result.durationMinutes);
+        },
         onClick: () => { if (task.taskId && onEdit) onEdit(task.taskId); },
     });
 
