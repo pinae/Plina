@@ -326,20 +326,28 @@ describe('feasibility banner and jump button', () => {
     });
 
     it('jumps the week to the first free day', async () => {
-        server.use(
-            http.get(`${API}/plan/`, () => HttpResponse.json({
-                ...planPayload,
-                buckets: [...planPayload.buckets, emptyBucket('b-free', '2026-07-16')],
-            })),
-        );
-        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
-        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+        // firstFreeDay only considers days from "now" onward, so pin the clock
+        // to before the free bucket (fake Date only, leaving msw/query timers).
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-07-08T08:00:00'));
+        try {
+            server.use(
+                http.get(`${API}/plan/`, () => HttpResponse.json({
+                    ...planPayload,
+                    buckets: [...planPayload.buckets, emptyBucket('b-free', '2026-07-16')],
+                })),
+            );
+            render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+            await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
 
-        fireEvent.click(screen.getByRole('button', { name: /first free day/i }));
+            fireEvent.click(screen.getByRole('button', { name: /first free day/i }));
 
-        // Week of Jul 16 2026: Mon 13.7. - Sun 19.7.2026 in the header range.
-        await waitFor(() =>
-            expect(screen.getByText(/13\.7\. - 19\.7\.2026/)).toBeInTheDocument(),
-        );
+            // Week of Jul 16 2026: Mon 13.7. - Sun 19.7.2026 in the header range.
+            await waitFor(() =>
+                expect(screen.getByText(/13\.7\. - 19\.7\.2026/)).toBeInTheDocument(),
+            );
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
