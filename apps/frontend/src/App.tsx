@@ -24,8 +24,12 @@ function App() {
   
   return (
     <Layout>
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, display: 'flex', alignItems: 'center' }}>
-        <Tabs value={tab} onChange={handleChange} aria-label="plina tabs" sx={{ flexGrow: 1 }}>
+      {/* The tab row is the top header bar (there is no separate title bar). */}
+      <Box sx={{
+        flexShrink: 0, borderBottom: 1, borderColor: 'divider',
+        display: 'flex', alignItems: 'center', bgcolor: 'background.paper', px: 1,
+      }}>
+        <Tabs value={tab} onChange={handleChange} aria-label="plina tabs" variant="scrollable" scrollButtons="auto" sx={{ flexGrow: 1 }}>
           <Tab label="Week Overview" />
           <Tab label="Calendar Plan" />
           <Tab label="Tasks" />
@@ -39,7 +43,7 @@ function App() {
           size="small"
           startIcon={<EventAvailableIcon />}
           onClick={() => setChooserOpen(true)}
-          sx={{ mr: 1 }}
+          sx={{ mr: 1, flexShrink: 0 }}
         >
           Plan my week
         </Button>
@@ -50,15 +54,17 @@ function App() {
         onAccepted={() => setTab(0)}
       />
 
-      <ErrorBoundary key={tab}>
-        {tab === 0 && <PlannedWeekView />}
-        {tab === 1 && <Calendar />}
-        {tab === 2 && <TaskList />}
-        {tab === 3 && <ProjectList />}
-        {tab === 4 && <TagList />}
-        {tab === 5 && <BucketTypeList />}
-        {tab === 6 && <DependencyEditor />}
-      </ErrorBoundary>
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', p: tab === 0 || tab === 6 ? 0 : 2 }}>
+        <ErrorBoundary key={tab}>
+          {tab === 0 && <PlannedWeekView />}
+          {tab === 1 && <Calendar />}
+          {tab === 2 && <TaskList />}
+          {tab === 3 && <ProjectList />}
+          {tab === 4 && <TagList />}
+          {tab === 5 && <BucketTypeList />}
+          {tab === 6 && <DependencyEditor />}
+        </ErrorBoundary>
+      </Box>
     </Layout>
   );
 }

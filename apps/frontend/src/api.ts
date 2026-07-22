@@ -100,11 +100,20 @@ export const fetchTimeBuckets = () =>
 export const createTag = (tag: TagWrite) =>
     api.post<Tag>('tags/', tag).then(r => r.data);
 
+export const updateTag = (tagId: string, patch: Partial<TagWrite>) =>
+    api.patch<Tag>(`tags/${tagId}/`, patch).then(r => r.data);
+
 export const createProject = (project: ProjectWrite) =>
     api.post<Project>('projects/', project).then(r => r.data);
 
+export const updateProject = (projectId: string, patch: Partial<ProjectWrite>) =>
+    api.patch<Project>(`projects/${projectId}/`, patch).then(r => r.data);
+
 export const createBucketType = (bucketType: BucketTypeWrite) =>
     api.post('buckettypes/', bucketType).then(r => r.data);
+
+export const updateBucketType = (bucketTypeId: number, patch: Partial<BucketTypeWrite>) =>
+    api.patch<TimeBucketType>(`buckettypes/${bucketTypeId}/`, patch).then(r => r.data);
 
 export const previewRecurrence = (startTimes: string) =>
     api.post<RecurrencePreview>('recurrence-preview/', { start_times: startTimes })

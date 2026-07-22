@@ -123,7 +123,7 @@ describe('CRUD happy path: tag -> task -> bucket type', () => {
 
         // 3. Bucket type with live preview — from the Time Buckets pane
         render(<BucketTypeList />, { wrapper });
-        fireEvent.click(await screen.findByRole('button', { name: /add bucket type/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /add bucket/i }));
         const bucketDialog = await screen.findByRole('dialog');
         fireEvent.change(within(bucketDialog).getByLabelText(/name/i), {
             target: { value: 'Morning Focus' },

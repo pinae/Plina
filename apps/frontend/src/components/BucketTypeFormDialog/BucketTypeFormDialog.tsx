@@ -6,29 +6,39 @@ import {
 } from '@mui/material';
 
 import { previewRecurrence } from '../../api.ts';
-import { useCreateBucketType, useCreateProject, useCreateTag, useTags } from '../../queries.tsx';
+import {
+    useCreateBucketType, useCreateProject, useCreateTag,
+    useTags, useUpdateBucketType, useUpdateProject, useUpdateTag,
+} from '../../queries.tsx';
+import type { Project, Tag, TimeBucketType } from '../../types.ts';
+import { parseDurationMinutes } from '../../utils/duration.ts';
 
 interface FormDialogProps {
     open: boolean;
     onClose: () => void;
 }
 
-export function TagFormDialog({ open, onClose }: FormDialogProps) {
-    const [name, setName] = useState('');
-    const [color, setColor] = useState('#539dad');
+export function TagFormDialog({ open, onClose, tag }: FormDialogProps & { tag?: Tag }) {
+    const editing = tag !== undefined;
+    const [name, setName] = useState(tag?.name ?? '');
+    const [color, setColor] = useState(tag?.hex_color ?? '#539dad');
     const create = useCreateTag();
+    const update = useUpdateTag();
 
     const submit = () => {
         if (!name.trim()) return;
-        create.mutate(
-            { name: name.trim(), hex_color: color },
-            { onSuccess: () => { setName(''); onClose(); } },
-        );
+        const payload = { name: name.trim(), hex_color: color };
+        const done = { onSuccess: () => { setName(''); onClose(); } };
+        if (editing) {
+            update.mutate({ id: tag.id, patch: payload }, done);
+        } else {
+            create.mutate(payload, done);
+        }
     };
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>New tag</DialogTitle>
+            <DialogTitle>{editing ? 'Edit tag' : 'New tag'}</DialogTitle>
             <DialogContent sx={{ display: 'flex', gap: 2, pt: 1, alignItems: 'center' }}>
                 <TextField
                     label="Name" value={name} autoFocus margin="dense" fullWidth
@@ -42,8 +52,8 @@ export function TagFormDialog({ open, onClose }: FormDialogProps) {
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" onClick={submit} disabled={create.isPending}>
-                    Create
+                <Button variant="contained" onClick={submit} disabled={create.isPending || update.isPending}>
+                    {editing ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -79,27 +89,32 @@ function TagMultiSelect({ value, onChange }: {
     );
 }
 
-export function ProjectFormDialog({ open, onClose }: FormDialogProps) {
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
-    const [priority, setPriority] = useState('5');
-    const [tagIds, setTagIds] = useState<string[]>([]);
+export function ProjectFormDialog({ open, onClose, project }: FormDialogProps & { project?: Project }) {
+    const editing = project !== undefined;
+    const [name, setName] = useState(project?.name ?? '');
+    const [description, setDescription] = useState(project?.description ?? '');
+    const [priority, setPriority] = useState(String(project?.priority ?? 5));
+    const [tagIds, setTagIds] = useState<string[]>(project?.tags.map(t => t.id) ?? []);
     const create = useCreateProject();
+    const update = useUpdateProject();
 
     const submit = () => {
         if (!name.trim()) return;
-        create.mutate(
-            {
-                name: name.trim(), description,
-                priority: Number(priority) || 5, tag_ids: tagIds,
-            },
-            { onSuccess: () => { setName(''); onClose(); } },
-        );
+        const payload = {
+            name: name.trim(), description,
+            priority: Number(priority) || 5, tag_ids: tagIds,
+        };
+        const done = { onSuccess: () => { setName(''); onClose(); } };
+        if (editing) {
+            update.mutate({ id: project.id, patch: payload }, done);
+        } else {
+            create.mutate(payload, done);
+        }
     };
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>New project</DialogTitle>
+            <DialogTitle>{editing ? 'Edit project' : 'New project'}</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
                 <TextField
                     label="Name" value={name} autoFocus margin="dense"
@@ -117,8 +132,8 @@ export function ProjectFormDialog({ open, onClose }: FormDialogProps) {
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" onClick={submit} disabled={create.isPending}>
-                    Create
+                <Button variant="contained" onClick={submit} disabled={create.isPending || update.isPending}>
+                    {editing ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -127,15 +142,26 @@ export function ProjectFormDialog({ open, onClose }: FormDialogProps) {
 
 const PREVIEW_DEBOUNCE_MS = 300;
 
-export function BucketTypeFormDialog({ open, onClose }: FormDialogProps) {
-    const [name, setName] = useState('');
-    const [startTimes, setStartTimes] = useState('');
-    const [hours, setHours] = useState('4');
-    const [tagIds, setTagIds] = useState<string[]>([]);
+/** Hours-as-decimal -> "HH:MM:00" duration string. */
+const hoursToDuration = (value: number): string => {
+    const whole = Math.max(0, Math.floor(value || 1));
+    const minutes = Math.round((Math.max(0, value || 1) % 1) * 60);
+    return `${String(whole).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+};
+
+export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogProps & { bucketType?: TimeBucketType }) {
+    const editing = bucketType !== undefined;
+    const [name, setName] = useState(bucketType?.name ?? '');
+    const [startTimes, setStartTimes] = useState(bucketType?.start_times ?? '');
+    const [hours, setHours] = useState(
+        bucketType ? String((parseDurationMinutes(bucketType.duration) ?? 240) / 60) : '4',
+    );
+    const [tagIds, setTagIds] = useState<string[]>(bucketType?.tags.map(t => t.id) ?? []);
     const [occurrences, setOccurrences] = useState<string[]>([]);
     const [previewError, setPreviewError] = useState<string | null>(null);
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
     const create = useCreateBucketType();
+    const update = useUpdateBucketType();
 
     // Live preview: server-parsed occurrences, debounced while typing.
     useEffect(() => {
@@ -164,22 +190,23 @@ export function BucketTypeFormDialog({ open, onClose }: FormDialogProps) {
 
     const submit = () => {
         if (!name.trim() || !startTimes.trim()) return;
-        const whole = Math.max(0, Math.floor(Number(hours) || 1));
-        const minutes = Math.round((Math.max(0, Number(hours) || 1) % 1) * 60);
-        create.mutate(
-            {
-                name: name.trim(),
-                start_times: startTimes.trim(),
-                duration: `${String(whole).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`,
-                tag_ids: tagIds,
-            },
-            { onSuccess: () => { setName(''); setStartTimes(''); onClose(); } },
-        );
+        const payload = {
+            name: name.trim(),
+            start_times: startTimes.trim(),
+            duration: hoursToDuration(Number(hours)),
+            tag_ids: tagIds,
+        };
+        const done = { onSuccess: () => { setName(''); setStartTimes(''); onClose(); } };
+        if (editing) {
+            update.mutate({ id: bucketType.id, patch: payload }, done);
+        } else {
+            create.mutate(payload, done);
+        }
     };
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>New time bucket type</DialogTitle>
+            <DialogTitle>{editing ? 'Edit time bucket' : 'New time bucket'}</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
                 <TextField
                     label="Name" value={name} autoFocus margin="dense"
@@ -212,8 +239,8 @@ export function BucketTypeFormDialog({ open, onClose }: FormDialogProps) {
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" onClick={submit} disabled={create.isPending}>
-                    Create
+                <Button variant="contained" onClick={submit} disabled={create.isPending || update.isPending}>
+                    {editing ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
         </Dialog>
