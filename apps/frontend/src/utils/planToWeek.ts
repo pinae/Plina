@@ -33,6 +33,25 @@ export function planToViewTasks(plan: PlanResponse): PlacedViewTask[] {
     ];
 }
 
+/**
+ * Fade the auto-planned tasks that a live drag would overlap, so the effect of
+ * the edit is visible *during* the drag (they will be re-planned).  The dragged
+ * task itself, fixed tasks and appointments are left untouched.
+ */
+export function markOverlaps(
+    tasks: PlacedViewTask[],
+    target: { taskId: string; start: Date; durationMinutes: number },
+): PlacedViewTask[] {
+    const start = target.start.getTime();
+    const end = start + target.durationMinutes * 60000;
+    return tasks.map(task => {
+        if (task.taskId === target.taskId || task.manuallySet) return task;
+        const taskStart = new Date(task.startTime).getTime();
+        const taskEnd = taskStart + task.duration * 60000;
+        return taskStart < end && start < taskEnd ? { ...task, outdated: true } : task;
+    });
+}
+
 export interface BucketZone {
     id: string;
     start: Date;

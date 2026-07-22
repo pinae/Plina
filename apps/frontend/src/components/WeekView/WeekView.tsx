@@ -1,11 +1,14 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { DayColumn } from '../DayColumn/DayColumn.tsx';
-import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
+import type { ViewTask, TaskActions, DragPreview } from '../WeekViewTask/WeekViewTask.tsx';
 import { splitTaskAcrossDays } from '../../utils/taskSplitter.ts';
-import type { TaskActions } from '../WeekViewTask/WeekViewTask.tsx';
 import type { BucketZone, DayZone } from '../../utils/planToWeek.ts';
 import { zonesForDay } from '../../utils/planToWeek.ts';
+import { minutesToPixels } from '../../utils/weekDrag.ts';
+
+const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
 // Helper to get Monday of the current week (assuming Mon start)
 const getMonday = (d: Date) => {
@@ -35,11 +38,15 @@ interface WeekViewProps {
     onCreateTask?: (start: Date, duration: number) => void;
     onTaskEdit?: (taskId: string) => void;
     onTaskChange?: (taskId: string, start: Date, durationMinutes: number) => void;
+    onTaskDragPreview?: (preview: DragPreview | null) => void;
+    /** Live drag preview to render as a ghost following the pointer. */
+    dragPreview?: DragPreview | null;
 }
 
 export const WeekView: React.FC<WeekViewProps> = ({
     tasks, initialDate = new Date(), zones = [], actions,
     onZoneClick, onZoneChange, onCreateTask, onTaskEdit, onTaskChange,
+    onTaskDragPreview, dragPreview,
 }) => {
     const [currentDate, setCurrentDate] = useState(initialDate);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -154,7 +161,37 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
             {/* Week Grid (scrollable; wheel zooms) */}
             <Box ref={scrollRef} data-testid="week-scroll" sx={{ display: 'flex', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'auto' }}>
-                <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight} sx={{ display: 'flex', width: '100%', height: columnHeight, flexShrink: 0 }}>
+                <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight} sx={{ position: 'relative', display: 'flex', width: '100%', height: columnHeight, flexShrink: 0 }}>
+                    {/* Live drag ghost: a moving task follows the pointer to the
+                        target day + time so it can be placed precisely. */}
+                    {dragPreview && dragPreview.mode === 'move' && (() => {
+                        const index = days.findIndex(day => sameDay(day, dragPreview.start));
+                        if (index < 0) return null;
+                        const startMin = dragPreview.start.getHours() * 60 + dragPreview.start.getMinutes();
+                        return (
+                            <Box
+                                data-testid="drag-ghost"
+                                sx={{
+                                    position: 'absolute',
+                                    left: `${(index * 100) / 7}%`,
+                                    width: `${100 / 7}%`,
+                                    top: `${minutesToPixels(startMin, columnHeight)}px`,
+                                    height: `${minutesToPixels(dragPreview.durationMinutes, columnHeight)}px`,
+                                    backgroundColor: `${dragPreview.color}66`,
+                                    border: '2px dashed #fff',
+                                    borderRadius: '4px',
+                                    boxSizing: 'border-box',
+                                    pointerEvents: 'none',
+                                    zIndex: 40,
+                                    overflow: 'hidden',
+                                }}
+                            >
+                                <Typography variant="caption" sx={{ px: 0.5, fontWeight: 'bold' }}>
+                                    {dragPreview.title}
+                                </Typography>
+                            </Box>
+                        );
+                    })()}
                     {days.map((day, index) => {
                         const dayTasks = allSegments.filter(task => {
                             const taskDate = new Date(task.startTime);
@@ -178,6 +215,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                     onTaskEdit={onTaskEdit}
                                     onTaskChange={onTaskChange}
                                     resolveDay={resolveDay}
+                                    onTaskDragPreview={onTaskDragPreview}
                                 />
                             </Box>
                         );

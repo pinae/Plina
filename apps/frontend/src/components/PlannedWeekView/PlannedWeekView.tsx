@@ -7,9 +7,10 @@ import {
 import api from '../../api.ts';
 import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
 import { usePlacement } from '../../hooks/usePlacement.ts';
-import { bucketsToZones, firstFreeDay, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
+import { bucketsToZones, firstFreeDay, markOverlaps, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
 import { minutesToDurationString } from '../../utils/duration.ts';
 import type { PlanAlternative } from '../../types.ts';
+import type { DragPreview } from '../WeekViewTask/WeekViewTask.tsx';
 import { WeekView } from '../WeekView/WeekView.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
@@ -109,6 +110,7 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
     const [editingZone, setEditingZone] = useState<DayZone | null>(null);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [newTaskDraft, setNewTaskDraft] = useState<{ start: Date; durationMinutes: number } | null>(null);
+    const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
     const [actionToast, setActionToast] = useState<string | null>(null);
     const [weekAnchor, setWeekAnchor] = useState<Date | undefined>(initialDate);
 
@@ -200,7 +202,7 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
             </Box>
             <WeekView
                 key={weekAnchor?.toISOString() ?? 'initial'}
-                tasks={viewTasks.map(task => ({
+                tasks={(dragPreview ? markOverlaps(viewTasks, dragPreview) : viewTasks).map(task => ({
                     ...task,
                     // The card of the actively tracked task offers ⏹.
                     trackingActive: task.taskId === trackedTaskId,
@@ -213,6 +215,8 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
                 onTaskEdit={setEditingTaskId}
                 onTaskChange={changeTask}
                 onCreateTask={(start, duration) => setNewTaskDraft({ start, durationMinutes: duration })}
+                onTaskDragPreview={setDragPreview}
+                dragPreview={dragPreview}
             />
             {editingZone && (
                 <BucketEditDialog zone={editingZone} onClose={() => setEditingZone(null)} />

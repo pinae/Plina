@@ -1,11 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, IconButton, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import CheckIcon from '@mui/icons-material/Check';
 
-import { minutesToPixels } from '../../utils/weekDrag.ts';
+import { minutesToPixels, type DragMode } from '../../utils/weekDrag.ts';
 import { useVerticalDrag } from '../../hooks/useVerticalDrag.ts';
+
+/** Live preview of an in-progress task drag, shown as a ghost and used to fade
+ *  the auto-planned tasks the edit would overlap. */
+export interface DragPreview {
+    taskId: string;
+    start: Date;
+    durationMinutes: number;
+    color: string;
+    title: string;
+    mode: DragMode;
+}
 
 export interface ViewTask {
     title: string;
@@ -42,17 +53,25 @@ export interface WeekViewTaskProps {
     onChange?: (taskId: string, start: Date, durationMinutes: number) => void;
     /** Map a pointer clientX to the day it is over (for cross-day moves). */
     resolveDay?: (clientX: number) => Date | null;
+    /** Report the live drag position (null clears it) for the ghost + fading. */
+    onDragPreview?: (preview: DragPreview | null) => void;
 }
 
 const RESIZE_HANDLE_PX = 8;
 
-export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay }) => {
+export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay, onDragPreview }) => {
     const date = new Date(task.startTime);
     const startMinutes = date.getHours() * 60 + date.getMinutes();
+    const [dragMode, setDragMode] = useState<DragMode | null>(null);
     // A press on the body detects a click (edit) or a move (needs onChange);
     // the resize handles only appear when the task can actually be changed.
     const canInteract = Boolean(task.taskId && (onEdit || onChange));
     const canResize = Boolean(task.taskId && onChange);
+
+    // The target day of a drag: the day under the pointer for a move, the
+    // task's own day for a resize.
+    const dayFor = (ctx: { mode: DragMode; clientX: number }) =>
+        (ctx.mode === 'move' && resolveDay?.(ctx.clientX)) || date;
 
     const { preview, startDrag } = useVerticalDrag({
         startMinutes,
@@ -60,18 +79,31 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
         columnHeight,
         onCommit: (result, ctx) => {
             if (!task.taskId || !onChange) return;
-            // A horizontal move lands on the day under the pointer; the time
-            // comes from the vertical drag. Resize stays on the task's day.
-            const day = (ctx.mode === 'move' && resolveDay?.(ctx.clientX)) || date;
-            const newStart = new Date(day);
+            const newStart = new Date(dayFor(ctx));
             newStart.setHours(0, result.startMinutes, 0, 0);
             onChange(task.taskId, newStart, result.durationMinutes);
+        },
+        onPreview: (result, ctx) => {
+            if (!task.taskId || !onDragPreview) return;
+            setDragMode(ctx.mode);
+            const start = new Date(dayFor(ctx));
+            start.setHours(0, result.startMinutes, 0, 0);
+            onDragPreview({
+                taskId: task.taskId, start, durationMinutes: result.durationMinutes,
+                color: task.color, title: task.title, mode: ctx.mode,
+            });
+        },
+        onActiveChange: active => {
+            if (!active) { setDragMode(null); onDragPreview?.(null); }
         },
         onClick: () => { if (task.taskId && onEdit) onEdit(task.taskId); },
     });
 
-    const top = minutesToPixels(preview?.startMinutes ?? startMinutes, columnHeight);
-    const height = minutesToPixels(preview?.durationMinutes ?? task.duration, columnHeight);
+    // While moving, the card stays dimmed at its origin and the ghost shows the
+    // target; while resizing it previews the new extent in place.
+    const moving = dragMode === 'move';
+    const top = minutesToPixels(moving ? startMinutes : (preview?.startMinutes ?? startMinutes), columnHeight);
+    const height = minutesToPixels(moving ? task.duration : (preview?.durationMinutes ?? task.duration), columnHeight);
 
     const backgroundColor = task.manuallySet ? task.color : `${task.color}80`;
     const borderBackground = task.tags.length > 0
@@ -92,8 +124,9 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 display: 'flex',
                 fontSize: '0.8rem',
                 // Faint outline so adjacent same-colour tasks are distinguishable;
-                // outdated (soon re-planned) cards fade and use a dashed outline.
-                opacity: task.outdated ? 0.35 : 1,
+                // outdated (soon re-planned) cards fade and use a dashed outline;
+                // a card being moved dims to its origin while the ghost leads.
+                opacity: moving ? 0.4 : task.outdated ? 0.35 : 1,
                 border: task.outdated
                     ? '1px dashed rgba(255, 255, 255, 0.6)'
                     : '1px solid rgba(255, 255, 255, 0.4)',

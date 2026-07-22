@@ -28,14 +28,16 @@ interface Args {
     /** Pixel height of a full 1440-minute day (current zoom). */
     columnHeight: number;
     onCommit: (result: DragResult, ctx: DragCommitContext) => void;
+    /** Fired on every move once past the threshold — live drag feedback. */
+    onPreview?: (result: DragResult, ctx: DragCommitContext) => void;
     /** Fired when a "move" press ends without dragging (a plain click). */
     onClick?: () => void;
-    /** Notified when a drag starts (true) and ends (false). */
-    onActiveChange?: (active: boolean) => void;
+    /** Notified when a drag starts (mode) and ends (null). */
+    onActiveChange?: (active: boolean, mode: DragMode | null) => void;
 }
 
 export function useVerticalDrag({
-    startMinutes, durationMinutes, columnHeight, onCommit, onClick, onActiveChange,
+    startMinutes, durationMinutes, columnHeight, onCommit, onPreview, onClick, onActiveChange,
 }: Args) {
     const [preview, setPreview] = useState<DragResult | null>(null);
     const origin = useRef(0);
@@ -47,7 +49,7 @@ export function useVerticalDrag({
         event.stopPropagation();
         origin.current = event.clientY;
         moved.current = false;
-        onActiveChange?.(true);
+        onActiveChange?.(true, mode);
 
         const compute = (clientY: number): DragResult => applyDrag(
             mode, startMinutes, durationMinutes,
@@ -56,13 +58,15 @@ export function useVerticalDrag({
 
         const onMove = (ev: MouseEvent) => {
             if (Math.abs(ev.clientY - origin.current) > MOVE_THRESHOLD_PX) moved.current = true;
-            setPreview(compute(ev.clientY));
+            const result = compute(ev.clientY);
+            setPreview(result);
+            if (moved.current) onPreview?.(result, { mode, clientX: ev.clientX, clientY: ev.clientY });
         };
         const onUp = (ev: MouseEvent) => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
             setPreview(null);
-            onActiveChange?.(false);
+            onActiveChange?.(false, null);
             if (!moved.current) {
                 if (mode === 'move') onClick?.();
                 return;
@@ -82,7 +86,7 @@ export function useVerticalDrag({
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-    }, [startMinutes, durationMinutes, columnHeight, onCommit, onClick, onActiveChange]);
+    }, [startMinutes, durationMinutes, columnHeight, onCommit, onPreview, onClick, onActiveChange]);
 
     return { preview, dragging: preview !== null, startDrag };
 }

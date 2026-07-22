@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import { Box } from '@mui/material';
-import { WeekViewTask, type ViewTask, type TaskActions } from '../WeekViewTask/WeekViewTask.tsx';
+import { WeekViewTask, type ViewTask, type TaskActions, type DragPreview } from '../WeekViewTask/WeekViewTask.tsx';
 import { BucketBlock } from '../BucketBlock/BucketBlock.tsx';
 import type { DayZone } from '../../utils/planToWeek.ts';
 
@@ -18,6 +18,8 @@ interface DayColumnProps {
     onTaskChange?: (taskId: string, start: Date, durationMinutes: number) => void;
     /** Map a pointer clientX to the day it is over (for cross-day moves). */
     resolveDay?: (clientX: number) => Date | null;
+    /** Report the live drag position for the ghost + overlap fading. */
+    onTaskDragPreview?: (preview: DragPreview | null) => void;
 }
 
 /** Width of the narrow bucket column that keeps buckets reachable even when a
@@ -31,7 +33,7 @@ const BUCKET_COLUMN_WIDTH = 42;
  */
 export const DayColumn: React.FC<DayColumnProps> = ({
     date, tasks, currentTime, onCreateTask, columnHeight, zones = [],
-    actions, onZoneClick, onZoneChange, onTaskEdit, onTaskChange, resolveDay,
+    actions, onZoneClick, onZoneChange, onTaskEdit, onTaskChange, resolveDay, onTaskDragPreview,
 }) => {
     const dragStartRef = useRef<number | null>(null);
 
@@ -127,6 +129,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({
                         onEdit={onTaskEdit}
                         onChange={onTaskChange}
                         resolveDay={resolveDay}
+                        onDragPreview={onTaskDragPreview}
                     />
                 ))}
             </Box>

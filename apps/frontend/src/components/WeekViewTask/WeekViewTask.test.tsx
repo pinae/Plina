@@ -122,6 +122,24 @@ describe('WeekViewTask', () => {
         expect(duration).toBe(60); // duration unchanged by a move
     });
 
+    it('emits a live drag preview while moving and clears it on release', () => {
+        const onDragPreview = vi.fn();
+        const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={task} columnHeight={1440} onChange={vi.fn()} onDragPreview={onDragPreview} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600 }); // +60px = +60min
+
+        expect(onDragPreview).toHaveBeenCalled();
+        const preview = onDragPreview.mock.calls.at(-1)![0];
+        expect(preview.mode).toBe('move');
+        expect((preview.start as Date).getHours()).toBe(10);
+        expect(preview.durationMinutes).toBe(60);
+
+        fireEvent.mouseUp(window, { clientY: 600 });
+        expect(onDragPreview).toHaveBeenLastCalledWith(null);
+    });
+
     it('moves the task to another day when dragged horizontally (multi-day)', () => {
         const onChange = vi.fn();
         const resolveDay = vi.fn(() => new Date('2024-01-05T00:00:00'));

@@ -311,6 +311,51 @@ describe('dragging a task (regression: sticky + fades overlaps)', () => {
     });
 });
 
+describe('dragging a task (regression: live feedback before release)', () => {
+    it('fades the overlapped auto task and shows a ghost while still dragging', async () => {
+        const patched: unknown[] = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: 'p1', warnings: [], appointments: [],
+                buckets: [{
+                    id: 'b1', start_date: '2026-07-08T08:00:00', end_date: '2026-07-08T18:00:00',
+                    type_name: 'Work', type_id: 1, hex_color: '#539dad', persisted: true,
+                    items: [
+                        {
+                            task_id: 't-move', header: 'MoveMe', start_time: '2026-07-08T08:00:00',
+                            duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#3357ff',
+                        },
+                        {
+                            task_id: 't-other', header: 'OtherAuto', start_time: '2026-07-08T14:00:00',
+                            duration: 3600, warnings: [], is_fixed: false, is_appointment: false, hex_color: '#3357ff',
+                        },
+                    ],
+                }],
+            })),
+            http.patch(`${API}/tasks/t-move/`, async ({ request }) => {
+                patched.push(await request.json());
+                return HttpResponse.json({ id: 't-move' });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
+        // Press and drag the appointment down onto OtherAuto — but do NOT release.
+        fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
+
+        // Live: the overlapped auto task fades and a ghost appears, before release.
+        await waitFor(() => {
+            const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
+            expect(other).toHaveStyle({ opacity: '0.35' });
+        });
+        expect(screen.getByTestId('drag-ghost')).toBeInTheDocument();
+
+        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 }); // release to end the drag
+        await waitFor(() => expect(patched).toHaveLength(1));
+    });
+});
+
 describe('moving a bucket (regression: no duplicate)', () => {
     it('materializes a moved generated occurrence with its origin_date', async () => {
         const posted: Array<Record<string, unknown>> = [];

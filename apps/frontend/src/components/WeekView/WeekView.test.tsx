@@ -72,6 +72,28 @@ describe('WeekView', () => {
         expect(screen.getByText(/18\.2\./)).toBeInTheDocument();
     });
 
+    it('renders a drag ghost at the target day for a move preview', () => {
+        render(<WeekView
+            {...defaultProps}
+            dragPreview={{
+                taskId: 't1', start: new Date('2024-02-14T10:00:00'),
+                durationMinutes: 60, color: '#3357ff', title: 'Ghosty', mode: 'move',
+            }}
+        />);
+        expect(screen.getByTestId('drag-ghost')).toHaveTextContent('Ghosty');
+    });
+
+    it('shows no ghost for a resize preview', () => {
+        render(<WeekView
+            {...defaultProps}
+            dragPreview={{
+                taskId: 't1', start: new Date('2024-02-14T10:00:00'),
+                durationMinutes: 60, color: '#3357ff', title: 'Ghosty', mode: 'resize-bottom',
+            }}
+        />);
+        expect(screen.queryByTestId('drag-ghost')).toBeNull();
+    });
+
     it('zooms in with the mouse wheel and never shrinks below the fit height', () => {
         render(<WeekView {...defaultProps} />);
         const height = () => Number(screen.getByTestId('week-grid').getAttribute('data-column-height'));
