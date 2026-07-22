@@ -71,4 +71,18 @@ describe('WeekView', () => {
         expect(screen.getByText(/12\.2\./)).toBeInTheDocument();
         expect(screen.getByText(/18\.2\./)).toBeInTheDocument();
     });
+
+    it('zooms in with the mouse wheel and never shrinks below the fit height', () => {
+        render(<WeekView {...defaultProps} />);
+        const height = () => Number(screen.getByTestId('week-grid').getAttribute('data-column-height'));
+        const fit = height();
+
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100 });
+        expect(height()).toBeGreaterThan(fit);
+
+        // Zooming back out is clamped at the fit height (zoom >= 1).
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
+        expect(height()).toBe(fit);
+    });
 });

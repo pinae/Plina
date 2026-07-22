@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, IconButton, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import CheckIcon from '@mui/icons-material/Check';
+
+import { minutesToPixels } from '../../utils/weekDrag.ts';
+import { useVerticalDrag } from '../../hooks/useVerticalDrag.ts';
 
 export interface ViewTask {
     title: string;
@@ -31,38 +34,52 @@ export interface WeekViewTaskProps {
     task: ViewTask;
     columnHeight: number;
     actions?: TaskActions;
+    /** Open the edit dialog (plain click on the card body). */
+    onEdit?: (taskId: string) => void;
+    /** Commit a resize: new start time and duration (minutes). */
+    onResize?: (taskId: string, start: Date, durationMinutes: number) => void;
 }
 
-export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions }) => {
-    // 1. Calculate Positioning
+const RESIZE_HANDLE_PX = 8;
+
+export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onResize }) => {
+    const [resizing, setResizing] = useState(false);
     const date = new Date(task.startTime);
-    const minutesSinceMidnight = date.getHours() * 60 + date.getMinutes();
-    const dayDurationMinutes = 24 * 60;
+    const startMinutes = date.getHours() * 60 + date.getMinutes();
 
-    // Calculate top and height relative to columnHeight
-    const top = (minutesSinceMidnight / dayDurationMinutes) * columnHeight;
-    const height = (task.duration / dayDurationMinutes) * columnHeight;
+    const commitResize = (start: number, duration: number) => {
+        if (!task.taskId || !onResize) return;
+        const newStart = new Date(date);
+        newStart.setHours(0, start, 0, 0);
+        onResize(task.taskId, newStart, duration);
+    };
 
+    const { preview, startDrag } = useVerticalDrag({
+        startMinutes,
+        durationMinutes: task.duration,
+        columnHeight,
+        onCommit: result => commitResize(result.startMinutes, result.durationMinutes),
+        onActiveChange: setResizing,
+    });
 
-    // We'll use a style object for the backgroundColor to allow testing.
-    // If not manuallySet, we can set opacity or use a computed color.
-    // Test expects: expect(box).not.toHaveStyle({ backgroundColor: '#FF0000' }); if false.
-    const backgroundColor = task.manuallySet ? task.color : `${task.color}80`; // Simple alpha for pastel if hex
+    const top = minutesToPixels(preview?.startMinutes ?? startMinutes, columnHeight);
+    const height = minutesToPixels(preview?.durationMinutes ?? task.duration, columnHeight);
 
-    // 3. Border Logic
-    // "Left border is a bar 0.3em wide which displays the color of all tags"
-    // We can use a linear gradient if multiple tags, or just a solid color if one.
+    const backgroundColor = task.manuallySet ? task.color : `${task.color}80`;
     const borderBackground = task.tags.length > 0
         ? (task.tags.length === 1 ? task.tags[0] : `linear-gradient(to bottom, ${task.tags.join(', ')})`)
         : 'transparent';
 
+    const resizable = Boolean(task.taskId && onResize);
+
     return (
         <Box
             data-testid="week-view-task"
-            draggable={Boolean(task.taskId && !task.isAppointment)}
+            draggable={Boolean(task.taskId) && !resizing}
             onDragStart={event => {
                 if (task.taskId) event.dataTransfer.setData('text/plina-task', task.taskId);
             }}
+            onClick={() => { if (task.taskId && onEdit) onEdit(task.taskId); }}
             sx={{
                 position: 'absolute',
                 top: `${top}px`,
@@ -71,13 +88,23 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 left: 0,
                 backgroundColor: backgroundColor,
                 display: 'flex',
-                fontSize: '0.8rem', // Adjust as needed
+                fontSize: '0.8rem',
                 borderBottom: task.continues ? '3px double grey' : 'none',
                 overflow: 'hidden',
                 boxSizing: 'border-box',
                 borderRadius: '4px',
+                cursor: task.taskId ? 'grab' : 'default',
             }}
         >
+            {/* Top resize handle */}
+            {resizable && (
+                <Box
+                    data-testid="task-resize-top"
+                    onMouseDown={startDrag('resize-top')}
+                    sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: RESIZE_HANDLE_PX, cursor: 'ns-resize', zIndex: 2 }}
+                />
+            )}
+
             {/* Left Border */}
             <Box sx={{ width: '0.3em', background: borderBackground, flexShrink: 0 }} />
 
@@ -98,7 +125,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                     {task.title}
                 </Typography>
                 {actions && task.taskId && !task.isAppointment && (
-                    <Box sx={{ display: 'flex', gap: 0.25 }}>
+                    <Box sx={{ display: 'flex', gap: 0.25 }} onClick={event => event.stopPropagation()}>
                         {(task.trackingActive ?? actions.trackingActive) ? (
                             <IconButton
                                 size="small" aria-label="stop tracking"
@@ -129,12 +156,21 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                         overflow: 'hidden',
                         whiteSpace: 'normal',
                         textOverflow: 'ellipsis',
-                        flex: 1, // Fill remaining space
+                        flex: 1,
                     }}
                 >
                     {task.description}
                 </Typography>
             </Box>
+
+            {/* Bottom resize handle */}
+            {resizable && (
+                <Box
+                    data-testid="task-resize-bottom"
+                    onMouseDown={startDrag('resize-bottom')}
+                    sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: RESIZE_HANDLE_PX, cursor: 'ns-resize', zIndex: 2 }}
+                />
+            )}
         </Box>
     );
 };

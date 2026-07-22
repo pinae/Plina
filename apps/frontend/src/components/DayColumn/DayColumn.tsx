@@ -1,6 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Box } from '@mui/material';
 import { WeekViewTask, type ViewTask, type TaskActions } from '../WeekViewTask/WeekViewTask.tsx';
+import { BucketBlock } from '../BucketBlock/BucketBlock.tsx';
 import { dropTimeFromOffset, type DayZone } from '../../utils/planToWeek.ts';
 
 interface DayColumnProps {
@@ -13,62 +14,105 @@ interface DayColumnProps {
     actions?: TaskActions;
     onDropTask?: (taskId: string, start: Date) => void;
     onZoneClick?: (zone: DayZone) => void;
+    onZoneChange?: (zone: DayZone, startMinutes: number, durationMinutes: number) => void;
+    onTaskEdit?: (taskId: string) => void;
+    onTaskResize?: (taskId: string, start: Date, durationMinutes: number) => void;
 }
 
-export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, onCreateTask, columnHeight, zones = [], actions, onDropTask, onZoneClick }) => {
-    const contentRef = useRef<HTMLDivElement>(null);
+/** Width of the narrow bucket column that keeps buckets reachable even when a
+ *  task is planned on top of them. */
+const BUCKET_COLUMN_WIDTH = 42;
+
+/**
+ * A single day, split into a narrow bucket column (left) and the task column
+ * (right).  Dragging on empty space in either column creates a task; buckets
+ * and tasks handle their own move/resize/click.
+ */
+export const DayColumn: React.FC<DayColumnProps> = ({
+    date, tasks, currentTime, onCreateTask, columnHeight, zones = [],
+    actions, onDropTask, onZoneClick, onZoneChange, onTaskEdit, onTaskResize,
+}) => {
     const dragStartRef = useRef<number | null>(null);
 
-    const getMinutesFromClientY = (clientY: number) => {
-        if (!contentRef.current) return 0;
-        const rect = contentRef.current.getBoundingClientRect();
-        const y = clientY - rect.top;
-        return (y / columnHeight) * 24 * 60;
-    }
+    // Drag-create: a press-drag-release on an empty area of a column produces a
+    // new task with the dragged start time and duration.  Geometry comes from
+    // the pressed surface (event.currentTarget), so no refs are needed.
+    const onSurfaceDown = useCallback((event: React.MouseEvent) => {
+        if (event.button !== 0) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        dragStartRef.current = ((event.clientY - rect.top) / columnHeight) * 1440;
+    }, [columnHeight]);
 
-    const handleMouseDown = (e: React.MouseEvent) => {
-        // Only start drag on left click
-        if (e.button !== 0) return;
-        dragStartRef.current = getMinutesFromClientY(e.clientY);
-    };
-
-    const handleMouseUp = (e: React.MouseEvent) => {
+    const onSurfaceUp = useCallback((event: React.MouseEvent) => {
         if (dragStartRef.current === null) return;
-
-        const endMinutes = getMinutesFromClientY(e.clientY);
-        const startMinutesRaw = dragStartRef.current;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const endMinutes = ((event.clientY - rect.top) / columnHeight) * 1440;
+        const startRaw = dragStartRef.current;
         dragStartRef.current = null;
 
-        let startMin = Math.min(startMinutesRaw, endMinutes);
-        let endMin = Math.max(startMinutesRaw, endMinutes);
-
-        // Rounding logic matches previous implementation
+        const startMin = Math.min(startRaw, endMinutes);
+        const endMin = Math.max(startRaw, endMinutes);
         const durationRaw = endMin - startMin;
 
-        let roundedStartMin = Math.round(startMin / 15) * 15;
-        let duration = 60; // Default click duration
-
+        const roundedStart = Math.round(startMin / 15) * 15;
+        let duration = 60; // default click duration
         if (durationRaw > 15) {
-            // It's a drag
-            roundedStartMin = Math.round(startMin / 15) * 15;
-            let roundedEndMin = Math.round(endMin / 15) * 15;
-            duration = roundedEndMin - roundedStartMin;
-            if (duration === 0) duration = 15; // Minimum drag
+            const roundedEnd = Math.round(endMin / 15) * 15;
+            duration = roundedEnd - roundedStart || 15;
         }
-
         const start = new Date(date);
-        start.setHours(0, roundedStartMin, 0, 0);
-
+        start.setHours(0, roundedStart, 0, 0);
         onCreateTask(start, duration);
-    };
+    }, [columnHeight, date, onCreateTask]);
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', borderRight: '1px solid #333' }}>
-            {/* Content (Header responsibility moved to WeekView) */}
+        <Box sx={{ position: 'relative', height: columnHeight, display: 'flex' }}>
+            {/* Decorative background: hour dividers + current time line. */}
+            <Box sx={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                {Array.from({ length: 24 }).map((_, i) => (
+                    <Box
+                        key={i}
+                        data-testid="hour-divider"
+                        sx={{ position: 'absolute', top: `${(i / 24) * 100}%`, width: '100%', borderTop: '1px solid rgba(255,255,255,0.05)' }}
+                    />
+                ))}
+                {currentTime && (
+                    <Box
+                        data-testid="current-time-line"
+                        sx={{
+                            position: 'absolute',
+                            top: `${((currentTime.getHours() * 60 + currentTime.getMinutes()) / 1440) * columnHeight}px`,
+                            width: '100%', borderTop: '2px solid white', zIndex: 3,
+                        }}
+                    />
+                )}
+            </Box>
+
+            {/* Bucket column — buckets stay clickable/movable here even when a
+                task is planned over the same time in the task column. */}
+            <Box
+                data-testid="bucket-column"
+                sx={{ position: 'relative', width: BUCKET_COLUMN_WIDTH, flexShrink: 0, borderRight: '1px solid #333', cursor: 'copy' }}
+                onMouseDown={onSurfaceDown}
+                onMouseUp={onSurfaceUp}
+            >
+                {zones.map(zone => (
+                    <BucketBlock
+                        key={zone.id}
+                        zone={zone}
+                        columnHeight={columnHeight}
+                        onEdit={onZoneClick}
+                        onChange={onZoneChange}
+                    />
+                ))}
+            </Box>
+
+            {/* Task column. */}
             <Box
                 data-testid="day-column-content"
-                ref={contentRef}
-                sx={{ position: 'relative', height: columnHeight, flexGrow: 1, cursor: 'pointer' }}
+                sx={{ position: 'relative', flex: 1, cursor: 'copy' }}
+                onMouseDown={onSurfaceDown}
+                onMouseUp={onSurfaceUp}
                 onDragOver={event => { if (onDropTask) event.preventDefault(); }}
                 onDrop={event => {
                     if (!onDropTask) return;
@@ -78,74 +122,21 @@ export const DayColumn: React.FC<DayColumnProps> = ({ date, tasks, currentTime, 
                     const bounds = event.currentTarget.getBoundingClientRect();
                     onDropTask(taskId, dropTimeFromOffset(date, event.clientY - bounds.top, columnHeight));
                 }}
-                onMouseDown={handleMouseDown}
-                onMouseUp={handleMouseUp}
             >
-                {/* Bucket zones (background, behind tasks) */}
-                {zones.map(zone => (
-                    <Box
-                        key={zone.id}
-                        data-testid="bucket-zone"
-                        onClick={event => {
-                            if (!onZoneClick) return;
-                            event.stopPropagation();
-                            onZoneClick(zone);
-                        }}
-                        sx={{
-                            position: 'absolute',
-                            top: `${(zone.topMinutes / 1440) * columnHeight}px`,
-                            height: `${(zone.heightMinutes / 1440) * columnHeight}px`,
-                            width: '100%',
-                            backgroundColor: `${zone.color}22`,
-                            borderLeft: `3px solid ${zone.color}`,
-                            boxSizing: 'border-box',
-                            zIndex: 0,
-                        }}
-                    >
-                        <Box component="span" sx={{ fontSize: '0.65rem', color: zone.color, pl: 0.5 }}>
-                            {zone.label}
-                        </Box>
-                    </Box>
-                ))}
-
-                {/* Hour Dividers */}
-                {Array.from({ length: 24 }).map((_, i) => (
-                    <Box
-                        key={i}
-                        data-testid="hour-divider"
-                        sx={{
-                            position: 'absolute',
-                            top: `${(i / 24) * 100}%`,
-                            width: '100%',
-                            borderTop: '1px solid rgba(255,255,255,0.05)'
-                        }}
-                    />
-                ))}
-
-                {/* Current Time Line */}
-                {currentTime && (
-                    <Box
-                        data-testid="current-time-line"
-                        sx={{
-                            position: 'absolute',
-                            top: `${(currentTime.getHours() * 60 + currentTime.getMinutes()) / (24 * 60) * columnHeight}px`,
-                            width: '100%',
-                            borderTop: '2px solid white',
-                            zIndex: 10
-                        }}
-                    />
-                )}
-
-                {/* Tasks */}
                 {tasks.map((task, index) => (
                     <Box
-                        key={index}
-                        // Stop propagation for both click and mousedown/up to prevent task creation when interacting with existing task
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onMouseUp={(e) => e.stopPropagation()}
+                        key={task.taskId ?? index}
+                        // Interacting with an existing task must not create a new one.
+                        onMouseDown={event => event.stopPropagation()}
+                        onMouseUp={event => event.stopPropagation()}
                     >
-                        <WeekViewTask task={task} columnHeight={columnHeight} actions={actions} />
+                        <WeekViewTask
+                            task={task}
+                            columnHeight={columnHeight}
+                            actions={actions}
+                            onEdit={onTaskEdit}
+                            onResize={onTaskResize}
+                        />
                     </Box>
                 ))}
             </Box>

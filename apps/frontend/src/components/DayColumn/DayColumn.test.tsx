@@ -2,6 +2,18 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { DayColumn } from './DayColumn.tsx';
 import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
+import type { DayZone } from '../../utils/planToWeek.ts';
+
+const mockRect = (el: HTMLElement, height = 1000) =>
+    vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+        top: 0, left: 0, width: 100, height, bottom: height, right: 100, x: 0, y: 0, toJSON: () => { },
+    } as DOMRect);
+
+const zone: DayZone = {
+    id: 'b1', start: new Date('2024-01-01T09:00:00'), end: new Date('2024-01-01T13:00:00'),
+    color: '#539dad', label: 'Deep Work', persisted: true, typeId: 1,
+    topMinutes: 540, heightMinutes: 240,
+};
 
 // Mock WeekViewTask
 vi.mock('./WeekViewTask', () => ({
@@ -113,6 +125,38 @@ describe('DayColumn', () => {
         // 125/1000 = 1/8. 24h * 1/8 = 3h = 180min. 
         // Logic rounds to nearest 15min.
         expect(duration).toBe(180);
+    });
+
+    it('renders buckets in the bucket column and edits one on click', () => {
+        const onZoneClick = vi.fn();
+        render(<DayColumn {...defaultProps} zones={[zone]} onZoneClick={onZoneClick} />);
+        const block = screen.getByTestId('bucket-zone');
+        expect(screen.getByText('Deep Work')).toBeInTheDocument();
+        fireEvent.mouseDown(block, { clientY: 300, button: 0 });
+        fireEvent.mouseUp(window, { clientY: 300 });
+        expect(onZoneClick).toHaveBeenCalledWith(zone);
+    });
+
+    it('edits a task when its card is clicked', () => {
+        const onTaskEdit = vi.fn();
+        const tasks: ViewTask[] = [{
+            title: 'Design', startTime: '2024-01-01T10:00:00', duration: 60,
+            color: 'blue', manuallySet: false, description: '', tags: [],
+            continues: false, taskId: 't1',
+        }];
+        render(<DayColumn {...defaultProps} tasks={tasks} onTaskEdit={onTaskEdit} />);
+        fireEvent.click(screen.getByTestId('week-view-task'));
+        expect(onTaskEdit).toHaveBeenCalledWith('t1');
+    });
+
+    it('creates a task by dragging in the bucket column', () => {
+        render(<DayColumn {...defaultProps} />);
+        const bucketCol = screen.getByTestId('bucket-column');
+        mockRect(bucketCol);
+        fireEvent.mouseDown(bucketCol, { clientY: 0, button: 0 });
+        fireEvent.mouseUp(bucketCol, { clientY: 125 });
+        expect(mockCreateTask).toHaveBeenCalled();
+        expect(mockCreateTask.mock.lastCall![1]).toBe(180);
     });
 
     it('does not trigger onCreateTask when clicking a child task', () => {

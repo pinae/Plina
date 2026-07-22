@@ -1,5 +1,5 @@
-import { render, screen, cleanup } from '@testing-library/react';
-import { describe, it, expect, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { WeekViewTask, type ViewTask } from './WeekViewTask.tsx';
 
 // Helper function to create a mock task
@@ -80,5 +80,31 @@ describe('WeekViewTask', () => {
             borderBottomStyle: 'double',
             // Skip color/width check to avoid JSDOM quirks for now
         });
+    });
+
+    it('calls onEdit with the task id when the card body is clicked', () => {
+        const onEdit = vi.fn();
+        const task = createMockTask({ taskId: 't1' });
+        render(<WeekViewTask task={task} columnHeight={1440} onEdit={onEdit} />);
+        fireEvent.click(screen.getByTestId('week-view-task'));
+        expect(onEdit).toHaveBeenCalledWith('t1');
+    });
+
+    it('resizes from the bottom handle, keeping the start and growing duration', () => {
+        const onResize = vi.fn();
+        const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={task} columnHeight={1440} onResize={onResize} />);
+
+        // 1440px column: 1px = 1min. Drag the bottom edge down 60px -> +1h.
+        fireEvent.mouseDown(screen.getByTestId('task-resize-bottom'), { clientY: 600, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 660 });
+        fireEvent.mouseUp(window, { clientY: 660 });
+
+        expect(onResize).toHaveBeenCalledTimes(1);
+        const [id, start, duration] = onResize.mock.calls[0];
+        expect(id).toBe('t1');
+        expect((start as Date).getHours()).toBe(9);
+        expect((start as Date).getMinutes()).toBe(0);
+        expect(duration).toBe(120);
     });
 });

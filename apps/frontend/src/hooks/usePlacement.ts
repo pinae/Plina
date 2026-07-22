@@ -9,15 +9,18 @@ import { useCallback, useState } from 'react';
 import type { AxiosError } from 'axios';
 
 import { useUpdateTask } from '../queries';
-import type { TrackingBlockedError } from '../types';
+import type { TaskWrite, TrackingBlockedError } from '../types';
+import { minutesToDurationString } from '../utils/duration';
 
 export function usePlacement() {
     const update = useUpdateTask();
     const [toast, setToast] = useState<string | null>(null);
 
-    const placeTask = useCallback((taskId: string, start: Date) => {
+    const placeTask = useCallback((taskId: string, start: Date, durationMinutes?: number) => {
+        const patch: TaskWrite = { start_date: start.toISOString(), is_fixed: true };
+        if (durationMinutes !== undefined) patch.duration = minutesToDurationString(durationMinutes);
         update.mutate(
-            { taskId, patch: { start_date: start.toISOString(), is_fixed: true } },
+            { taskId, patch },
             {
                 onError: error => {
                     const payload = (error as AxiosError<TrackingBlockedError>)
