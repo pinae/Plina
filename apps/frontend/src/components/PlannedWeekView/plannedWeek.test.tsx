@@ -261,6 +261,41 @@ describe('PlannedWeekView', () => {
     });
 });
 
+describe('moving a bucket (regression: no duplicate)', () => {
+    it('materializes a moved generated occurrence with its origin_date', async () => {
+        const posted: Array<Record<string, unknown>> = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: null, warnings: [], appointments: [],
+                buckets: [{
+                    id: 'gen-1', start_date: '2026-07-08T09:00:00', end_date: '2026-07-08T13:00:00',
+                    type_name: 'Daily', type_id: 1, hex_color: '#539dad', persisted: false, items: [],
+                }],
+            })),
+            http.post(`${API}/timebuckets/`, async ({ request }) => {
+                const body = (await request.json()) as Record<string, unknown>;
+                posted.push(body);
+                return HttpResponse.json({ id: 'gen-1', ...body }, { status: 201 });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const block = await screen.findByTestId('bucket-zone');
+        // Drag the generated bucket down to a new time.
+        fireEvent.mouseDown(block, { clientY: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 200 });
+        fireEvent.mouseUp(window, { clientY: 200 });
+
+        await waitFor(() => expect(posted).toHaveLength(1));
+        // It materializes under the pre-assigned id AND records the original slot
+        // so the recurrence rule won't regenerate a duplicate there.
+        expect(posted[0].id).toBe('gen-1');
+        expect(posted[0].type_id).toBe(1);
+        expect(posted[0].origin_date).toBeTruthy();
+        expect(posted[0].start_date).toBeTruthy();
+    });
+});
+
 import { firstFreeDay } from '../../utils/planToWeek.ts';
 import type { PlannedBucket } from '../../types.ts';
 

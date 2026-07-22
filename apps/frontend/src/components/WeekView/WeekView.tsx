@@ -30,17 +30,16 @@ interface WeekViewProps {
     initialDate?: Date;
     zones?: BucketZone[];
     actions?: TaskActions;
-    onDropTask?: (taskId: string, start: Date) => void;
     onZoneClick?: (zone: DayZone) => void;
     onZoneChange?: (zone: DayZone, startMinutes: number, durationMinutes: number) => void;
     onCreateTask?: (start: Date, duration: number) => void;
     onTaskEdit?: (taskId: string) => void;
-    onTaskResize?: (taskId: string, start: Date, durationMinutes: number) => void;
+    onTaskChange?: (taskId: string, start: Date, durationMinutes: number) => void;
 }
 
 export const WeekView: React.FC<WeekViewProps> = ({
-    tasks, initialDate = new Date(), zones = [], actions, onDropTask,
-    onZoneClick, onZoneChange, onCreateTask, onTaskEdit, onTaskResize,
+    tasks, initialDate = new Date(), zones = [], actions,
+    onZoneClick, onZoneChange, onCreateTask, onTaskEdit, onTaskChange,
 }) => {
     const [currentDate, setCurrentDate] = useState(initialDate);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -157,11 +156,10 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                     columnHeight={columnHeight}
                                     zones={zonesForDay(zones, day)}
                                     actions={actions}
-                                    onDropTask={onDropTask}
                                     onZoneClick={onZoneClick}
                                     onZoneChange={onZoneChange}
                                     onTaskEdit={onTaskEdit}
-                                    onTaskResize={onTaskResize}
+                                    onTaskChange={onTaskChange}
                                 />
                             </Box>
                         );

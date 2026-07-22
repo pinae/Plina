@@ -2,7 +2,7 @@ import React, { useCallback, useRef } from 'react';
 import { Box } from '@mui/material';
 import { WeekViewTask, type ViewTask, type TaskActions } from '../WeekViewTask/WeekViewTask.tsx';
 import { BucketBlock } from '../BucketBlock/BucketBlock.tsx';
-import { dropTimeFromOffset, type DayZone } from '../../utils/planToWeek.ts';
+import type { DayZone } from '../../utils/planToWeek.ts';
 
 interface DayColumnProps {
     date: Date;
@@ -12,11 +12,10 @@ interface DayColumnProps {
     columnHeight: number;
     zones?: DayZone[];
     actions?: TaskActions;
-    onDropTask?: (taskId: string, start: Date) => void;
     onZoneClick?: (zone: DayZone) => void;
     onZoneChange?: (zone: DayZone, startMinutes: number, durationMinutes: number) => void;
     onTaskEdit?: (taskId: string) => void;
-    onTaskResize?: (taskId: string, start: Date, durationMinutes: number) => void;
+    onTaskChange?: (taskId: string, start: Date, durationMinutes: number) => void;
 }
 
 /** Width of the narrow bucket column that keeps buckets reachable even when a
@@ -30,15 +29,17 @@ const BUCKET_COLUMN_WIDTH = 42;
  */
 export const DayColumn: React.FC<DayColumnProps> = ({
     date, tasks, currentTime, onCreateTask, columnHeight, zones = [],
-    actions, onDropTask, onZoneClick, onZoneChange, onTaskEdit, onTaskResize,
+    actions, onZoneClick, onZoneChange, onTaskEdit, onTaskChange,
 }) => {
     const dragStartRef = useRef<number | null>(null);
 
-    // Drag-create: a press-drag-release on an empty area of a column produces a
-    // new task with the dragged start time and duration.  Geometry comes from
-    // the pressed surface (event.currentTarget), so no refs are needed.
+    // Drag-create: a press-drag-release on an *empty* area of a column produces
+    // a new task.  The `target === currentTarget` guard means pressing on a
+    // bucket or task (a descendant) never starts a create — those handle their
+    // own move/resize/click.  Geometry comes from the pressed surface.
     const onSurfaceDown = useCallback((event: React.MouseEvent) => {
         if (event.button !== 0) return;
+        if (event.target !== event.currentTarget) return;
         const rect = event.currentTarget.getBoundingClientRect();
         dragStartRef.current = ((event.clientY - rect.top) / columnHeight) * 1440;
     }, [columnHeight]);
@@ -113,31 +114,16 @@ export const DayColumn: React.FC<DayColumnProps> = ({
                 sx={{ position: 'relative', flex: 1, cursor: 'copy' }}
                 onMouseDown={onSurfaceDown}
                 onMouseUp={onSurfaceUp}
-                onDragOver={event => { if (onDropTask) event.preventDefault(); }}
-                onDrop={event => {
-                    if (!onDropTask) return;
-                    const taskId = event.dataTransfer.getData('text/plina-task');
-                    if (!taskId) return;
-                    event.preventDefault();
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    onDropTask(taskId, dropTimeFromOffset(date, event.clientY - bounds.top, columnHeight));
-                }}
             >
                 {tasks.map((task, index) => (
-                    <Box
+                    <WeekViewTask
                         key={task.taskId ?? index}
-                        // Interacting with an existing task must not create a new one.
-                        onMouseDown={event => event.stopPropagation()}
-                        onMouseUp={event => event.stopPropagation()}
-                    >
-                        <WeekViewTask
-                            task={task}
-                            columnHeight={columnHeight}
-                            actions={actions}
-                            onEdit={onTaskEdit}
-                            onResize={onTaskResize}
-                        />
-                    </Box>
+                        task={task}
+                        columnHeight={columnHeight}
+                        actions={actions}
+                        onEdit={onTaskEdit}
+                        onChange={onTaskChange}
+                    />
                 ))}
             </Box>
         </Box>

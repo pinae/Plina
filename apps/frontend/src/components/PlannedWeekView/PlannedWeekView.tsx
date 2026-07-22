@@ -17,16 +17,20 @@ import { FeasibilityBanner } from '../FeasibilityBanner/FeasibilityBanner.tsx';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-/** Persist a bucket placement (A8: a generated occurrence materializes under
- *  its pre-assigned id; a persisted one is patched in place). */
+/** Persist a bucket placement.  A persisted bucket is patched in place; a
+ *  generated occurrence is materialized (A8) and records the original slot it
+ *  replaces via `origin_date`, so the recurrence rule no longer regenerates a
+ *  duplicate there when it is moved/resized. */
 async function saveBucket(
     client: QueryClient, zone: DayZone, startISO: string, duration: string,
 ) {
-    const payload = { start_date: startISO, duration };
     if (zone.persisted) {
-        await api.patch(`timebuckets/${zone.id}/`, payload);
+        await api.patch(`timebuckets/${zone.id}/`, { start_date: startISO, duration });
     } else {
-        await api.post('timebuckets/', { id: zone.id, type_id: zone.typeId, ...payload });
+        await api.post('timebuckets/', {
+            id: zone.id, type_id: zone.typeId, start_date: startISO, duration,
+            origin_date: zone.start.toISOString(),
+        });
     }
     await client.invalidateQueries({ queryKey: queryKeys.plan });
 }
@@ -177,8 +181,9 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
             .catch(() => setActionToast('Could not move the bucket.'));
     };
 
-    // Resize a task by drag: anchor it (is_fixed) at the new start + duration.
-    const resizeTask = (taskId: string, start: Date, durationMinutes: number) =>
+    // Move or resize a task by drag: anchor it (is_fixed) at the new start +
+    // duration. The server still enforces predecessor ordering.
+    const changeTask = (taskId: string, start: Date, durationMinutes: number) =>
         placement.placeTask(taskId, start, durationMinutes);
 
     return (
@@ -205,11 +210,10 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
                 initialDate={weekAnchor}
                 zones={zones}
                 actions={actions}
-                onDropTask={placement.placeTask}
                 onZoneClick={setEditingZone}
                 onZoneChange={changeZone}
                 onTaskEdit={setEditingTaskId}
-                onTaskResize={resizeTask}
+                onTaskChange={changeTask}
                 onCreateTask={(start, duration) => setNewTaskDraft({ start, durationMinutes: duration })}
             />
             {editingZone && (

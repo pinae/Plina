@@ -47,10 +47,21 @@ def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
         .order_by("start_date")
     )
 
+    # Occurrences that were individually moved/resized: their materialized
+    # bucket records the original generated slot it replaces, so the rule must
+    # not regenerate a duplicate there (even after it no longer overlaps).
+    moved_origins = {
+        (bucket.type_id, bucket.origin_date)
+        for bucket in persisted
+        if bucket.origin_date is not None
+    }
+
     generated: List[TimeBucket] = []
     for bucket_type in TimeBucketType.objects.all():
         for candidate in bucket_type.generate_buckets(generation_range=finish - start, start=start):
             if candidate.start_date >= finish:
+                continue
+            if (bucket_type.id, candidate.start_date) in moved_origins:
                 continue
             if any(_overlaps(candidate, existing) for existing in persisted):
                 continue

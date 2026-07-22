@@ -137,16 +137,41 @@ describe('DayColumn', () => {
         expect(onZoneClick).toHaveBeenCalledWith(zone);
     });
 
-    it('edits a task when its card is clicked', () => {
+    const sampleTask: ViewTask = {
+        title: 'Design', startTime: '2024-01-01T10:00:00', duration: 60,
+        color: 'blue', manuallySet: false, description: '', tags: [],
+        continues: false, taskId: 't1',
+    };
+
+    it('edits a task on a plain click of its card', () => {
         const onTaskEdit = vi.fn();
-        const tasks: ViewTask[] = [{
-            title: 'Design', startTime: '2024-01-01T10:00:00', duration: 60,
-            color: 'blue', manuallySet: false, description: '', tags: [],
-            continues: false, taskId: 't1',
-        }];
-        render(<DayColumn {...defaultProps} tasks={tasks} onTaskEdit={onTaskEdit} />);
-        fireEvent.click(screen.getByTestId('week-view-task'));
+        render(<DayColumn {...defaultProps} tasks={[sampleTask]} onTaskEdit={onTaskEdit} onTaskChange={vi.fn()} />);
+        const card = screen.getByTestId('week-view-task');
+        fireEvent.mouseDown(card, { clientY: 100, button: 0 });
+        fireEvent.mouseUp(window, { clientY: 100 });
         expect(onTaskEdit).toHaveBeenCalledWith('t1');
+    });
+
+    it('moves a task by dragging its body and does not create a task (regression)', () => {
+        const onTaskChange = vi.fn();
+        render(<DayColumn {...defaultProps} tasks={[sampleTask]} onTaskChange={onTaskChange} />);
+        const card = screen.getByTestId('week-view-task');
+        fireEvent.mouseDown(card, { clientY: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 160 });
+        fireEvent.mouseUp(window, { clientY: 160 });
+        expect(onTaskChange).toHaveBeenCalledTimes(1);
+        expect(mockCreateTask).not.toHaveBeenCalled();
+    });
+
+    it('dragging a bucket moves it and does not create a task (regression)', () => {
+        const onZoneChange = vi.fn();
+        render(<DayColumn {...defaultProps} zones={[zone]} onZoneChange={onZoneChange} />);
+        const block = screen.getByTestId('bucket-zone');
+        fireEvent.mouseDown(block, { clientY: 540, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600 });
+        fireEvent.mouseUp(window, { clientY: 600 });
+        expect(onZoneChange).toHaveBeenCalledTimes(1);
+        expect(mockCreateTask).not.toHaveBeenCalled();
     });
 
     it('creates a task by dragging in the bucket column', () => {

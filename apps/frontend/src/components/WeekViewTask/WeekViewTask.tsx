@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Box, IconButton, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
@@ -36,30 +36,33 @@ export interface WeekViewTaskProps {
     actions?: TaskActions;
     /** Open the edit dialog (plain click on the card body). */
     onEdit?: (taskId: string) => void;
-    /** Commit a resize: new start time and duration (minutes). */
-    onResize?: (taskId: string, start: Date, durationMinutes: number) => void;
+    /** Commit a move or resize: new start time and duration (minutes). */
+    onChange?: (taskId: string, start: Date, durationMinutes: number) => void;
 }
 
 const RESIZE_HANDLE_PX = 8;
 
-export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onResize }) => {
-    const [resizing, setResizing] = useState(false);
+export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange }) => {
     const date = new Date(task.startTime);
     const startMinutes = date.getHours() * 60 + date.getMinutes();
+    // A press on the body detects a click (edit) or a move (needs onChange);
+    // the resize handles only appear when the task can actually be changed.
+    const canInteract = Boolean(task.taskId && (onEdit || onChange));
+    const canResize = Boolean(task.taskId && onChange);
 
-    const commitResize = (start: number, duration: number) => {
-        if (!task.taskId || !onResize) return;
+    const commit = (start: number, duration: number) => {
+        if (!task.taskId || !onChange) return;
         const newStart = new Date(date);
         newStart.setHours(0, start, 0, 0);
-        onResize(task.taskId, newStart, duration);
+        onChange(task.taskId, newStart, duration);
     };
 
     const { preview, startDrag } = useVerticalDrag({
         startMinutes,
         durationMinutes: task.duration,
         columnHeight,
-        onCommit: result => commitResize(result.startMinutes, result.durationMinutes),
-        onActiveChange: setResizing,
+        onCommit: result => commit(result.startMinutes, result.durationMinutes),
+        onClick: () => { if (task.taskId && onEdit) onEdit(task.taskId); },
     });
 
     const top = minutesToPixels(preview?.startMinutes ?? startMinutes, columnHeight);
@@ -70,16 +73,10 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
         ? (task.tags.length === 1 ? task.tags[0] : `linear-gradient(to bottom, ${task.tags.join(', ')})`)
         : 'transparent';
 
-    const resizable = Boolean(task.taskId && onResize);
-
     return (
         <Box
             data-testid="week-view-task"
-            draggable={Boolean(task.taskId) && !resizing}
-            onDragStart={event => {
-                if (task.taskId) event.dataTransfer.setData('text/plina-task', task.taskId);
-            }}
-            onClick={() => { if (task.taskId && onEdit) onEdit(task.taskId); }}
+            onMouseDown={canInteract ? startDrag('move') : undefined}
             sx={{
                 position: 'absolute',
                 top: `${top}px`,
@@ -93,11 +90,12 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 overflow: 'hidden',
                 boxSizing: 'border-box',
                 borderRadius: '4px',
-                cursor: task.taskId ? 'grab' : 'default',
+                cursor: canResize ? 'grab' : canInteract ? 'pointer' : 'default',
+                userSelect: 'none',
             }}
         >
             {/* Top resize handle */}
-            {resizable && (
+            {canResize && (
                 <Box
                     data-testid="task-resize-top"
                     onMouseDown={startDrag('resize-top')}
@@ -125,7 +123,11 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                     {task.title}
                 </Typography>
                 {actions && task.taskId && !task.isAppointment && (
-                    <Box sx={{ display: 'flex', gap: 0.25 }} onClick={event => event.stopPropagation()}>
+                    <Box
+                        sx={{ display: 'flex', gap: 0.25 }}
+                        onClick={event => event.stopPropagation()}
+                        onMouseDown={event => event.stopPropagation()}
+                    >
                         {(task.trackingActive ?? actions.trackingActive) ? (
                             <IconButton
                                 size="small" aria-label="stop tracking"
@@ -164,7 +166,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
             </Box>
 
             {/* Bottom resize handle */}
-            {resizable && (
+            {canResize && (
                 <Box
                     data-testid="task-resize-bottom"
                     onMouseDown={startDrag('resize-bottom')}
