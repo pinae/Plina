@@ -1,9 +1,9 @@
 import React from 'react';
-import { AppBar, Toolbar, Typography, Container, Box, CssBaseline } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, CssBaseline } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
 import { appTheme } from '../../theme.ts';
 
-export default function Layout({ children, fullWidth = false }: { children: React.ReactNode; fullWidth?: boolean }) {
+export default function Layout({ children }: { children: React.ReactNode }) {
     return (
         <ThemeProvider theme={appTheme}>
             <CssBaseline />
@@ -15,15 +15,11 @@ export default function Layout({ children, fullWidth = false }: { children: Reac
                         </Typography>
                     </Toolbar>
                 </AppBar>
-                {fullWidth ? (
-                    <Box sx={{ mt: 4, flex: 1, display: 'flex', flexDirection: 'column', width: '100%', px: 0 }}>
-                        {children}
-                    </Box>
-                ) : (
-                    <Container maxWidth="lg" sx={{ mt: 4, flex: 1, display: 'flex', flexDirection: 'column' }}>
-                        {children}
-                    </Container>
-                )}
+                {/* Every pane (calendar, dependency graph, lists) uses the full
+                    screen width — no more middle-column narrowing. */}
+                <Box sx={{ mt: 4, flex: 1, display: 'flex', flexDirection: 'column', width: '100%', px: 0 }}>
+                    {children}
+                </Box>
             </Box>
         </ThemeProvider>
     );

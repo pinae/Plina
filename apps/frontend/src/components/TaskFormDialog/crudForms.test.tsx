@@ -14,6 +14,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 
 import TaskList from '../TaskList/TaskList.tsx';
+import TagList from '../TagList/TagList.tsx';
+import BucketTypeList from '../BucketTypeList/BucketTypeList.tsx';
 import { TaskFormDialog } from './TaskFormDialog.tsx';
 import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 import type { Tag, Task } from '../../types.ts';
@@ -28,6 +30,7 @@ const server = setupServer(
     http.get(`${API}/tasks/`, () => HttpResponse.json([] as Task[])),
     http.get(`${API}/tags/`, () => HttpResponse.json(tags)),
     http.get(`${API}/projects/`, () => HttpResponse.json([])),
+    http.get(`${API}/buckettypes/`, () => HttpResponse.json([])),
     http.post(`${API}/tags/`, async ({ request }) => {
         const body = (await request.json()) as { name: string; hex_color: string };
         const tag = { id: `tag-${tags.length + 1}`, name: body.name, hex_color: body.hex_color };
@@ -88,10 +91,9 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe('CRUD happy path: tag -> task -> bucket type', () => {
-    it('creates all three through the TaskList toolbar', async () => {
-        render(<TaskList />, { wrapper });
-
-        // 1. Tag
+    it('creates all three through their dedicated panes', async () => {
+        // 1. Tag — from the Tags pane
+        const tagPane = render(<TagList />, { wrapper });
         fireEvent.click(await screen.findByRole('button', { name: /add tag/i }));
         const tagDialog = await screen.findByRole('dialog');
         fireEvent.change(within(tagDialog).getByLabelText(/name/i), {
@@ -100,9 +102,11 @@ describe('CRUD happy path: tag -> task -> bucket type', () => {
         fireEvent.click(within(tagDialog).getByRole('button', { name: /create/i }));
         await waitFor(() => expect(created.tags).toHaveLength(1));
         expect(created.tags[0]).toMatchObject({ name: 'deep-work' });
+        tagPane.unmount();
 
-        // 2. Task using the fresh tag
-        fireEvent.click(screen.getByRole('button', { name: /add task/i }));
+        // 2. Task using the fresh tag — from the Tasks pane
+        const taskPane = render(<TaskList />, { wrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /add task/i }));
         const taskDialog = await screen.findByRole('dialog');
         fireEvent.change(within(taskDialog).getByLabelText(/header/i), {
             target: { value: 'Design Schema' },
@@ -115,9 +119,11 @@ describe('CRUD happy path: tag -> task -> bucket type', () => {
         expect(created.tasks[0]).toMatchObject({
             header: 'Design Schema', tag_ids: ['tag-1'],
         });
+        taskPane.unmount();
 
-        // 3. Bucket type with live preview
-        fireEvent.click(screen.getByRole('button', { name: /add bucket type/i }));
+        // 3. Bucket type with live preview — from the Time Buckets pane
+        render(<BucketTypeList />, { wrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /add bucket type/i }));
         const bucketDialog = await screen.findByRole('dialog');
         fireEvent.change(within(bucketDialog).getByLabelText(/name/i), {
             target: { value: 'Morning Focus' },
