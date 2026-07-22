@@ -82,6 +82,18 @@ describe('WeekViewTask', () => {
         });
     });
 
+    it('draws a faint solid border so same-coloured tasks are distinguishable', () => {
+        render(<WeekViewTask task={createMockTask()} columnHeight={1000} />);
+        expect(screen.getByTestId('week-view-task')).toHaveStyle({ borderTopStyle: 'solid' });
+    });
+
+    it('fades an outdated card (soon to be re-planned)', () => {
+        render(<WeekViewTask task={createMockTask({ outdated: true })} columnHeight={1000} />);
+        const box = screen.getByTestId('week-view-task');
+        expect(box).toHaveStyle({ opacity: '0.35' });
+        expect(box).toHaveStyle({ borderTopStyle: 'dashed' });
+    });
+
     it('calls onEdit with the task id on a plain click (press-release, no drag)', () => {
         const onEdit = vi.fn();
         const task = createMockTask({ taskId: 't1' });

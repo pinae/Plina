@@ -261,6 +261,56 @@ describe('PlannedWeekView', () => {
     });
 });
 
+describe('dragging a task (regression: sticky + fades overlaps)', () => {
+    it('keeps the dropped task in place and fades the auto task it now overlaps', async () => {
+        const patched: Array<Record<string, unknown>> = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: 'p1', warnings: [], appointments: [],
+                buckets: [{
+                    id: 'b1', start_date: '2026-07-08T08:00:00', end_date: '2026-07-08T18:00:00',
+                    type_name: 'Work', type_id: 1, hex_color: '#539dad', persisted: true,
+                    items: [
+                        {
+                            task_id: 't-move', header: 'MoveMe', start_time: '2026-07-08T08:00:00',
+                            duration: 3600, warnings: [], is_fixed: false, is_appointment: false, hex_color: '#3357ff',
+                        },
+                        {
+                            task_id: 't-other', header: 'OtherAuto', start_time: '2026-07-08T14:00:00',
+                            duration: 3600, warnings: [], is_fixed: false, is_appointment: false, hex_color: '#3357ff',
+                        },
+                    ],
+                }],
+            })),
+            http.patch(`${API}/tasks/t-move/`, async ({ request }) => {
+                patched.push((await request.json()) as Record<string, unknown>);
+                return HttpResponse.json({ id: 't-move' });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
+        // Column fits 1440min in 600px (offsetHeight mock) -> 1px = 2.4min.
+        // Drag down 150px = 360min: 08:00 -> 14:00, overlapping OtherAuto.
+        fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
+
+        // The placement was sent...
+        await waitFor(() => expect(patched).toHaveLength(1));
+        expect(patched[0]).toMatchObject({ is_fixed: true });
+
+        // ...the dropped task stuck at 14:00 (350px), not snapped back to 08:00...
+        await waitFor(() => {
+            const moved = screen.getByText('MoveMe').closest('[data-testid="week-view-task"]')!;
+            expect(moved).toHaveStyle({ top: '350px' });
+        });
+        // ...and the overlapped auto task is faded (outdated).
+        const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
+        expect(other).toHaveStyle({ opacity: '0.35' });
+    });
+});
+
 describe('moving a bucket (regression: no duplicate)', () => {
     it('materializes a moved generated occurrence with its origin_date', async () => {
         const posted: Array<Record<string, unknown>> = [];

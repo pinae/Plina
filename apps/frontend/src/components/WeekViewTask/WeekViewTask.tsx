@@ -21,6 +21,8 @@ export interface ViewTask {
     isAppointment?: boolean;
     /** Per-task tracking state; falls back to actions.trackingActive. */
     trackingActive?: boolean;
+    /** Auto-planned card made stale by a manual placement — shown faded. */
+    outdated?: boolean;
 }
 
 export interface TaskActions {
@@ -89,7 +91,13 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 backgroundColor: backgroundColor,
                 display: 'flex',
                 fontSize: '0.8rem',
-                borderBottom: task.continues ? '3px double grey' : 'none',
+                // Faint outline so adjacent same-colour tasks are distinguishable;
+                // outdated (soon re-planned) cards fade and use a dashed outline.
+                opacity: task.outdated ? 0.35 : 1,
+                border: task.outdated
+                    ? '1px dashed rgba(255, 255, 255, 0.6)'
+                    : '1px solid rgba(255, 255, 255, 0.4)',
+                borderBottom: task.continues ? '3px double grey' : undefined,
                 overflow: 'hidden',
                 boxSizing: 'border-box',
                 borderRadius: '4px',

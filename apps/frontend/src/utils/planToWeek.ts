@@ -22,6 +22,7 @@ function toViewTask(item: PlanItem): PlacedViewTask {
         description: item.warnings.join(', '),
         tags: [],
         continues: false,
+        outdated: item.outdated ?? false,
     };
 }
 
