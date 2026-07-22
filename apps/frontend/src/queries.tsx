@@ -26,6 +26,7 @@ import {
     createTask,
     deleteDependency,
     deleteTask,
+    fetchBucketTypes,
     fetchDependencies,
     fetchPlan,
     fetchProjects,
@@ -43,6 +44,7 @@ export const queryKeys = {
     dependencies: ['dependencies'] as const,
     tags: ['tags'] as const,
     projects: ['projects'] as const,
+    bucketTypes: ['bucketTypes'] as const,
 };
 
 // ----------------------------------------------------------------- queries
@@ -61,6 +63,9 @@ export const useTags = () =>
 
 export const useProjects = () =>
     useQuery({ queryKey: queryKeys.projects, queryFn: fetchProjects });
+
+export const useBucketTypes = () =>
+    useQuery({ queryKey: queryKeys.bucketTypes, queryFn: fetchBucketTypes });
 
 // --------------------------------------------------------------- mutations
 
@@ -221,7 +226,8 @@ export const useCreateBucketType = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: createBucketType,
-        // A7: new recurring capacity changes what can be planned.
-        onSuccess: () => invalidate(queryKeys.plan),
+        // A7: new recurring capacity changes what can be planned; the list
+        // pane must also show the freshly created type.
+        onSuccess: () => invalidate(queryKeys.plan, queryKeys.bucketTypes),
     });
 };

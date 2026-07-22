@@ -14,6 +14,7 @@ import type {
     Task,
     TaskWrite,
     TimeBucket,
+    TimeBucketType,
     TrackingResponse,
 } from './types';
 
@@ -89,6 +90,9 @@ export const fetchTags = () =>
 
 export const fetchProjects = () =>
     api.get<Project[]>('projects/').then(r => r.data);
+
+export const fetchBucketTypes = () =>
+    api.get<TimeBucketType[]>('buckettypes/').then(r => r.data);
 
 export const fetchTimeBuckets = () =>
     api.get<TimeBucket[]>('timebuckets/').then(r => r.data);

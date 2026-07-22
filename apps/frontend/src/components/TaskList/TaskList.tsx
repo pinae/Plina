@@ -1,39 +1,26 @@
 import { useState } from 'react';
-import { Typography, Paper, List, ListItem, ListItemText, Chip, Box, Button, Stack } from '@mui/material';
+import { Typography, Paper, List, ListItem, ListItemText, Chip, Box, Fab } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import { useTasks } from '../../queries.tsx';
 import type { Task } from '../../types.ts';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
-import { BucketTypeFormDialog, ProjectFormDialog, TagFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 
+/** The "Tasks" pane: the existing tasks plus one floating add button. */
 export default function TaskList() {
     const tasksQuery = useTasks();
     const tasks = tasksQuery.data ?? [];
-    const [dialog, setDialog] = useState<'task' | 'project' | 'tag' | 'bucketType' | null>(null);
+    const [addOpen, setAddOpen] = useState(false);
     const [editTask, setEditTask] = useState<Task | null>(null);
-    const close = () => { setDialog(null); setEditTask(null); };
+    const close = () => { setAddOpen(false); setEditTask(null); };
 
     return (
         <Box>
             <Typography variant="h5" gutterBottom>
-                Task List
+                Tasks
             </Typography>
-            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-                <Button variant="contained" size="small" startIcon={<AddIcon />}
-                    onClick={() => setDialog('task')}>Add task</Button>
-                <Button variant="outlined" size="small" startIcon={<AddIcon />}
-                    onClick={() => setDialog('project')}>Add project</Button>
-                <Button variant="outlined" size="small" startIcon={<AddIcon />}
-                    onClick={() => setDialog('tag')}>Add tag</Button>
-                <Button variant="outlined" size="small" startIcon={<AddIcon />}
-                    onClick={() => setDialog('bucketType')}>Add bucket type</Button>
-            </Stack>
-            {(dialog === 'task' || editTask !== null) && (
+            {(addOpen || editTask !== null) && (
                 <TaskFormDialog open onClose={close} task={editTask ?? undefined} />
             )}
-            {dialog === 'project' && <ProjectFormDialog open onClose={close} />}
-            {dialog === 'tag' && <TagFormDialog open onClose={close} />}
-            {dialog === 'bucketType' && <BucketTypeFormDialog open onClose={close} />}
             <Paper>
                 <List>
                     {tasks.map(task => (
@@ -57,8 +44,22 @@ export default function TaskList() {
                             />
                         </ListItem>
                     ))}
+                    {tasks.length === 0 && (
+                        <ListItem>
+                            <Typography variant="body2" color="text.secondary">
+                                No tasks yet.
+                            </Typography>
+                        </ListItem>
+                    )}
                 </List>
             </Paper>
+            <Fab
+                color="primary" aria-label="Add task"
+                onClick={() => setAddOpen(true)}
+                sx={{ position: 'fixed', bottom: 32, right: 32 }}
+            >
+                <AddIcon />
+            </Fab>
         </Box>
     );
 }
