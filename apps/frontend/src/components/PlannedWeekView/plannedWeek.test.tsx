@@ -273,7 +273,7 @@ describe('dragging a task (regression: sticky + fades overlaps)', () => {
                     items: [
                         {
                             task_id: 't-move', header: 'MoveMe', start_time: '2026-07-08T08:00:00',
-                            duration: 3600, warnings: [], is_fixed: false, is_appointment: false, hex_color: '#3357ff',
+                            duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#3357ff',
                         },
                         {
                             task_id: 't-other', header: 'OtherAuto', start_time: '2026-07-08T14:00:00',
@@ -291,7 +291,7 @@ describe('dragging a task (regression: sticky + fades overlaps)', () => {
 
         const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
         // Column fits 1440min in 600px (offsetHeight mock) -> 1px = 2.4min.
-        // Drag down 150px = 360min: 08:00 -> 14:00, overlapping OtherAuto.
+        // Drag the appointment down 150px = 360min: 08:00 -> 14:00, over OtherAuto.
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
         fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
         fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
@@ -300,19 +300,19 @@ describe('dragging a task (regression: sticky + fades overlaps)', () => {
         await waitFor(() => expect(patched).toHaveLength(1));
         expect(patched[0]).toMatchObject({ is_fixed: true });
 
-        // ...the dropped task stuck at 14:00 (350px), not snapped back to 08:00...
+        // ...the dropped appointment stuck at 14:00 (350px), not snapped back...
         await waitFor(() => {
             const moved = screen.getByText('MoveMe').closest('[data-testid="week-view-task"]')!;
             expect(moved).toHaveStyle({ top: '350px' });
         });
-        // ...and the overlapped auto task is faded (outdated).
+        // ...and the overlapped auto task is invalid (faded to 30%).
         const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
-        expect(other).toHaveStyle({ opacity: '0.35' });
+        expect(other).toHaveStyle({ opacity: '0.3' });
     });
 });
 
 describe('dragging a task (regression: live feedback before release)', () => {
-    it('fades the overlapped auto task and shows a ghost while still dragging', async () => {
+    it('fades the overlapped auto task and shows the drag layer while still dragging', async () => {
         const patched: unknown[] = [];
         server.use(
             http.get(`${API}/plan/`, () => HttpResponse.json({
@@ -344,14 +344,54 @@ describe('dragging a task (regression: live feedback before release)', () => {
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
         fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
 
-        // Live: the overlapped auto task fades and a ghost appears, before release.
+        // Live: the overlapped auto task fades and the drag layer appears, before release.
         await waitFor(() => {
             const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
-            expect(other).toHaveStyle({ opacity: '0.35' });
+            expect(other).toHaveStyle({ opacity: '0.3' });
         });
-        expect(screen.getByTestId('drag-ghost')).toBeInTheDocument();
+        expect(screen.getByTestId('drag-layer')).toBeInTheDocument();
 
         fireEvent.mouseUp(window, { clientY: 350, clientX: 400 }); // release to end the drag
+        await waitFor(() => expect(patched).toHaveLength(1));
+    });
+});
+
+describe('dragging an appointment over another appointment', () => {
+    it('shrinks the overlapped appointment to half instead of invalidating it', async () => {
+        const patched: unknown[] = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: 'p1', warnings: [],
+                appointments: [
+                    {
+                        task_id: 'a-move', header: 'DragAppt', start_time: '2026-07-08T08:00:00',
+                        duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#8833ff',
+                    },
+                    {
+                        task_id: 'a-other', header: 'OtherAppt', start_time: '2026-07-08T14:00:00',
+                        duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#8833ff',
+                    },
+                ],
+                buckets: [],
+            })),
+            http.patch(`${API}/tasks/a-move/`, async ({ request }) => {
+                patched.push(await request.json());
+                return HttpResponse.json({ id: 'a-move' });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const card = (await screen.findByText('DragAppt')).closest('[data-testid="week-view-task"]')!;
+        fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 }); // onto 14:00
+
+        await waitFor(() => {
+            const other = screen.getByText('OtherAppt').closest('[data-testid="week-view-task"]')!;
+            expect(other).toHaveStyle({ width: '50%' });
+            expect(other).toHaveStyle({ opacity: '1' }); // appointments never fade
+        });
+
+        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
         await waitFor(() => expect(patched).toHaveLength(1));
     });
 });

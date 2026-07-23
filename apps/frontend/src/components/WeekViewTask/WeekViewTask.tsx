@@ -7,15 +7,19 @@ import CheckIcon from '@mui/icons-material/Check';
 import { minutesToPixels, type DragMode } from '../../utils/weekDrag.ts';
 import { useVerticalDrag } from '../../hooks/useVerticalDrag.ts';
 
-/** Live preview of an in-progress task drag, shown as a ghost and used to fade
- *  the auto-planned tasks the edit would overlap. */
-export interface DragPreview {
+/** Live state of an in-progress drag, used to move the dragged appointment as a
+ *  floating card and to fade/shrink the tasks the edit would overlap. */
+export interface ActiveDrag {
     taskId: string;
+    mode: DragMode;
     start: Date;
     durationMinutes: number;
     color: string;
     title: string;
-    mode: DragMode;
+    isAppointment: boolean;
+    /** Which half of the column the cursor is in — an overlap shrinks to the
+     *  other half. */
+    cursorHalf: 'left' | 'right';
 }
 
 export interface ViewTask {
@@ -32,8 +36,12 @@ export interface ViewTask {
     isAppointment?: boolean;
     /** Per-task tracking state; falls back to actions.trackingActive. */
     trackingActive?: boolean;
-    /** Auto-planned card made stale by a manual placement — shown faded. */
-    outdated?: boolean;
+    /** False when an auto-planned task can no longer exist as planned (an edit
+     *  overlapped it). Shown at very low opacity until the plan is renewed. */
+    valid?: boolean;
+    /** Transient: an overlapped appointment shrinks to half the column, on this
+     *  side, while an appointment is dragged over it. */
+    shrinkSide?: 'left' | 'right' | null;
 }
 
 export interface TaskActions {
@@ -53,23 +61,27 @@ export interface WeekViewTaskProps {
     onChange?: (taskId: string, start: Date, durationMinutes: number) => void;
     /** Map a pointer clientX to the day it is over (for cross-day moves). */
     resolveDay?: (clientX: number) => Date | null;
-    /** Report the live drag position (null clears it) for the ghost + fading. */
-    onDragPreview?: (preview: DragPreview | null) => void;
+    /** Which half of the day column the pointer x is in. */
+    resolveCursorHalf?: (clientX: number) => 'left' | 'right';
+    /** Report the live drag (null clears it) for the drag layer + fading. */
+    onDragChange?: (drag: ActiveDrag | null) => void;
 }
 
-const RESIZE_HANDLE_PX = 8;
+const RESIZE_HANDLE_PX = 10;
 
-export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay, onDragPreview }) => {
+export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay, resolveCursorHalf, onDragChange }) => {
     const date = new Date(task.startTime);
     const startMinutes = date.getHours() * 60 + date.getMinutes();
     const [dragMode, setDragMode] = useState<DragMode | null>(null);
-    // A press on the body detects a click (edit) or a move (needs onChange);
-    // the resize handles only appear when the task can actually be changed.
-    const canInteract = Boolean(task.taskId && (onEdit || onChange));
-    const canResize = Boolean(task.taskId && onChange);
 
-    // The target day of a drag: the day under the pointer for a move, the
-    // task's own day for a resize.
+    const isAppointment = Boolean(task.isAppointment);
+    const isAuto = !task.manuallySet;
+    // Only appointments move as a whole; every other task can be resized from
+    // the bottom to change its duration. Any task can be clicked to edit.
+    const canMove = Boolean(task.taskId && onChange && isAppointment);
+    const canResize = Boolean(task.taskId && onChange && !isAppointment);
+    const canEdit = Boolean(task.taskId && onEdit);
+
     const dayFor = (ctx: { mode: DragMode; clientX: number }) =>
         (ctx.mode === 'move' && resolveDay?.(ctx.clientX)) || date;
 
@@ -84,69 +96,66 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
             onChange(task.taskId, newStart, result.durationMinutes);
         },
         onPreview: (result, ctx) => {
-            if (!task.taskId || !onDragPreview) return;
+            if (!task.taskId || !onDragChange) return;
             setDragMode(ctx.mode);
             const start = new Date(dayFor(ctx));
             start.setHours(0, result.startMinutes, 0, 0);
-            onDragPreview({
-                taskId: task.taskId, start, durationMinutes: result.durationMinutes,
-                color: task.color, title: task.title, mode: ctx.mode,
+            onDragChange({
+                taskId: task.taskId, mode: ctx.mode, start, durationMinutes: result.durationMinutes,
+                color: task.color, title: task.title, isAppointment,
+                cursorHalf: resolveCursorHalf?.(ctx.clientX) ?? 'left',
             });
         },
         onActiveChange: active => {
-            if (!active) { setDragMode(null); onDragPreview?.(null); }
+            if (!active) { setDragMode(null); onDragChange?.(null); }
         },
         onClick: () => { if (task.taskId && onEdit) onEdit(task.taskId); },
     });
 
-    // While moving, the card stays dimmed at its origin and the ghost shows the
-    // target; while resizing it previews the new extent in place.
     const moving = dragMode === 'move';
-    const top = minutesToPixels(moving ? startMinutes : (preview?.startMinutes ?? startMinutes), columnHeight);
-    const height = minutesToPixels(moving ? task.duration : (preview?.durationMinutes ?? task.duration), columnHeight);
+    const resizing = dragMode === 'resize-bottom';
+    const height = minutesToPixels(resizing ? (preview?.durationMinutes ?? task.duration) : task.duration, columnHeight);
+    const top = minutesToPixels(startMinutes, columnHeight);
 
     const backgroundColor = task.manuallySet ? task.color : `${task.color}80`;
     const borderBackground = task.tags.length > 0
         ? (task.tags.length === 1 ? task.tags[0] : `linear-gradient(to bottom, ${task.tags.join(', ')})`)
         : 'transparent';
 
+    // An overlapped appointment shrinks to half the column, away from the cursor.
+    const shrunk = task.shrinkSide === 'left' || task.shrinkSide === 'right';
+    const width = shrunk ? '50%' : 'calc(100% - 1px)';
+    const left = task.shrinkSide === 'right' ? '50%' : 0;
+
     return (
         <Box
             data-testid="week-view-task"
-            onMouseDown={canInteract ? startDrag('move') : undefined}
+            onMouseDown={canMove ? startDrag('move') : undefined}
+            onClick={!canMove && canEdit ? () => onEdit!(task.taskId!) : undefined}
             sx={{
                 position: 'absolute',
                 top: `${top}px`,
                 height: `${height}px`,
-                width: 'calc(100% - 1px)', // 1px margin to the right
-                left: 0,
+                width,
+                left,
                 backgroundColor: backgroundColor,
                 display: 'flex',
                 fontSize: '0.8rem',
-                // Faint outline so adjacent same-colour tasks are distinguishable;
-                // outdated (soon re-planned) cards fade and use a dashed outline;
-                // a card being moved dims to its origin while the ghost leads.
-                opacity: moving ? 0.4 : task.outdated ? 0.35 : 1,
-                border: task.outdated
-                    ? '1px dashed rgba(255, 255, 255, 0.6)'
-                    : '1px solid rgba(255, 255, 255, 0.4)',
+                // The dragged appointment hides while its floating card leads;
+                // invalid auto tasks fade to 30% until the plan is renewed.
+                visibility: moving ? 'hidden' : 'visible',
+                opacity: isAuto && task.valid === false ? 0.3 : 1,
+                // Faint outline so adjacent same-colour tasks are distinguishable.
+                border: '1px solid rgba(255, 255, 255, 0.4)',
                 borderBottom: task.continues ? '3px double grey' : undefined,
                 overflow: 'hidden',
                 boxSizing: 'border-box',
                 borderRadius: '4px',
-                cursor: canResize ? 'grab' : canInteract ? 'pointer' : 'default',
+                cursor: canMove ? 'grab' : canEdit ? 'pointer' : 'default',
                 userSelect: 'none',
+                transition: 'width 0.15s ease, left 0.15s ease',
             }}
         >
-            {/* Top resize handle */}
-            {canResize && (
-                <Box
-                    data-testid="task-resize-top"
-                    onMouseDown={startDrag('resize-top')}
-                    sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: RESIZE_HANDLE_PX, cursor: 'ns-resize', zIndex: 2 }}
-                />
-            )}
-
             {/* Left Border */}
             <Box sx={{ width: '0.3em', background: borderBackground, flexShrink: 0 }} />
 
@@ -209,7 +218,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 </Typography>
             </Box>
 
-            {/* Bottom resize handle */}
+            {/* Bottom resize handle (duration) — non-appointments only. */}
             {canResize && (
                 <Box
                     data-testid="task-resize-bottom"

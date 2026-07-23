@@ -142,19 +142,20 @@ describe('DayColumn', () => {
         color: 'blue', manuallySet: false, description: '', tags: [],
         continues: false, taskId: 't1',
     };
+    const apptTask: ViewTask = {
+        ...sampleTask, taskId: 'a1', title: 'Meeting', isAppointment: true, manuallySet: true,
+    };
 
     it('edits a task on a plain click of its card', () => {
         const onTaskEdit = vi.fn();
         render(<DayColumn {...defaultProps} tasks={[sampleTask]} onTaskEdit={onTaskEdit} onTaskChange={vi.fn()} />);
-        const card = screen.getByTestId('week-view-task');
-        fireEvent.mouseDown(card, { clientY: 100, button: 0 });
-        fireEvent.mouseUp(window, { clientY: 100 });
+        fireEvent.click(screen.getByTestId('week-view-task'));
         expect(onTaskEdit).toHaveBeenCalledWith('t1');
     });
 
-    it('moves a task by dragging its body and does not create a task (regression)', () => {
+    it('moves an appointment by dragging its body and does not create a task (regression)', () => {
         const onTaskChange = vi.fn();
-        render(<DayColumn {...defaultProps} tasks={[sampleTask]} onTaskChange={onTaskChange} />);
+        render(<DayColumn {...defaultProps} tasks={[apptTask]} onTaskChange={onTaskChange} />);
         const card = screen.getByTestId('week-view-task');
         fireEvent.mouseDown(card, { clientY: 100, button: 0 });
         fireEvent.mouseMove(window, { clientY: 160 });

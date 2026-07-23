@@ -7,10 +7,10 @@ import {
 import api from '../../api.ts';
 import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
 import { usePlacement } from '../../hooks/usePlacement.ts';
-import { bucketsToZones, firstFreeDay, markOverlaps, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
+import { bucketsToZones, firstFreeDay, overlapsAutoTask, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
 import { minutesToDurationString } from '../../utils/duration.ts';
 import type { PlanAlternative } from '../../types.ts';
-import type { DragPreview } from '../WeekViewTask/WeekViewTask.tsx';
+import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { WeekView } from '../WeekView/WeekView.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
@@ -97,7 +97,15 @@ function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => voi
  * message surfaces as a snackbar; ▶/⏹/✓ drive tracking and completion,
  * with the WP-10 chooser opening when completion returns choices.
  */
-export default function PlannedWeekView({ initialDate }: { initialDate?: Date }) {
+interface PlannedWeekViewProps {
+    initialDate?: Date;
+    /** True while a task is being dragged (gates the re-plan countdown). */
+    onDraggingChange?: (dragging: boolean) => void;
+    /** A manual edit invalidated an auto task — the plan is now obsolete. */
+    onPlanDirty?: () => void;
+}
+
+export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanDirty }: PlannedWeekViewProps) {
     const plan = usePlan();
     const tasks = useTasks();
     const placement = usePlacement();
@@ -110,7 +118,7 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
     const [editingZone, setEditingZone] = useState<DayZone | null>(null);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [newTaskDraft, setNewTaskDraft] = useState<{ start: Date; durationMinutes: number } | null>(null);
-    const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
+    const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
     const [actionToast, setActionToast] = useState<string | null>(null);
     const [weekAnchor, setWeekAnchor] = useState<Date | undefined>(initialDate);
 
@@ -186,6 +194,14 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
     const changeTask = (taskId: string, start: Date, durationMinutes: number) =>
         placement.placeTask(taskId, start, durationMinutes);
 
+    // Track the live drag: signal dragging (gates the countdown) and mark the
+    // plan obsolete the moment the drag invalidates an auto-planned task.
+    const handleDragChange = (drag: ActiveDrag | null) => {
+        setActiveDrag(drag);
+        onDraggingChange?.(drag !== null);
+        if (drag && overlapsAutoTask(viewTasks, drag)) onPlanDirty?.();
+    };
+
     return (
         <>
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 1 }}>
@@ -202,7 +218,7 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
             </Box>
             <WeekView
                 key={weekAnchor?.toISOString() ?? 'initial'}
-                tasks={(dragPreview ? markOverlaps(viewTasks, dragPreview) : viewTasks).map(task => ({
+                tasks={viewTasks.map(task => ({
                     ...task,
                     // The card of the actively tracked task offers ⏹.
                     trackingActive: task.taskId === trackedTaskId,
@@ -215,8 +231,8 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
                 onTaskEdit={setEditingTaskId}
                 onTaskChange={changeTask}
                 onCreateTask={(start, duration) => setNewTaskDraft({ start, durationMinutes: duration })}
-                onTaskDragPreview={setDragPreview}
-                dragPreview={dragPreview}
+                onTaskDragChange={handleDragChange}
+                activeDrag={activeDrag}
             />
             {editingZone && (
                 <BucketEditDialog zone={editingZone} onClose={() => setEditingZone(null)} />

@@ -72,26 +72,28 @@ describe('WeekView', () => {
         expect(screen.getByText(/18\.2\./)).toBeInTheDocument();
     });
 
-    it('renders a drag ghost at the target day for a move preview', () => {
+    it('renders a floating drag card at the target day for a move', () => {
         render(<WeekView
             {...defaultProps}
-            dragPreview={{
-                taskId: 't1', start: new Date('2024-02-14T10:00:00'),
-                durationMinutes: 60, color: '#3357ff', title: 'Ghosty', mode: 'move',
+            activeDrag={{
+                taskId: 't1', mode: 'move', start: new Date('2024-02-14T10:00:00'),
+                durationMinutes: 60, color: '#3357ff', title: 'Meeting',
+                isAppointment: true, cursorHalf: 'left',
             }}
         />);
-        expect(screen.getByTestId('drag-ghost')).toHaveTextContent('Ghosty');
+        expect(screen.getByTestId('drag-layer')).toHaveTextContent('Meeting');
     });
 
-    it('shows no ghost for a resize preview', () => {
+    it('shows no floating card for a resize', () => {
         render(<WeekView
             {...defaultProps}
-            dragPreview={{
-                taskId: 't1', start: new Date('2024-02-14T10:00:00'),
-                durationMinutes: 60, color: '#3357ff', title: 'Ghosty', mode: 'resize-bottom',
+            activeDrag={{
+                taskId: 't1', mode: 'resize-bottom', start: new Date('2024-02-14T10:00:00'),
+                durationMinutes: 60, color: '#3357ff', title: 'Task',
+                isAppointment: false, cursorHalf: 'left',
             }}
         />);
-        expect(screen.queryByTestId('drag-ghost')).toBeNull();
+        expect(screen.queryByTestId('drag-layer')).toBeNull();
     });
 
     it('zooms in with the mouse wheel and never shrinks below the fit height', () => {

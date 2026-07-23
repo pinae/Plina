@@ -56,24 +56,24 @@ describe('applyPlacement', () => {
         expect(moved.start_time).toBe('2026-07-08T13:00:00');
         expect(moved.duration).toBe(7200);
         expect(moved.is_fixed).toBe(true);
-        expect(moved.outdated).toBe(false);
+        expect(moved.valid).toBe(true);
     });
 
-    it('fades auto-planned tasks that overlap the new slot', () => {
+    it('invalidates auto-planned tasks that overlap the new slot', () => {
         const next = applyPlacement(plan, 'moved', '2026-07-08T13:00:00', 7200); // 13:00–15:00
-        expect(find(next, 'auto-overlap').outdated).toBe(true);   // 13:00–14:00 overlaps
-        expect(find(next, 'auto-clear').outdated).toBeFalsy();    // 15:00–16:00 does not
+        expect(find(next, 'auto-overlap').valid).toBe(false);   // 13:00–14:00 overlaps
+        expect(find(next, 'auto-clear').valid).toBeUndefined(); // 15:00–16:00 does not
     });
 
-    it('never fades fixed tasks or appointments', () => {
+    it('never invalidates fixed tasks or appointments', () => {
         const next = applyPlacement(plan, 'moved', '2026-07-08T11:00:00', 7200); // 11:00–13:00
-        expect(find(next, 'fixed-overlap').outdated).toBeFalsy();
-        expect(find(next, 'appt').outdated).toBeFalsy();
+        expect(find(next, 'fixed-overlap').valid).toBeUndefined();
+        expect(find(next, 'appt').valid).toBeUndefined();
     });
 
     it('does not mutate the original plan', () => {
         applyPlacement(plan, 'moved', '2026-07-08T13:00:00', 7200);
         expect(find(plan, 'moved').start_time).toBe('2026-07-08T09:00:00');
-        expect(find(plan, 'auto-overlap').outdated).toBeUndefined();
+        expect(find(plan, 'auto-overlap').valid).toBeUndefined();
     });
 });

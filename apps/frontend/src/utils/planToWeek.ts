@@ -22,7 +22,7 @@ function toViewTask(item: PlanItem): PlacedViewTask {
         description: item.warnings.join(', '),
         tags: [],
         continues: false,
-        outdated: item.outdated ?? false,
+        valid: item.valid ?? true,
     };
 }
 
@@ -33,22 +33,19 @@ export function planToViewTasks(plan: PlanResponse): PlacedViewTask[] {
     ];
 }
 
-/**
- * Fade the auto-planned tasks that a live drag would overlap, so the effect of
- * the edit is visible *during* the drag (they will be re-planned).  The dragged
- * task itself, fixed tasks and appointments are left untouched.
- */
-export function markOverlaps(
+/** True when a live drag overlaps at least one auto-planned task — i.e. the
+ *  drag would invalidate it, so the plan becomes obsolete. */
+export function overlapsAutoTask(
     tasks: PlacedViewTask[],
     target: { taskId: string; start: Date; durationMinutes: number },
-): PlacedViewTask[] {
+): boolean {
     const start = target.start.getTime();
     const end = start + target.durationMinutes * 60000;
-    return tasks.map(task => {
-        if (task.taskId === target.taskId || task.manuallySet) return task;
+    return tasks.some(task => {
+        if (task.taskId === target.taskId || task.manuallySet) return false;
         const taskStart = new Date(task.startTime).getTime();
         const taskEnd = taskStart + task.duration * 60000;
-        return taskStart < end && start < taskEnd ? { ...task, outdated: true } : task;
+        return taskStart < end && start < taskEnd;
     });
 }
 

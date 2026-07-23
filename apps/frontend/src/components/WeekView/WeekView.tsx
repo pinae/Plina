@@ -1,11 +1,34 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { DayColumn } from '../DayColumn/DayColumn.tsx';
-import type { ViewTask, TaskActions, DragPreview } from '../WeekViewTask/WeekViewTask.tsx';
+import type { ViewTask, TaskActions, ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { splitTaskAcrossDays } from '../../utils/taskSplitter.ts';
 import type { BucketZone, DayZone } from '../../utils/planToWeek.ts';
 import { zonesForDay } from '../../utils/planToWeek.ts';
 import { minutesToPixels } from '../../utils/weekDrag.ts';
+
+/** Apply the live drag to the other tasks: overlapped auto tasks become
+ *  invalid (fade), overlapped appointments shrink to the far half when an
+ *  appointment is being moved over them. */
+function applyDragOverlay(tasks: ViewTask[], drag: ActiveDrag | null): ViewTask[] {
+    if (!drag) return tasks;
+    const start = drag.start.getTime();
+    const end = start + drag.durationMinutes * 60000;
+    const shrinkSide = drag.cursorHalf === 'left' ? 'right' : 'left';
+    return tasks.map(task => {
+        if (task.taskId === drag.taskId) return task;
+        const taskStart = new Date(task.startTime).getTime();
+        const taskEnd = taskStart + task.duration * 60000;
+        if (!(taskStart < end && start < taskEnd)) return task;
+        if (task.isAppointment) {
+            return drag.isAppointment && drag.mode === 'move'
+                ? { ...task, shrinkSide }
+                : task;
+        }
+        if (!task.manuallySet) return { ...task, valid: false };
+        return task;
+    });
+}
 
 const sameDay = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -38,15 +61,15 @@ interface WeekViewProps {
     onCreateTask?: (start: Date, duration: number) => void;
     onTaskEdit?: (taskId: string) => void;
     onTaskChange?: (taskId: string, start: Date, durationMinutes: number) => void;
-    onTaskDragPreview?: (preview: DragPreview | null) => void;
-    /** Live drag preview to render as a ghost following the pointer. */
-    dragPreview?: DragPreview | null;
+    onTaskDragChange?: (drag: ActiveDrag | null) => void;
+    /** Live drag state; the moved appointment is rendered as a floating card. */
+    activeDrag?: ActiveDrag | null;
 }
 
 export const WeekView: React.FC<WeekViewProps> = ({
     tasks, initialDate = new Date(), zones = [], actions,
     onZoneClick, onZoneChange, onCreateTask, onTaskEdit, onTaskChange,
-    onTaskDragPreview, dragPreview,
+    onTaskDragChange, activeDrag,
 }) => {
     const [currentDate, setCurrentDate] = useState(initialDate);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -123,13 +146,24 @@ export const WeekView: React.FC<WeekViewProps> = ({
         return day;
     };
 
+    // Which half of its day column the pointer is in (for overlap shrinking).
+    const resolveCursorHalf = (clientX: number): 'left' | 'right' => {
+        const el = gridRef.current;
+        if (!el) return 'left';
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0) return 'left';
+        const columnWidth = rect.width / 7;
+        const offsetInColumn = (clientX - rect.left) % columnWidth;
+        return offsetInColumn < columnWidth / 2 ? 'left' : 'right';
+    };
+
     const formatRange = (start: Date, end: Date) => {
         const formatDateSimple = (d: Date) => `${d.getDate()}.${d.getMonth() + 1}.`;
         const formatDateFull = (d: Date) => `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
         return `${formatDateSimple(start)} - ${formatDateFull(end)}`;
     };
 
-    const allSegments = tasks.flatMap(splitTaskAcrossDays);
+    const allSegments = applyDragOverlay(tasks, activeDrag ?? null).flatMap(splitTaskAcrossDays);
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, width: '100%', overflow: 'hidden' }}>
@@ -162,32 +196,34 @@ export const WeekView: React.FC<WeekViewProps> = ({
             {/* Week Grid (scrollable; wheel zooms) */}
             <Box ref={scrollRef} data-testid="week-scroll" sx={{ display: 'flex', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'auto' }}>
                 <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight} sx={{ position: 'relative', display: 'flex', width: '100%', height: columnHeight, flexShrink: 0 }}>
-                    {/* Live drag ghost: a moving task follows the pointer to the
-                        target day + time so it can be placed precisely. */}
-                    {dragPreview && dragPreview.mode === 'move' && (() => {
-                        const index = days.findIndex(day => sameDay(day, dragPreview.start));
+                    {/* A moved appointment is rendered as a floating card (same
+                        colour + size, not a ghost) that follows the pointer to
+                        the target day + time so it can be placed precisely. */}
+                    {activeDrag && activeDrag.mode === 'move' && (() => {
+                        const index = days.findIndex(day => sameDay(day, activeDrag.start));
                         if (index < 0) return null;
-                        const startMin = dragPreview.start.getHours() * 60 + dragPreview.start.getMinutes();
+                        const startMin = activeDrag.start.getHours() * 60 + activeDrag.start.getMinutes();
                         return (
                             <Box
-                                data-testid="drag-ghost"
+                                data-testid="drag-layer"
                                 sx={{
                                     position: 'absolute',
                                     left: `${(index * 100) / 7}%`,
                                     width: `${100 / 7}%`,
                                     top: `${minutesToPixels(startMin, columnHeight)}px`,
-                                    height: `${minutesToPixels(dragPreview.durationMinutes, columnHeight)}px`,
-                                    backgroundColor: `${dragPreview.color}66`,
-                                    border: '2px dashed #fff',
+                                    height: `${minutesToPixels(activeDrag.durationMinutes, columnHeight)}px`,
+                                    backgroundColor: activeDrag.color,
+                                    border: '1px solid rgba(255, 255, 255, 0.6)',
                                     borderRadius: '4px',
                                     boxSizing: 'border-box',
                                     pointerEvents: 'none',
                                     zIndex: 40,
                                     overflow: 'hidden',
+                                    boxShadow: 3,
                                 }}
                             >
                                 <Typography variant="caption" sx={{ px: 0.5, fontWeight: 'bold' }}>
-                                    {dragPreview.title}
+                                    {activeDrag.title}
                                 </Typography>
                             </Box>
                         );
@@ -215,7 +251,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                     onTaskEdit={onTaskEdit}
                                     onTaskChange={onTaskChange}
                                     resolveDay={resolveDay}
-                                    onTaskDragPreview={onTaskDragPreview}
+                                    resolveCursorHalf={resolveCursorHalf}
+                                    onTaskDragChange={onTaskDragChange}
                                 />
                             </Box>
                         );

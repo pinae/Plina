@@ -5,8 +5,8 @@
  * Placing a task pins it (is_fixed) at the new slot immediately so it never
  * snaps back to its old position while the server round-trip completes. Any
  * *automatically* planned task that now overlaps the moved task is marked
- * `outdated` — it will be re-planned, so the UI fades it at once instead of
- * leaving a stale card sitting under the new one.
+ * `valid: false` — it can no longer exist as planned, so the UI fades it at
+ * once instead of leaving a stale card sitting under the new one.
  */
 import type { PlanItem, PlanResponse } from '../types';
 
@@ -30,22 +30,22 @@ export function applyPlacement(
 
     const updateItem = (item: PlanItem): PlanItem => {
         if (item.task_id === taskId) {
-            // The moved task: anchored at its new slot, never outdated.
+            // The moved task: anchored at its new slot, always valid.
             return {
                 ...item,
                 start_time: startISO,
                 duration: durationSeconds,
                 is_fixed: true,
-                outdated: false,
+                valid: true,
             };
         }
-        // Fade auto-planned tasks (not fixed, not appointments) that the move
-        // now overlaps — they are about to be re-planned.
+        // Invalidate auto-planned tasks (not fixed, not appointments) that the
+        // move now overlaps — they are about to be re-planned.
         if (!item.is_fixed && !item.is_appointment) {
             const start = new Date(item.start_time).getTime();
             const end = start + item.duration * 1000;
             if (rangesOverlap(newStart, newEnd, start, end)) {
-                return { ...item, outdated: true };
+                return { ...item, valid: false };
             }
         }
         return item;

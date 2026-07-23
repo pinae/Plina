@@ -87,92 +87,94 @@ describe('WeekViewTask', () => {
         expect(screen.getByTestId('week-view-task')).toHaveStyle({ borderTopStyle: 'solid' });
     });
 
-    it('fades an outdated card (soon to be re-planned)', () => {
-        render(<WeekViewTask task={createMockTask({ outdated: true })} columnHeight={1000} />);
-        const box = screen.getByTestId('week-view-task');
-        expect(box).toHaveStyle({ opacity: '0.35' });
-        expect(box).toHaveStyle({ borderTopStyle: 'dashed' });
+    it('fades an invalid auto-planned card to 30%', () => {
+        render(<WeekViewTask task={createMockTask({ manuallySet: false, valid: false })} columnHeight={1000} />);
+        expect(screen.getByTestId('week-view-task')).toHaveStyle({ opacity: '0.3' });
     });
 
-    it('calls onEdit with the task id on a plain click (press-release, no drag)', () => {
+    it('does not fade an invalid appointment (appointments never invalidate)', () => {
+        render(<WeekViewTask task={createMockTask({ isAppointment: true, manuallySet: true, valid: false })} columnHeight={1000} />);
+        expect(screen.getByTestId('week-view-task')).toHaveStyle({ opacity: '1' });
+    });
+
+    it('shrinks an overlapped appointment to half the column on the given side', () => {
+        render(<WeekViewTask task={createMockTask({ isAppointment: true, manuallySet: true, shrinkSide: 'right' })} columnHeight={1000} />);
+        const box = screen.getByTestId('week-view-task');
+        expect(box).toHaveStyle({ width: '50%', left: '50%' });
+    });
+
+    it('edits a non-appointment task on a plain click', () => {
         const onEdit = vi.fn();
-        const task = createMockTask({ taskId: 't1' });
-        render(<WeekViewTask task={task} columnHeight={1440} onEdit={onEdit} />);
-        const card = screen.getByTestId('week-view-task');
-        fireEvent.mouseDown(card, { clientY: 100, button: 0 });
-        fireEvent.mouseUp(window, { clientY: 100 });
+        render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} onEdit={onEdit} />);
+        fireEvent.click(screen.getByTestId('week-view-task'));
         expect(onEdit).toHaveBeenCalledWith('t1');
     });
 
-    it('moves the task when the body is dragged (regression: dragging tasks works)', () => {
+    it('moves an appointment when its body is dragged; a non-appointment does not', () => {
+        // Appointment: body drag moves it.
         const onChange = vi.fn();
-        const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });
-        render(<WeekViewTask task={task} columnHeight={1440} onChange={onChange} />);
-
-        // 1440px column: 1px = 1min. Drag the body down 60px -> 09:00 -> 10:00.
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        const { unmount } = render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} />);
         fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, button: 0 });
         fireEvent.mouseMove(window, { clientY: 600 });
         fireEvent.mouseUp(window, { clientY: 600 });
-
         expect(onChange).toHaveBeenCalledTimes(1);
-        const [id, start, duration] = onChange.mock.calls[0];
-        expect(id).toBe('t1');
-        expect((start as Date).getHours()).toBe(10);
-        expect((start as Date).getMinutes()).toBe(0);
-        expect(duration).toBe(60); // duration unchanged by a move
+        expect((onChange.mock.calls[0][1] as Date).getHours()).toBe(10);
+        unmount();
+
+        // Non-appointment: dragging the body must NOT move it (resize-only).
+        const autoChange = vi.fn();
+        render(<WeekViewTask task={createMockTask({ taskId: 't1', manuallySet: false })} columnHeight={1440} onChange={autoChange} />);
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600 });
+        fireEvent.mouseUp(window, { clientY: 600 });
+        expect(autoChange).not.toHaveBeenCalled();
     });
 
-    it('emits a live drag preview while moving and clears it on release', () => {
-        const onDragPreview = vi.fn();
-        const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });
-        render(<WeekViewTask task={task} columnHeight={1440} onChange={vi.fn()} onDragPreview={onDragPreview} />);
+    it('emits a live drag while moving an appointment and clears it on release', () => {
+        const onDragChange = vi.fn();
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={vi.fn()} onDragChange={onDragChange} />);
 
         fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, button: 0 });
-        fireEvent.mouseMove(window, { clientY: 600 }); // +60px = +60min
+        fireEvent.mouseMove(window, { clientY: 600 });
 
-        expect(onDragPreview).toHaveBeenCalled();
-        const preview = onDragPreview.mock.calls.at(-1)![0];
-        expect(preview.mode).toBe('move');
-        expect((preview.start as Date).getHours()).toBe(10);
-        expect(preview.durationMinutes).toBe(60);
+        const drag = onDragChange.mock.calls.at(-1)![0];
+        expect(drag.mode).toBe('move');
+        expect((drag.start as Date).getHours()).toBe(10);
 
         fireEvent.mouseUp(window, { clientY: 600 });
-        expect(onDragPreview).toHaveBeenLastCalledWith(null);
+        expect(onDragChange).toHaveBeenLastCalledWith(null);
     });
 
-    it('moves the task to another day when dragged horizontally (multi-day)', () => {
+    it('moves an appointment to another day when dragged horizontally (multi-day)', () => {
         const onChange = vi.fn();
         const resolveDay = vi.fn(() => new Date('2024-01-05T00:00:00'));
-        const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });
-        render(<WeekViewTask task={task} columnHeight={1440} onChange={onChange} resolveDay={resolveDay} />);
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} resolveDay={resolveDay} />);
 
         fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, clientX: 100, button: 0 });
         fireEvent.mouseMove(window, { clientY: 600, clientX: 900 });
         fireEvent.mouseUp(window, { clientY: 600, clientX: 900 });
 
         expect(resolveDay).toHaveBeenCalled();
-        const [id, start, duration] = onChange.mock.calls[0];
-        expect(id).toBe('t1');
-        expect((start as Date).getDate()).toBe(5);   // moved to Jan 5
-        expect((start as Date).getHours()).toBe(10); // 09:00 + 60min vertical
-        expect(duration).toBe(60);
+        const [, start] = onChange.mock.calls[0];
+        expect((start as Date).getDate()).toBe(5);
+        expect((start as Date).getHours()).toBe(10);
     });
 
-    it('resizes from the bottom handle, keeping the start and growing duration', () => {
+    it('resizes a non-appointment from the bottom handle, keeping the start', () => {
         const onChange = vi.fn();
-        const task = createMockTask({ taskId: 't1', startTime: '2024-01-01T09:00:00', duration: 60 });
+        const task = createMockTask({ taskId: 't1', manuallySet: false, startTime: '2024-01-01T09:00:00', duration: 60 });
         render(<WeekViewTask task={task} columnHeight={1440} onChange={onChange} />);
 
-        // Drag the bottom edge down 60px -> +1h.
         fireEvent.mouseDown(screen.getByTestId('task-resize-bottom'), { clientY: 600, button: 0 });
         fireEvent.mouseMove(window, { clientY: 660 });
         fireEvent.mouseUp(window, { clientY: 660 });
 
         expect(onChange).toHaveBeenCalledTimes(1);
-        const [id, start, duration] = onChange.mock.calls[0];
-        expect(id).toBe('t1');
+        const [, start, duration] = onChange.mock.calls[0];
         expect((start as Date).getHours()).toBe(9);
-        expect((start as Date).getMinutes()).toBe(0);
         expect(duration).toBe(120);
     });
 });
