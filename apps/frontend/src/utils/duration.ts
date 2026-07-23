@@ -7,6 +7,14 @@ export function parseDurationMinutes(value: string | null): number | null {
     return (days ? +days * 24 * 60 : 0) + +hours * 60 + +minutes;
 }
 
+/** Minutes -> DRF DurationField string "HH:MM:00" (hours may exceed 24). */
+export function minutesToDurationString(totalMinutes: number): string {
+    const safe = Math.max(0, Math.round(totalMinutes));
+    const hours = Math.floor(safe / 60);
+    const minutes = safe % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
 /** "02:00:00" -> "2h", "1 02:00:00" -> "1d 2h", "01:30:00" -> "1h 30m". */
 export function formatDuration(value: string | null): string {
     const total = parseDurationMinutes(value);

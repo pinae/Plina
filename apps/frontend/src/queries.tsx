@@ -34,9 +34,15 @@ import {
     fetchTasks,
     startTracking,
     stopTracking,
+    updateBucketType,
+    updateProject,
+    updateTag,
     updateTask,
 } from './api';
-import type { Dependency, DependencyCycleError, TaskWrite, TrackingBlockedError } from './types';
+import type {
+    BucketTypeWrite, Dependency, DependencyCycleError, ProjectWrite,
+    TagWrite, TaskWrite, TrackingBlockedError,
+} from './types';
 
 export const queryKeys = {
     plan: ['plan'] as const,
@@ -214,11 +220,31 @@ export const useCreateTag = () => {
     });
 };
 
+export const useUpdateTag = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: Partial<TagWrite> }) =>
+            updateTag(id, patch),
+        // Tag colour/affinity can influence planning, so refresh the plan too.
+        onSuccess: () => invalidate(queryKeys.tags, queryKeys.plan),
+    });
+};
+
 export const useCreateProject = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: createProject,
         onSuccess: () => invalidate(queryKeys.projects),
+    });
+};
+
+export const useUpdateProject = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: Partial<ProjectWrite> }) =>
+            updateProject(id, patch),
+        // Priority/tags feed the scheduler, so the plan may change.
+        onSuccess: () => invalidate(queryKeys.projects, queryKeys.plan),
     });
 };
 
@@ -228,6 +254,16 @@ export const useCreateBucketType = () => {
         mutationFn: createBucketType,
         // A7: new recurring capacity changes what can be planned; the list
         // pane must also show the freshly created type.
+        onSuccess: () => invalidate(queryKeys.plan, queryKeys.bucketTypes),
+    });
+};
+
+export const useUpdateBucketType = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: number; patch: Partial<BucketTypeWrite> }) =>
+            updateBucketType(id, patch),
+        // A7: changed recurring capacity changes what can be planned.
         onSuccess: () => invalidate(queryKeys.plan, queryKeys.bucketTypes),
     });
 };

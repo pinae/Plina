@@ -14,6 +14,10 @@ interface TaskFormDialogProps {
     onClose: () => void;
     /** When set, the dialog edits this task instead of creating one. */
     task?: Task;
+    /** Prefill for drag-created tasks (create mode only). */
+    initialStart?: Date;
+    initialDurationMinutes?: number;
+    defaultAppointment?: boolean;
 }
 
 const toLocalInput = (iso: string | null): string => {
@@ -31,7 +35,9 @@ const hoursToDuration = (hours: number): string => {
 };
 
 /** WP-12: the full task form, replacing the minimal WP-9 dialog. */
-export function TaskFormDialog({ open, onClose, task }: TaskFormDialogProps) {
+export function TaskFormDialog({
+    open, onClose, task, initialStart, initialDurationMinutes, defaultAppointment,
+}: TaskFormDialogProps) {
     const editing = task !== undefined;
     const tags = useTags();
     const projects = useProjects();
@@ -41,14 +47,17 @@ export function TaskFormDialog({ open, onClose, task }: TaskFormDialogProps) {
     const [header, setHeader] = useState(task?.header ?? '');
     const [description, setDescription] = useState(task?.description ?? '');
     const [hours, setHours] = useState(
-        task ? String((parseDurationMinutes(task.duration) ?? 60) / 60) : '1',
+        task ? String((parseDurationMinutes(task.duration) ?? 60) / 60)
+            : initialDurationMinutes ? String(initialDurationMinutes / 60) : '1',
     );
     const [deadline, setDeadline] = useState(toLocalInput(task?.latest_finish_date ?? null));
     const [priority, setPriority] = useState(task?.priority ?? 5);
     const [tagIds, setTagIds] = useState<string[]>(task?.tags.map(t => t.id) ?? []);
     const [projectId, setProjectId] = useState<string>(task?.project_id ?? '');
-    const [isAppointment, setIsAppointment] = useState(task?.is_appointment ?? false);
-    const [start, setStart] = useState(toLocalInput(task?.start_date ?? null));
+    const [isAppointment, setIsAppointment] = useState(task?.is_appointment ?? defaultAppointment ?? false);
+    const [start, setStart] = useState(
+        toLocalInput(task?.start_date ?? (initialStart ? initialStart.toISOString() : null)),
+    );
 
     const pending = create.isPending || update.isPending;
 

@@ -5,13 +5,16 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 
 import { useProjects } from '../../queries.tsx';
+import type { Project } from '../../types.ts';
 import { ProjectFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 
 /** The "Projects" pane: the existing projects plus one floating add button. */
 export default function ProjectList() {
     const projectsQuery = useProjects();
     const projects = projectsQuery.data ?? [];
-    const [open, setOpen] = useState(false);
+    const [adding, setAdding] = useState(false);
+    const [editProject, setEditProject] = useState<Project | null>(null);
+    const close = () => { setAdding(false); setEditProject(null); };
 
     return (
         <Box>
@@ -21,7 +24,10 @@ export default function ProjectList() {
             <Paper>
                 <List>
                     {projects.map(project => (
-                        <ListItem key={project.id} divider>
+                        <ListItem
+                            key={project.id} divider onClick={() => setEditProject(project)}
+                            sx={{ cursor: 'pointer' }}
+                        >
                             <ListItemText
                                 primary={
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -56,12 +62,14 @@ export default function ProjectList() {
             </Paper>
             <Fab
                 color="primary" aria-label="Add project"
-                onClick={() => setOpen(true)}
+                onClick={() => setAdding(true)}
                 sx={{ position: 'fixed', bottom: 32, right: 32 }}
             >
                 <AddIcon />
             </Fab>
-            {open && <ProjectFormDialog open onClose={() => setOpen(false)} />}
+            {(adding || editProject) && (
+                <ProjectFormDialog open onClose={close} project={editProject ?? undefined} />
+            )}
         </Box>
     );
 }

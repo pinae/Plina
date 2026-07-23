@@ -3,13 +3,16 @@ import { Box, Chip, Fab, List, ListItem, Paper, Typography } from '@mui/material
 import AddIcon from '@mui/icons-material/Add';
 
 import { useTags } from '../../queries.tsx';
+import type { Tag } from '../../types.ts';
 import { TagFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 
 /** The "Tags" pane: the existing tags plus one floating add button. */
 export default function TagList() {
     const tagsQuery = useTags();
     const tags = tagsQuery.data ?? [];
-    const [open, setOpen] = useState(false);
+    const [adding, setAdding] = useState(false);
+    const [editTag, setEditTag] = useState<Tag | null>(null);
+    const close = () => { setAdding(false); setEditTag(null); };
 
     return (
         <Box>
@@ -19,7 +22,10 @@ export default function TagList() {
             <Paper>
                 <List>
                     {tags.map(tag => (
-                        <ListItem key={tag.id} divider>
+                        <ListItem
+                            key={tag.id} divider onClick={() => setEditTag(tag)}
+                            sx={{ cursor: 'pointer' }}
+                        >
                             <Chip
                                 label={`#${tag.name}`} size="small"
                                 sx={{ bgcolor: tag.hex_color, color: '#fff' }}
@@ -37,12 +43,14 @@ export default function TagList() {
             </Paper>
             <Fab
                 color="primary" aria-label="Add tag"
-                onClick={() => setOpen(true)}
+                onClick={() => setAdding(true)}
                 sx={{ position: 'fixed', bottom: 32, right: 32 }}
             >
                 <AddIcon />
             </Fab>
-            {open && <TagFormDialog open onClose={() => setOpen(false)} />}
+            {(adding || editTag) && (
+                <TagFormDialog open onClose={close} tag={editTag ?? undefined} />
+            )}
         </Box>
     );
 }

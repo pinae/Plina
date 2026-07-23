@@ -233,12 +233,19 @@ def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
     for snapshot in sorted(anchored, key=lambda s: s.start_date):
         cursor = snapshot.start_date
         while run.remaining[snapshot.id] > timedelta(0):
+            # Only spill into buckets whose affinity accepts the task — a split
+            # task must not fill unsuitable time buckets just because they are
+            # chronologically next.
             index = next(
-                (i for i, segment in enumerate(segments) if segment.end > cursor),
+                (
+                    i for i, segment in enumerate(segments)
+                    if segment.end > cursor
+                    and _matches_affinity(snapshot, segment.tag_ids)
+                ),
                 None,
             )
             if index is None:
-                break  # no capacity left in the horizon; leftover stays unplanned
+                break  # no suitable capacity left in the horizon; leftover unplanned
             segment = segments[index]
             begin = max(segment.start, cursor)
             slice_duration = min(run.remaining[snapshot.id], segment.end - begin)

@@ -5,6 +5,7 @@ import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
 
 // Mock DayColumn to simplify WeekView tests and avoid deep rendering issues
 vi.mock('../DayColumn/DayColumn', () => ({
+    BUCKET_COLUMN_WIDTH: 42,
     DayColumn: () => (
         <div data-testid="day-column">
             DayColumn
@@ -70,5 +71,43 @@ describe('WeekView', () => {
         render(<WeekView {...defaultProps} initialDate={new Date('2024-02-18T12:00:00')} />);
         expect(screen.getByText(/12\.2\./)).toBeInTheDocument();
         expect(screen.getByText(/18\.2\./)).toBeInTheDocument();
+    });
+
+    it('renders a floating drag card at the target day for a move', () => {
+        render(<WeekView
+            {...defaultProps}
+            activeDrag={{
+                taskId: 't1', mode: 'move', start: new Date('2024-02-14T10:00:00'),
+                durationMinutes: 60, color: '#3357ff', title: 'Meeting',
+                isAppointment: true, cursorHalf: 'left',
+            }}
+        />);
+        expect(screen.getByTestId('drag-layer')).toHaveTextContent('Meeting');
+    });
+
+    it('shows no floating card for a resize', () => {
+        render(<WeekView
+            {...defaultProps}
+            activeDrag={{
+                taskId: 't1', mode: 'resize-bottom', start: new Date('2024-02-14T10:00:00'),
+                durationMinutes: 60, color: '#3357ff', title: 'Task',
+                isAppointment: false, cursorHalf: 'left',
+            }}
+        />);
+        expect(screen.queryByTestId('drag-layer')).toBeNull();
+    });
+
+    it('zooms in with the mouse wheel and never shrinks below the fit height', () => {
+        render(<WeekView {...defaultProps} />);
+        const height = () => Number(screen.getByTestId('week-grid').getAttribute('data-column-height'));
+        const fit = height();
+
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100 });
+        expect(height()).toBeGreaterThan(fit);
+
+        // Zooming back out is clamped at the fit height (zoom >= 1).
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
+        expect(height()).toBe(fit);
     });
 });

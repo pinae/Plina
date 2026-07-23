@@ -1,5 +1,5 @@
-import { render, screen, cleanup } from '@testing-library/react';
-import { describe, it, expect, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { WeekViewTask, type ViewTask } from './WeekViewTask.tsx';
 
 // Helper function to create a mock task
@@ -80,5 +80,115 @@ describe('WeekViewTask', () => {
             borderBottomStyle: 'double',
             // Skip color/width check to avoid JSDOM quirks for now
         });
+    });
+
+    it('draws a faint solid border so same-coloured tasks are distinguishable', () => {
+        render(<WeekViewTask task={createMockTask()} columnHeight={1000} />);
+        expect(screen.getByTestId('week-view-task')).toHaveStyle({ borderTopStyle: 'solid' });
+    });
+
+    it('renders auto-planned tasks tentative: 80% opacity + dashed outline', () => {
+        render(<WeekViewTask task={createMockTask({ manuallySet: false })} columnHeight={1000} />);
+        const box = screen.getByTestId('week-view-task');
+        expect(box).toHaveStyle({ opacity: '0.8' });
+        expect(box).toHaveStyle({ borderTopStyle: 'dashed' });
+    });
+
+    it('renders appointments solid at full opacity', () => {
+        render(<WeekViewTask task={createMockTask({ isAppointment: true, manuallySet: true })} columnHeight={1000} />);
+        const box = screen.getByTestId('week-view-task');
+        expect(box).toHaveStyle({ opacity: '1' });
+        expect(box).toHaveStyle({ borderTopStyle: 'solid' });
+    });
+
+    it('fades an invalid auto-planned card to 30%', () => {
+        render(<WeekViewTask task={createMockTask({ manuallySet: false, valid: false })} columnHeight={1000} />);
+        expect(screen.getByTestId('week-view-task')).toHaveStyle({ opacity: '0.3' });
+    });
+
+    it('does not fade an invalid appointment (appointments never invalidate)', () => {
+        render(<WeekViewTask task={createMockTask({ isAppointment: true, manuallySet: true, valid: false })} columnHeight={1000} />);
+        expect(screen.getByTestId('week-view-task')).toHaveStyle({ opacity: '1' });
+    });
+
+    it('shrinks an overlapped appointment to half the column on the given side', () => {
+        render(<WeekViewTask task={createMockTask({ isAppointment: true, manuallySet: true, shrinkSide: 'right' })} columnHeight={1000} />);
+        const box = screen.getByTestId('week-view-task');
+        expect(box).toHaveStyle({ width: '50%', left: '50%' });
+    });
+
+    it('edits a non-appointment task on a plain click', () => {
+        const onEdit = vi.fn();
+        render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} onEdit={onEdit} />);
+        fireEvent.click(screen.getByTestId('week-view-task'));
+        expect(onEdit).toHaveBeenCalledWith('t1');
+    });
+
+    it('moves an appointment when its body is dragged; a non-appointment does not', () => {
+        // Appointment: body drag moves it.
+        const onChange = vi.fn();
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        const { unmount } = render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} />);
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600 });
+        fireEvent.mouseUp(window, { clientY: 600 });
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect((onChange.mock.calls[0][1] as Date).getHours()).toBe(10);
+        unmount();
+
+        // Non-appointment: dragging the body must NOT move it (resize-only).
+        const autoChange = vi.fn();
+        render(<WeekViewTask task={createMockTask({ taskId: 't1', manuallySet: false })} columnHeight={1440} onChange={autoChange} />);
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600 });
+        fireEvent.mouseUp(window, { clientY: 600 });
+        expect(autoChange).not.toHaveBeenCalled();
+    });
+
+    it('emits a live drag while moving an appointment and clears it on release', () => {
+        const onDragChange = vi.fn();
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={vi.fn()} onDragChange={onDragChange} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600 });
+
+        const drag = onDragChange.mock.calls.at(-1)![0];
+        expect(drag.mode).toBe('move');
+        expect((drag.start as Date).getHours()).toBe(10);
+
+        fireEvent.mouseUp(window, { clientY: 600 });
+        expect(onDragChange).toHaveBeenLastCalledWith(null);
+    });
+
+    it('moves an appointment to another day when dragged horizontally (multi-day)', () => {
+        const onChange = vi.fn();
+        const resolveDay = vi.fn(() => new Date('2024-01-05T00:00:00'));
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} resolveDay={resolveDay} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600, clientX: 900 });
+        fireEvent.mouseUp(window, { clientY: 600, clientX: 900 });
+
+        expect(resolveDay).toHaveBeenCalled();
+        const [, start] = onChange.mock.calls[0];
+        expect((start as Date).getDate()).toBe(5);
+        expect((start as Date).getHours()).toBe(10);
+    });
+
+    it('resizes a non-appointment from the bottom handle, keeping the start', () => {
+        const onChange = vi.fn();
+        const task = createMockTask({ taskId: 't1', manuallySet: false, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={task} columnHeight={1440} onChange={onChange} />);
+
+        fireEvent.mouseDown(screen.getByTestId('task-resize-bottom'), { clientY: 600, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 660 });
+        fireEvent.mouseUp(window, { clientY: 660 });
+
+        expect(onChange).toHaveBeenCalledTimes(1);
+        const [, start, duration] = onChange.mock.calls[0];
+        expect((start as Date).getHours()).toBe(9);
+        expect(duration).toBe(120);
     });
 });

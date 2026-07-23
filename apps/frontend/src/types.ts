@@ -128,6 +128,10 @@ export interface PlanItem {
     hex_color: string | null;
     /** Present on entries of the accepted (stored) plan only. */
     order?: number;
+    /** Client-only: false when a manual placement made this auto-planned item
+     *  impossible as planned; it fades until the next re-plan. Server omits it
+     *  (treated as valid). */
+    valid?: boolean;
 }
 
 export interface PlannedBucket {

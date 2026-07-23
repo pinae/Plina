@@ -261,6 +261,176 @@ describe('PlannedWeekView', () => {
     });
 });
 
+describe('dragging a task (regression: sticky + fades overlaps)', () => {
+    it('keeps the dropped task in place and fades the auto task it now overlaps', async () => {
+        const patched: Array<Record<string, unknown>> = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: 'p1', warnings: [], appointments: [],
+                buckets: [{
+                    id: 'b1', start_date: '2026-07-08T08:00:00', end_date: '2026-07-08T18:00:00',
+                    type_name: 'Work', type_id: 1, hex_color: '#539dad', persisted: true,
+                    items: [
+                        {
+                            task_id: 't-move', header: 'MoveMe', start_time: '2026-07-08T08:00:00',
+                            duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#3357ff',
+                        },
+                        {
+                            task_id: 't-other', header: 'OtherAuto', start_time: '2026-07-08T14:00:00',
+                            duration: 3600, warnings: [], is_fixed: false, is_appointment: false, hex_color: '#3357ff',
+                        },
+                    ],
+                }],
+            })),
+            http.patch(`${API}/tasks/t-move/`, async ({ request }) => {
+                patched.push((await request.json()) as Record<string, unknown>);
+                return HttpResponse.json({ id: 't-move' });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
+        // Column fits 1440min in 600px (offsetHeight mock) -> 1px = 2.4min.
+        // Drag the appointment down 150px = 360min: 08:00 -> 14:00, over OtherAuto.
+        fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
+
+        // The placement was sent...
+        await waitFor(() => expect(patched).toHaveLength(1));
+        expect(patched[0]).toMatchObject({ is_fixed: true });
+
+        // ...the dropped appointment stuck at 14:00 (350px), not snapped back...
+        await waitFor(() => {
+            const moved = screen.getByText('MoveMe').closest('[data-testid="week-view-task"]')!;
+            expect(moved).toHaveStyle({ top: '350px' });
+        });
+        // ...and the overlapped auto task is invalid (faded to 30%).
+        const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
+        expect(other).toHaveStyle({ opacity: '0.3' });
+    });
+});
+
+describe('dragging a task (regression: live feedback before release)', () => {
+    it('fades the overlapped auto task and shows the drag layer while still dragging', async () => {
+        const patched: unknown[] = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: 'p1', warnings: [], appointments: [],
+                buckets: [{
+                    id: 'b1', start_date: '2026-07-08T08:00:00', end_date: '2026-07-08T18:00:00',
+                    type_name: 'Work', type_id: 1, hex_color: '#539dad', persisted: true,
+                    items: [
+                        {
+                            task_id: 't-move', header: 'MoveMe', start_time: '2026-07-08T08:00:00',
+                            duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#3357ff',
+                        },
+                        {
+                            task_id: 't-other', header: 'OtherAuto', start_time: '2026-07-08T14:00:00',
+                            duration: 3600, warnings: [], is_fixed: false, is_appointment: false, hex_color: '#3357ff',
+                        },
+                    ],
+                }],
+            })),
+            http.patch(`${API}/tasks/t-move/`, async ({ request }) => {
+                patched.push(await request.json());
+                return HttpResponse.json({ id: 't-move' });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
+        // Press and drag the appointment down onto OtherAuto — but do NOT release.
+        fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
+
+        // Live: the overlapped auto task fades and the drag layer appears, before release.
+        await waitFor(() => {
+            const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
+            expect(other).toHaveStyle({ opacity: '0.3' });
+        });
+        expect(screen.getByTestId('drag-layer')).toBeInTheDocument();
+
+        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 }); // release to end the drag
+        await waitFor(() => expect(patched).toHaveLength(1));
+    });
+});
+
+describe('dragging an appointment over another appointment', () => {
+    it('shrinks the overlapped appointment to half instead of invalidating it', async () => {
+        const patched: unknown[] = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: 'p1', warnings: [],
+                appointments: [
+                    {
+                        task_id: 'a-move', header: 'DragAppt', start_time: '2026-07-08T08:00:00',
+                        duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#8833ff',
+                    },
+                    {
+                        task_id: 'a-other', header: 'OtherAppt', start_time: '2026-07-08T14:00:00',
+                        duration: 3600, warnings: [], is_fixed: true, is_appointment: true, hex_color: '#8833ff',
+                    },
+                ],
+                buckets: [],
+            })),
+            http.patch(`${API}/tasks/a-move/`, async ({ request }) => {
+                patched.push(await request.json());
+                return HttpResponse.json({ id: 'a-move' });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const card = (await screen.findByText('DragAppt')).closest('[data-testid="week-view-task"]')!;
+        fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 }); // onto 14:00
+
+        await waitFor(() => {
+            const other = screen.getByText('OtherAppt').closest('[data-testid="week-view-task"]')!;
+            expect(other).toHaveStyle({ width: '50%' });
+            expect(other).toHaveStyle({ opacity: '1' }); // appointments never fade
+        });
+
+        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
+        await waitFor(() => expect(patched).toHaveLength(1));
+    });
+});
+
+describe('moving a bucket (regression: no duplicate)', () => {
+    it('materializes a moved generated occurrence with its origin_date', async () => {
+        const posted: Array<Record<string, unknown>> = [];
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                accepted_plan_id: null, warnings: [], appointments: [],
+                buckets: [{
+                    id: 'gen-1', start_date: '2026-07-08T09:00:00', end_date: '2026-07-08T13:00:00',
+                    type_name: 'Daily', type_id: 1, hex_color: '#539dad', persisted: false, items: [],
+                }],
+            })),
+            http.post(`${API}/timebuckets/`, async ({ request }) => {
+                const body = (await request.json()) as Record<string, unknown>;
+                posted.push(body);
+                return HttpResponse.json({ id: 'gen-1', ...body }, { status: 201 });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const block = await screen.findByTestId('bucket-zone');
+        // Drag the generated bucket down to a new time.
+        fireEvent.mouseDown(block, { clientY: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 200 });
+        fireEvent.mouseUp(window, { clientY: 200 });
+
+        await waitFor(() => expect(posted).toHaveLength(1));
+        // It materializes under the pre-assigned id AND records the original slot
+        // so the recurrence rule won't regenerate a duplicate there.
+        expect(posted[0].id).toBe('gen-1');
+        expect(posted[0].type_id).toBe(1);
+        expect(posted[0].origin_date).toBeTruthy();
+        expect(posted[0].start_date).toBeTruthy();
+    });
+});
+
 import { firstFreeDay } from '../../utils/planToWeek.ts';
 import type { PlannedBucket } from '../../types.ts';
 
@@ -326,20 +496,28 @@ describe('feasibility banner and jump button', () => {
     });
 
     it('jumps the week to the first free day', async () => {
-        server.use(
-            http.get(`${API}/plan/`, () => HttpResponse.json({
-                ...planPayload,
-                buckets: [...planPayload.buckets, emptyBucket('b-free', '2026-07-16')],
-            })),
-        );
-        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
-        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+        // firstFreeDay only considers days from "now" onward, so pin the clock
+        // to before the free bucket (fake Date only, leaving msw/query timers).
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-07-08T08:00:00'));
+        try {
+            server.use(
+                http.get(`${API}/plan/`, () => HttpResponse.json({
+                    ...planPayload,
+                    buckets: [...planPayload.buckets, emptyBucket('b-free', '2026-07-16')],
+                })),
+            );
+            render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+            await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
 
-        fireEvent.click(screen.getByRole('button', { name: /first free day/i }));
+            fireEvent.click(screen.getByRole('button', { name: /first free day/i }));
 
-        // Week of Jul 16 2026: Mon 13.7. - Sun 19.7.2026 in the header range.
-        await waitFor(() =>
-            expect(screen.getByText(/13\.7\. - 19\.7\.2026/)).toBeInTheDocument(),
-        );
+            // Week of Jul 16 2026: Mon 13.7. - Sun 19.7.2026 in the header range.
+            await waitFor(() =>
+                expect(screen.getByText(/13\.7\. - 19\.7\.2026/)).toBeInTheDocument(),
+            );
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

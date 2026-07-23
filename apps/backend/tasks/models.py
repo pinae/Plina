@@ -255,6 +255,10 @@ class TimeBucket(models.Model):
     start_date = models.DateTimeField("start date", default=timezone.now)
     duration = models.DurationField(default=timedelta(hours=4))
     type = models.ForeignKey(to=TimeBucketType, related_name="buckets", on_delete=models.CASCADE, null=False)
+    #: When a single recurring occurrence is moved/resized, this records the
+    #: original generated start it replaces so the recurrence rule no longer
+    #: regenerates a duplicate at that slot (see services.bucket_service).
+    origin_date = models.DateTimeField("original occurrence", null=True, blank=True, default=None)
 
     def __str__(self):
         return f"{self.start_date} - {self.end_date}: {self.type.name}"

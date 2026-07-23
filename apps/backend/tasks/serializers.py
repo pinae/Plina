@@ -157,7 +157,7 @@ class TimeBucketSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TimeBucket
-        fields = ['id', 'start_date', 'duration', 'type', 'type_id']
+        fields = ['id', 'start_date', 'duration', 'type', 'type_id', 'origin_date']
 
 
 class TaskDependencySerializer(serializers.ModelSerializer):

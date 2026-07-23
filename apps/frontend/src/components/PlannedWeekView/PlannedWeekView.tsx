@@ -7,13 +7,34 @@ import {
 import api from '../../api.ts';
 import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
 import { usePlacement } from '../../hooks/usePlacement.ts';
-import { bucketsToZones, firstFreeDay, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
+import { bucketsToZones, firstFreeDay, overlapsAutoTask, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
+import { minutesToDurationString } from '../../utils/duration.ts';
 import type { PlanAlternative } from '../../types.ts';
+import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { WeekView } from '../WeekView/WeekView.tsx';
+import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
 import { FeasibilityBanner } from '../FeasibilityBanner/FeasibilityBanner.tsx';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+
+/** Persist a bucket placement.  A persisted bucket is patched in place; a
+ *  generated occurrence is materialized (A8) and records the original slot it
+ *  replaces via `origin_date`, so the recurrence rule no longer regenerates a
+ *  duplicate there when it is moved/resized. */
+async function saveBucket(
+    client: QueryClient, zone: DayZone, startISO: string, duration: string,
+) {
+    if (zone.persisted) {
+        await api.patch(`timebuckets/${zone.id}/`, { start_date: startISO, duration });
+    } else {
+        await api.post('timebuckets/', {
+            id: zone.id, type_id: zone.typeId, start_date: startISO, duration,
+            origin_date: zone.start.toISOString(),
+        });
+    }
+    await client.invalidateQueries({ queryKey: queryKeys.plan });
+}
 
 function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => void }) {
     const client = useQueryClient();
@@ -32,21 +53,11 @@ function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => voi
     const save = async () => {
         setSaving(true);
         setError(null);
-        const payload = {
-            start_date: new Date(start).toISOString(),
-            duration: `${String(Math.floor(Number(hours))).padStart(2, '0')}:${String(Math.round((Number(hours) % 1) * 60)).padStart(2, '0')}:00`,
-        };
         try {
-            if (zone.persisted) {
-                await api.patch(`timebuckets/${zone.id}/`, payload);
-            } else {
-                // A8: editing a generated occurrence materializes it under
-                // its pre-assigned id.
-                await api.post('timebuckets/', {
-                    id: zone.id, type_id: zone.typeId, ...payload,
-                });
-            }
-            await client.invalidateQueries({ queryKey: queryKeys.plan });
+            await saveBucket(
+                client, zone, new Date(start).toISOString(),
+                minutesToDurationString(Number(hours) * 60),
+            );
             onClose();
         } catch {
             setError('Could not save the bucket.');
@@ -86,7 +97,15 @@ function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => voi
  * message surfaces as a snackbar; ▶/⏹/✓ drive tracking and completion,
  * with the WP-10 chooser opening when completion returns choices.
  */
-export default function PlannedWeekView({ initialDate }: { initialDate?: Date }) {
+interface PlannedWeekViewProps {
+    initialDate?: Date;
+    /** True while a task is being dragged (gates the re-plan countdown). */
+    onDraggingChange?: (dragging: boolean) => void;
+    /** A manual edit invalidated an auto task — the plan is now obsolete. */
+    onPlanDirty?: () => void;
+}
+
+export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanDirty }: PlannedWeekViewProps) {
     const plan = usePlan();
     const tasks = useTasks();
     const placement = usePlacement();
@@ -94,8 +113,12 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
     const stopTracking = useStopTracking();
     const complete = useCompleteTask();
     const accept = useAcceptPlan();
+    const client = useQueryClient();
     const [choices, setChoices] = useState<PlanAlternative[] | null>(null);
     const [editingZone, setEditingZone] = useState<DayZone | null>(null);
+    const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+    const [newTaskDraft, setNewTaskDraft] = useState<{ start: Date; durationMinutes: number } | null>(null);
+    const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
     const [actionToast, setActionToast] = useState<string | null>(null);
     const [weekAnchor, setWeekAnchor] = useState<Date | undefined>(initialDate);
 
@@ -158,6 +181,27 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
         setActionToast(null);
     };
 
+    const editingTask = tasks.data?.find(task => task.id === editingTaskId) ?? null;
+
+    // Move/resize a bucket by drag: persist the new start + duration.
+    const changeZone = (zone: DayZone, start: Date, durationMinutes: number) => {
+        saveBucket(client, zone, start.toISOString(), minutesToDurationString(durationMinutes))
+            .catch(() => setActionToast('Could not move the bucket.'));
+    };
+
+    // Move or resize a task by drag: anchor it (is_fixed) at the new start +
+    // duration. The server still enforces predecessor ordering.
+    const changeTask = (taskId: string, start: Date, durationMinutes: number) =>
+        placement.placeTask(taskId, start, durationMinutes);
+
+    // Track the live drag: signal dragging (gates the countdown) and mark the
+    // plan obsolete the moment the drag invalidates an auto-planned task.
+    const handleDragChange = (drag: ActiveDrag | null) => {
+        setActiveDrag(drag);
+        onDraggingChange?.(drag !== null);
+        if (drag && overlapsAutoTask(viewTasks, drag)) onPlanDirty?.();
+    };
+
     return (
         <>
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 1 }}>
@@ -182,11 +226,28 @@ export default function PlannedWeekView({ initialDate }: { initialDate?: Date })
                 initialDate={weekAnchor}
                 zones={zones}
                 actions={actions}
-                onDropTask={placement.placeTask}
                 onZoneClick={setEditingZone}
+                onZoneChange={changeZone}
+                onTaskEdit={setEditingTaskId}
+                onTaskChange={changeTask}
+                onCreateTask={(start, duration) => setNewTaskDraft({ start, durationMinutes: duration })}
+                onTaskDragChange={handleDragChange}
+                activeDrag={activeDrag}
             />
             {editingZone && (
                 <BucketEditDialog zone={editingZone} onClose={() => setEditingZone(null)} />
+            )}
+            {editingTask && (
+                <TaskFormDialog open task={editingTask} onClose={() => setEditingTaskId(null)} />
+            )}
+            {newTaskDraft && (
+                <TaskFormDialog
+                    open
+                    initialStart={newTaskDraft.start}
+                    initialDurationMinutes={newTaskDraft.durationMinutes}
+                    defaultAppointment
+                    onClose={() => setNewTaskDraft(null)}
+                />
             )}
             <Dialog open={choices !== null} onClose={() => setChoices(null)} maxWidth="lg" fullWidth>
                 <DialogTitle>Nice! What next?</DialogTitle>
