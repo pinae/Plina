@@ -35,17 +35,21 @@ def _overlaps(a: TimeBucket, b: TimeBucket) -> bool:
 
 
 def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
-    """Return all buckets between ``start`` and ``finish``, sorted by start.
+    """Return all buckets available between ``start`` and ``finish``, sorted by
+    start.
 
-    The result contains every persisted bucket in the range plus, for each
-    :class:`TimeBucketType`, the generated occurrences that do not overlap
-    any persisted bucket.
+    A bucket counts as available if any of it is still ahead of ``start`` — a
+    bucket that began before ``start`` but is *ongoing* (ends after it) is
+    included so planning can start at the current time, with its usable window
+    clamped to ``[start, end]``.  The result is every such persisted bucket
+    plus, for each :class:`TimeBucketType`, the generated occurrences that do
+    not overlap a persisted bucket.
     """
-    persisted = list(
-        TimeBucket.objects
-        .filter(start_date__gte=start, start_date__lt=finish)
-        .order_by("start_date")
-    )
+    persisted = [
+        bucket
+        for bucket in TimeBucket.objects.filter(start_date__lt=finish).order_by("start_date")
+        if bucket.end_date > start
+    ]
 
     # Occurrences that were individually moved/resized: their materialized
     # bucket records the original generated slot it replaces, so the rule must
@@ -58,8 +62,13 @@ def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
 
     generated: List[TimeBucket] = []
     for bucket_type in TimeBucketType.objects.all():
-        for candidate in bucket_type.generate_buckets(generation_range=finish - start, start=start):
-            if candidate.start_date >= finish:
+        # Look back by one bucket length so an occurrence that started before
+        # ``start`` but is still ongoing is generated too.
+        lookback = bucket_type.duration
+        for candidate in bucket_type.generate_buckets(
+            generation_range=(finish - start) + lookback, start=start - lookback,
+        ):
+            if candidate.start_date >= finish or candidate.end_date <= start:
                 continue
             if (bucket_type.id, candidate.start_date) in moved_origins:
                 continue
@@ -67,7 +76,16 @@ def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
                 continue
             generated.append(candidate)
 
-    return sorted(persisted + generated, key=lambda bucket: bucket.start_date)
+    buckets = sorted(persisted + generated, key=lambda bucket: bucket.start_date)
+
+    # Clamp an ongoing bucket's usable window to the planning start so nothing
+    # is scheduled in the past.
+    for bucket in buckets:
+        if bucket.start_date < start:
+            bucket.duration = bucket.end_date - start
+            bucket.start_date = start
+
+    return buckets
 
 
 class RecurrenceError(ValueError):
