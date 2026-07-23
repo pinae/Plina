@@ -1,34 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
-import { DayColumn } from '../DayColumn/DayColumn.tsx';
+import { DayColumn, BUCKET_COLUMN_WIDTH } from '../DayColumn/DayColumn.tsx';
 import type { ViewTask, TaskActions, ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { splitTaskAcrossDays } from '../../utils/taskSplitter.ts';
 import type { BucketZone, DayZone } from '../../utils/planToWeek.ts';
 import { zonesForDay } from '../../utils/planToWeek.ts';
 import { minutesToPixels } from '../../utils/weekDrag.ts';
-
-/** Apply the live drag to the other tasks: overlapped auto tasks become
- *  invalid (fade), overlapped appointments shrink to the far half when an
- *  appointment is being moved over them. */
-function applyDragOverlay(tasks: ViewTask[], drag: ActiveDrag | null): ViewTask[] {
-    if (!drag) return tasks;
-    const start = drag.start.getTime();
-    const end = start + drag.durationMinutes * 60000;
-    const shrinkSide = drag.cursorHalf === 'left' ? 'right' : 'left';
-    return tasks.map(task => {
-        if (task.taskId === drag.taskId) return task;
-        const taskStart = new Date(task.startTime).getTime();
-        const taskEnd = taskStart + task.duration * 60000;
-        if (!(taskStart < end && start < taskEnd)) return task;
-        if (task.isAppointment) {
-            return drag.isAppointment && drag.mode === 'move'
-                ? { ...task, shrinkSide }
-                : task;
-        }
-        if (!task.manuallySet) return { ...task, valid: false };
-        return task;
-    });
-}
+import { applyDragOverlay } from '../../utils/dragOverlay.ts';
 
 const sameDay = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -208,8 +186,10 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                 data-testid="drag-layer"
                                 sx={{
                                     position: 'absolute',
-                                    left: `${(index * 100) / 7}%`,
-                                    width: `${100 / 7}%`,
+                                    // Stay inside the task column (skip the bucket column),
+                                    // like a real appointment card.
+                                    left: `calc(${(index * 100) / 7}% + ${BUCKET_COLUMN_WIDTH}px)`,
+                                    width: `calc(${100 / 7}% - ${BUCKET_COLUMN_WIDTH}px)`,
                                     top: `${minutesToPixels(startMin, columnHeight)}px`,
                                     height: `${minutesToPixels(activeDrag.durationMinutes, columnHeight)}px`,
                                     backgroundColor: activeDrag.color,

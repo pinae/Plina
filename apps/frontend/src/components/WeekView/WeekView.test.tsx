@@ -5,6 +5,7 @@ import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
 
 // Mock DayColumn to simplify WeekView tests and avoid deep rendering issues
 vi.mock('../DayColumn/DayColumn', () => ({
+    BUCKET_COLUMN_WIDTH: 42,
     DayColumn: () => (
         <div data-testid="day-column">
             DayColumn

@@ -87,6 +87,20 @@ describe('WeekViewTask', () => {
         expect(screen.getByTestId('week-view-task')).toHaveStyle({ borderTopStyle: 'solid' });
     });
 
+    it('renders auto-planned tasks tentative: 80% opacity + dashed outline', () => {
+        render(<WeekViewTask task={createMockTask({ manuallySet: false })} columnHeight={1000} />);
+        const box = screen.getByTestId('week-view-task');
+        expect(box).toHaveStyle({ opacity: '0.8' });
+        expect(box).toHaveStyle({ borderTopStyle: 'dashed' });
+    });
+
+    it('renders appointments solid at full opacity', () => {
+        render(<WeekViewTask task={createMockTask({ isAppointment: true, manuallySet: true })} columnHeight={1000} />);
+        const box = screen.getByTestId('week-view-task');
+        expect(box).toHaveStyle({ opacity: '1' });
+        expect(box).toHaveStyle({ borderTopStyle: 'solid' });
+    });
+
     it('fades an invalid auto-planned card to 30%', () => {
         render(<WeekViewTask task={createMockTask({ manuallySet: false, valid: false })} columnHeight={1000} />);
         expect(screen.getByTestId('week-view-task')).toHaveStyle({ opacity: '0.3' });

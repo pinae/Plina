@@ -141,12 +141,15 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 backgroundColor: backgroundColor,
                 display: 'flex',
                 fontSize: '0.8rem',
-                // The dragged appointment hides while its floating card leads;
-                // invalid auto tasks fade to 30% until the plan is renewed.
+                // The dragged appointment hides while its floating card leads.
                 visibility: moving ? 'hidden' : 'visible',
-                opacity: isAuto && task.valid === false ? 0.3 : 1,
-                // Faint outline so adjacent same-colour tasks are distinguishable.
-                border: '1px solid rgba(255, 255, 255, 0.4)',
+                // Auto-planned tasks read as tentative: 80% opacity + dashed
+                // outline, dropping to 30% when invalidated. Appointments and
+                // fixed tasks are solid at full opacity.
+                opacity: isAuto ? (task.valid === false ? 0.3 : 0.8) : 1,
+                border: isAuto
+                    ? '1px dashed rgba(255, 255, 255, 0.6)'
+                    : '1px solid rgba(255, 255, 255, 0.4)',
                 borderBottom: task.continues ? '3px double grey' : undefined,
                 overflow: 'hidden',
                 boxSizing: 'border-box',

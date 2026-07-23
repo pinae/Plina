@@ -26,7 +26,7 @@ interface DayColumnProps {
 
 /** Width of the narrow bucket column that keeps buckets reachable even when a
  *  task is planned on top of them. */
-const BUCKET_COLUMN_WIDTH = 42;
+export const BUCKET_COLUMN_WIDTH = 42;
 
 /**
  * A single day, split into a narrow bucket column (left) and the task column
