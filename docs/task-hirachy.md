@@ -15,11 +15,12 @@ of it's subtasks. So this easy option to remove the warning or the
 dummy task is easily available.
 
 Each Task object has a parent property. If the parent is None the 
-task is on the root level. If it has subtasks it is considered to 
-be a project and projects are displayed in their own page of the 
-interface. If a task has subtasks and a parent task not None it is
-considered a sub-project (the display of those can be toggled in 
-the projects page). Tasks can be embedded indefinitely building a 
+task is on the root level. Every root-level task is considered to 
+be a project (even before it has subtasks) and projects are displayed
+in their own page of the interface. If a task has subtasks and a
+parent task not None it is considered a sub-project (the display of
+those can be toggled in the projects page). See
+[task-entry-ui.md](task-entry-ui.md) for the interface. Tasks can be embedded indefinitely building a 
 tree. Setting a parent that would produce a circle in the tree is
 illegal and gets rejected by the backend and an error is displayed 
 in the frontend.
