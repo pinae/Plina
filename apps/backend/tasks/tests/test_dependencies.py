@@ -130,13 +130,10 @@ class ProjectTaskIdsSerializationTest(TestCase):
 
     def test_project_payload_contains_ordered_task_ids(self):
         from rest_framework.test import APIClient
-        from tasks.models import Project
 
-        project = Project.objects.create(name="P")
-        first = Task.objects.create(header="First")
-        second = Task.objects.create(header="Second")
-        project.add(first)
-        project.add(second)
+        project = Task.objects.create(header="P")  # projects are top-level tasks
+        first = Task.objects.create(header="First", parent=project, order=0)
+        second = Task.objects.create(header="Second", parent=project, order=1)
 
         response = APIClient().get(f"/api/projects/{project.id}/")
 

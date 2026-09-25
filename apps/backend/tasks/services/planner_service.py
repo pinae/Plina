@@ -50,10 +50,16 @@ class PlanningTask:
     source: Task = field(compare=False, repr=False)
 
     @classmethod
-    def from_task(cls, task: Task) -> "PlanningTask":
+    def from_task(cls, task: Task, project_id: UUID | None | object = ...) -> "PlanningTask":
+        """``project_id`` is the top-level ancestor (None for a top-level
+        task); looked up through the parent chain unless given."""
         estimated = task.duration if task.duration is not None else DEFAULT_DURATION_ESTIMATE
         remaining = max(estimated - task.time_spent, timedelta(0))
-        project = task.project
+        if project_id is ...:
+            root = task.parent
+            while root is not None and root.parent_id is not None:
+                root = root.parent
+            project_id = root.id if root is not None else None
         return cls(
             id=task.id,
             header=task.header,
@@ -64,7 +70,7 @@ class PlanningTask:
             is_appointment=task.is_appointment,
             start_date=task.start_date,
             remaining_duration=remaining,
-            project_id=project.id if project is not None else None,
+            project_id=project_id,
             source=task,
         )
 
@@ -72,9 +78,17 @@ class PlanningTask:
 def build_planning_tasks(tasks: Iterable[Task]) -> List[PlanningTask]:
     """Snapshot all tasks that still need planning.
 
-    Completed tasks and tasks without remaining work are excluded.
+    Completed tasks and tasks without remaining work are excluded, and so
+    are parents: their children are planned instead (UI-1; the Rest of a
+    parent is planned from UI-2 on).
     """
-    snapshots = (PlanningTask.from_task(task) for task in tasks if not task.is_done)
+    from tasks.services.tree import TreeIndex
+    tree = TreeIndex.load()
+    snapshots = (
+        PlanningTask.from_task(task, project_id=tree.root_id(task.id) if task.id in tree.nodes else None)
+        for task in tasks
+        if not task.is_done and not tree.has_children(task.id)
+    )
     return [snapshot for snapshot in snapshots if snapshot.remaining_duration > timedelta(0)]
 
 

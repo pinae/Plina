@@ -10,8 +10,9 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from tasks.models import (Plan, Project, Tag, Task, TaskDependency,
+from tasks.models import (Plan, Tag, Task, TaskDependency,
                           TimeBucket, TimeBucketType, TrackingSession)
+from tasks.services.tree import TreeIndex, next_sibling_order
 
 
 class Command(BaseCommand):
@@ -20,9 +21,12 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         self.stdout.write("Populating demo data...")
 
-        for model in (TrackingSession, Plan, TaskDependency, Task, Project,
+        for model in (TrackingSession, Plan, TaskDependency,
                       TimeBucket, TimeBucketType, Tag):
             model.objects.all().delete()
+        # Children first: the task tree protects parents from cascades.
+        while Task.objects.exists():
+            Task.objects.filter(children__isnull=True).delete()
 
         now = timezone.localtime()
 
@@ -30,16 +34,17 @@ class Command(BaseCommand):
         tag_writing = Tag.objects.create(name="writing", color=b'\x8e\x44\xad')
         tag_meeting = Tag.objects.create(name="meeting", color=b'\xFF\x57\x33')
 
-        webshop = Project.objects.create(name="Webshop Relaunch", priority=9.0)
-        blog = Project.objects.create(name="Company Blog", priority=5.0)
+        # Projects are top-level tasks (UI-1); their estimate is set to the
+        # sum of their parts below, so neither has a Rest.
+        webshop = Task.objects.create(header="Webshop Relaunch", priority=9.0, order=0)
+        blog = Task.objects.create(header="Company Blog", priority=5.0, order=1)
 
         def task(header, hours, priority, project=None, tag=None, **kwargs):
             created = Task.objects.create(
-                header=header, duration=timedelta(hours=hours),
-                priority=priority, **kwargs,
+                header=header, duration=timedelta(hours=hours), priority=priority,
+                parent=project, order=next_sibling_order(project.id if project else None),
+                **kwargs,
             )
-            if project:
-                project.add(created)
             if tag:
                 created.tags.add(tag)
             return created
@@ -65,6 +70,10 @@ class Command(BaseCommand):
         ]:
             TaskDependency.objects.create(predecessor=predecessor,
                                           successor=successor)
+
+        for project in (webshop, blog):
+            project.duration = TreeIndex.load().parts_total(project.id)
+            project.save(update_fields=["duration"])
 
         # Recurring capacity (per the story: mornings deep, afternoons open,
         # Tuesday evening for writing).

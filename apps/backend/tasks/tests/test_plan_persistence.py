@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from tasks.models import (Plan, PlanEntry, Project, Task, TaskDependency,
+from tasks.models import (Plan, PlanEntry, Task, TaskDependency,
                           TimeBucket, TimeBucketType)
 from tasks.services.plan_store import recalculate_accepted_plan
 
@@ -21,8 +21,8 @@ class PlanFlowFixture(TestCase):
             name="Daily", start_times="every day at 09:00",
             duration=timedelta(hours=4),
         )
-        self.webshop = Project.objects.create(name="Webshop")
-        self.blog = Project.objects.create(name="Blog")
+        self.webshop = Task.objects.create(header="Webshop")  # projects are top-level tasks
+        self.blog = Task.objects.create(header="Blog")
         self.a1 = self._task("A1", self.webshop)
         self.a2 = self._task("A2", self.webshop)
         self.b1 = self._task("B1", self.blog)
@@ -34,9 +34,7 @@ class PlanFlowFixture(TestCase):
         )
 
     def _task(self, header, project, hours=2):
-        task = Task.objects.create(header=header, duration=timedelta(hours=hours))
-        project.add(task)
-        return task
+        return Task.objects.create(header=header, duration=timedelta(hours=hours), parent=project)
 
     def post_alternatives(self):
         response = self.client.post("/api/plan/alternatives/")

@@ -76,6 +76,19 @@ class Task(OptionallyColored):
     is_fixed = models.BooleanField(default=False)
     is_appointment = models.BooleanField(default=False)
     completed_at = models.DateTimeField("completed at", blank=True, null=True, default=None)
+    #: Task tree (UI-1): every top-level task is a project; tasks can be split
+    #: indefinitely. PROTECT so children are never deleted by accident — the
+    #: API decides whether they are lifted or deleted (services.tree).
+    parent = models.ForeignKey(to="self", related_name="children", null=True, blank=True,
+                               default=None, on_delete=models.PROTECT)
+    #: Position among the siblings (top-level order replaces Project.order).
+    order = models.PositiveIntegerField(default=0)
+    # Completion snapshot (§4.6): estimate vs. reality, kept for analysis.
+    completion_estimate = models.DurationField(null=True, blank=True, default=None)
+    completion_first_estimate = models.DurationField(null=True, blank=True, default=None)
+    completion_time_spent = models.DurationField(null=True, blank=True, default=None)
+    completion_subtree_time_spent = models.DurationField(null=True, blank=True, default=None)
+    completion_dropped_rest = models.DurationField(null=True, blank=True, default=None)
 
     @property
     def is_done(self) -> bool:
@@ -84,37 +97,45 @@ class Task(OptionallyColored):
     def __str__(self) -> str:
         return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
 
-    @property
-    def project(self):
-        try:
-            return self.project_item.project
-        except Task.project_item.RelatedObjectDoesNotExist:
-            return None
-
-    @project.setter
-    def set_project(self, project: Project):
-        project.add(self)
-
-    def has_project(self) -> bool:
-        return hasattr(self, 'project_item') and self.project_item is not None
-
     def get_color(self) -> bytes:
         if self.color is not None:
             return self.color
-        if self.has_project() and self.project_item.project.has_color():
-            return self.project_item.project.color
+        if self.parent is not None:
+            return self.parent.get_color()
         colored_tags = self.tags.exclude(color=None).all()
         if colored_tags.count() > 0:
             return self.mix_colors([tag.color for tag in colored_tags])
-        else:
-            colored_tags = self.project_item.project.tags.exclude(color=None).all()
-            if colored_tags.count() > 0:
-                return self.mix_colors([tag.color for tag in colored_tags])
-            else:
-                return b'\x53\x9d\xad'
+        return b'\x53\x9d\xad'
+
+
+class TaskEstimateChange(models.Model):
+    """One change of a task's estimate (§4.6) — the history is kept so
+    estimates can be compared with tracked time when analyzing projects."""
+    REASONS = [
+        ("created", "created"),
+        ("edited", "edited"),
+        ("split", "split"),
+        ("set_to_sum", "set to sum of parts"),
+        ("raised_from_warning", "raised from over-budget warning"),
+        ("migrated", "migrated from a project"),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    task = models.ForeignKey(to=Task, related_name="estimate_changes", on_delete=models.CASCADE)
+    old_duration = models.DurationField(null=True, blank=True, default=None)
+    new_duration = models.DurationField(null=True, blank=True, default=None)
+    changed_at = models.DateTimeField(default=timezone.now)
+    reason = models.CharField(max_length=32, choices=REASONS)
+
+    class Meta:
+        ordering = ["changed_at"]
+
+    def __str__(self) -> str:
+        return f"{self.task.header}: {self.old_duration} → {self.new_duration} ({self.reason})"
 
 
 class Project(OptionallyColored):
+    """Legacy: projects were migrated into the task tree (migration 0012,
+    UI-1). Nothing writes projects any more; the model is removed in UI-8."""
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     name = models.CharField(max_length=512)
     description = models.TextField(default="", blank=True)

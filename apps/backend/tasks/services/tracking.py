@@ -139,6 +139,8 @@ def complete_task(task: Task, now: Optional[datetime] = None) -> Tuple[Task, lis
 
     task.completed_at = now
     task.save(update_fields=["completed_at", "time_spent"])
+    from tasks.services.estimates import write_completion_snapshot
+    write_completion_snapshot(task)
 
     recalculate_accepted_plan(now=now)
 

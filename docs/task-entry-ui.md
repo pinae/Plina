@@ -451,6 +451,29 @@ L ≈ 2–4 days).
   re-parenting into the own subtree → 400 with path; deleting a parent
   with `?children=lift` moves children up, `?children=delete` cascades;
   estimate history rows for create/edit.
+- *Delivered (2026-09-25, TDD):* 37 new tests (`test_task_tree.py`,
+  `test_project_migration.py`); 226 backend / 195 frontend tests green.
+  `services/tree.py` holds a one-query `TreeIndex` (children, ancestors,
+  descendants, Σ parts, Rest, over budget, effective deadline) shared by all
+  items of a list response, plus re-parenting/deadline validation and
+  `delete_task`; `services/estimates.py` records estimate changes and
+  writes/clears the completion snapshot (also when `completed_at` is set via
+  PATCH). The data migration reuses each project's id for its top-level
+  task, so ids the frontend holds stay valid; the new task's estimate is Σ of
+  its parts, so migrating creates no Rest and no warning. Until UI-2 the
+  planner simply skips parents (no Rest placeholders yet) and uses the
+  top-level ancestor as `project_id`. Verified live: legacy data migrated,
+  then plan → accept → add child → track → complete → delete (refused /
+  lift) over HTTP, and every tab of the unchanged frontend loads against it.
+  Deviations: **(1)** `/api/projects/` stays writable instead of read-only
+  (create = new top-level task, rename, delete = lift the children, as the
+  old delete kept the tasks) because the current frontend still creates and
+  edits projects; **(2)** the deadline rule is checked when a deadline is
+  set, not when a task is moved — moving never fails, the effective
+  deadline covers it; **(3)** a top-level task's `project_id` (and planner
+  snapshot) is null, as before for tasks without a project, so single-step
+  projects don't add finish chips to the plan chooser. Frontend `Task` type
+  mirrors the new fields as optional until the fixtures migrate (UI-8).
 
 **UI-2 · Planner on the tree — L**
 - Plannable units = open leaves + one Rest placeholder per parent with

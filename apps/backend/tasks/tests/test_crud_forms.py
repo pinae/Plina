@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from tasks.models import Project, Tag, Task, TimeBucketType
+from tasks.models import Tag, Task, TimeBucketType
 
 
 class RecurrencePreviewTest(TestCase):
@@ -37,8 +37,9 @@ class RecurrencePreviewTest(TestCase):
 class TaskProjectAssignmentTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.project_a = Project.objects.create(name="A")
-        self.project_b = Project.objects.create(name="B")
+        # Projects are top-level tasks (UI-1); project_id is the compat alias.
+        self.project_a = Task.objects.create(header="A")
+        self.project_b = Task.objects.create(header="B")
 
     def test_create_task_with_project(self):
         response = self.client.post("/api/tasks/", {
@@ -48,11 +49,10 @@ class TaskProjectAssignmentTest(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["project_id"], self.project_a.id)
         task = Task.objects.get(id=response.data["id"])
-        self.assertEqual(task.project, self.project_a)
+        self.assertEqual(task.parent, self.project_a)
 
     def test_move_task_between_projects(self):
-        task = Task.objects.create(header="Mover")
-        self.project_a.add(task)
+        task = Task.objects.create(header="Mover", parent=self.project_a)
 
         response = self.client.patch(
             f"/api/tasks/{task.id}/", {"project_id": str(self.project_b.id)},
@@ -61,12 +61,11 @@ class TaskProjectAssignmentTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         task.refresh_from_db()
-        self.assertEqual(task.project, self.project_b)
-        self.assertEqual(self.project_a.tasks, [])
+        self.assertEqual(task.parent, self.project_b)
+        self.assertFalse(self.project_a.children.exists())
 
     def test_clear_project_with_null(self):
-        task = Task.objects.create(header="Loner")
-        self.project_a.add(task)
+        task = Task.objects.create(header="Loner", parent=self.project_a)
 
         response = self.client.patch(
             f"/api/tasks/{task.id}/", {"project_id": None}, format="json",
@@ -74,7 +73,7 @@ class TaskProjectAssignmentTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         task.refresh_from_db()
-        self.assertIsNone(task.project)
+        self.assertIsNone(task.parent)
 
 
 class TagColorTest(TestCase):
@@ -127,7 +126,8 @@ class ProjectTagsWriteTest(TestCase):
         }, format="json")
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(list(Project.objects.get(name="Webshop").tags.all()), [tag])
+        project = Task.objects.get(header="Webshop", parent=None)
+        self.assertEqual(list(project.tags.all()), [tag])
 
 
 class GeneratedTimesAreCleanTest(TestCase):

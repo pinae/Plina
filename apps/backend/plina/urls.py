@@ -24,7 +24,7 @@ from plina.django_views import forbidden_error_view, not_found_error_view, inter
 
 router = routers.DefaultRouter()
 router.register(r'tasks', TaskViewSet)
-router.register(r'projects', ProjectViewSet)
+router.register(r'projects', ProjectViewSet, basename='project')
 router.register(r'tags', TagViewSet)
 router.register(r'timebuckets', TimeBucketViewSet)
 router.register(r'buckettypes', TimeBucketTypeViewSet)

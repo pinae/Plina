@@ -31,7 +31,31 @@ export interface Task {
     completed_at: string | null;
     is_done: boolean;
     active_tracking_start: string | null;
+    /** Compat alias until UI-8: id of the top-level ancestor (null for a
+     *  top-level task). Writing it moves the task under that project. */
     project_id: string | null;
+    // Task tree (UI-1). Always sent by the backend; optional here until the
+    // test fixtures are migrated with the new UI (UI-8).
+    parent_id?: string | null;
+    order?: number;
+    children_ids?: string[];
+    /** Root first, excluding the task itself. */
+    ancestor_ids?: string[];
+    /** Earliest deadline of the task and its ancestors. */
+    effective_deadline?: string | null;
+    /** False = no own estimate; planned with the default duration. */
+    is_estimated?: boolean;
+    /** Parents only (null for leaves): Σ of the children's estimates. */
+    parts_total?: string | null;
+    /** Parents only: estimate − Σ parts − own time spent, never negative. */
+    rest?: string | null;
+    over_budget?: boolean;
+    // Completion snapshot (§4.6), null while open.
+    completion_estimate?: string | null;
+    completion_first_estimate?: string | null;
+    completion_time_spent?: string | null;
+    completion_subtree_time_spent?: string | null;
+    completion_dropped_rest?: string | null;
 }
 
 /** Fields accepted when creating/updating a task (tag_ids is write-only). */
@@ -48,6 +72,8 @@ export interface TaskWrite {
     is_appointment?: boolean;
     completed_at?: string | null;
     project_id?: string | null;
+    parent_id?: string | null;
+    order?: number;
 }
 
 export interface TagWrite {
