@@ -72,15 +72,15 @@ The header becomes the "engage" cockpit: where am I, what runs, capture.
 
 ```
 Desktop
-┌───────────────────────────────────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ● T250 › Hardware Design ▾ │ ⏹ CAD   00:42:13   ✓ │ [ + Add task…            N ] │ Plan my week │ ⚙ │
-├───────────────────────────────────────────────────────────────────────────────────────┤
-│  Week Overview   Calendar   Tasks   Projects   Tags   Time Buckets   Dependencies          │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+├─────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Week Overview   Calendar   Tasks   Projects   Tags   Time Buckets   Dependencies                   │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 Mobile (≤ 600 px)
 ┌────────────────────────────────────┐
-│ ● Hardware Design ▾   ⏹ 00:42  ✓  │
+│ ● Hardware Design ▾   ⏹ 00:42  ✓   │
 ├────────────────────────────────────┤
 │ Week  Tasks  Projects  …        ⚙  │
 │                                    │
@@ -185,22 +185,22 @@ Everything else is the header. Example:
 
 ```
 ┌ Split "Hardware Design" ────────────────────────────── T250 · #maker · ⏰ Fri 10.10. ┐
-│                                                                                    │
+│                                                                                     │
 │ Estimate [ 12h  ]   Σ parts 10h  ·  spent 0h  ·  2h not assigned yet                │
-│ ██████ CAD 3h ██████│ prints 2h │orders│ refine 2h │ assembly 2h │░░░░ 2h ░░░░│      │
-│                                                                                    │
-│   1  CAD                              [ 3h    ]   #maker                           │
-│   2  test prints                      [ 2h    ]   #maker                           │
-│   3  component orders                 [ 1h    ]   #maker                           │
-│   4  CAD refinements                  [ 2h    ]   #maker                           │
-│   5  assembly                         [ 2h    ]   #maker                           │
+│ ██████ CAD 3h ██████│ prints 2h │orders│ refine 2h │ assembly 2h │░░░░ 2h ░░░░│     │
+│                                                                                     │
+│   1  CAD                              [ 3h    ]   #maker                            │
+│   2  test prints                      [ 2h    ]   #maker                            │
+│   3  component orders                 [ 1h    ]   #maker                            │
+│   4  CAD refinements                  [ 2h    ]   #maker                            │
+│   5  assembly                         [ 2h    ]   #maker                            │
 │   6  ▏                                [ ~2h   ]            ← ghost: share of rest   │
-│                                                                                    │
-│ ☑ Do these in this order  (adds dependencies 1 → 2 → 3 → 4 → 5)                    │
+│                                                                                     │
+│ ☑ Do these in this order  (adds dependencies 1 → 2 → 3 → 4 → 5)                     │
 │ Inherit from parent:  ☑ tags #maker   ☑ priority 7   (deadline always applies)      │
-│                                                                                    │
+│                                                                                     │
 │ [ Set estimate to Σ parts (10h) ]                              [ Cancel ] [ Save ]  │
-└────────────────────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Row editing (keyboard-first, like an outliner):
