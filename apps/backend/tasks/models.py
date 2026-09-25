@@ -66,7 +66,7 @@ class Tag(OptionallyColored):
 class Task(OptionallyColored):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     header = models.CharField(max_length=1024)
-    description = models.TextField(default="")
+    description = models.TextField(default="", blank=True)
     start_date = models.DateTimeField("start date", blank=True, null=True, default=None)
     duration = models.DurationField(blank=True, null=True, default=None)
     latest_finish_date = models.DateTimeField("due until", blank=True, null=True, default=None)
@@ -117,7 +117,7 @@ class Task(OptionallyColored):
 class Project(OptionallyColored):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     name = models.CharField(max_length=512)
-    description = models.TextField(default="")
+    description = models.TextField(default="", blank=True)
     tags = models.ManyToManyField(to=Tag, related_name="projects", blank=True)
     priority = models.FloatField(default=5.0)
     order = models.PositiveIntegerField(default=0)
