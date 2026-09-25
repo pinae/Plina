@@ -1,4 +1,4 @@
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { WeekViewTask, type ViewTask } from './WeekViewTask.tsx';
 
@@ -190,5 +190,87 @@ describe('WeekViewTask', () => {
         const [, start, duration] = onChange.mock.calls[0];
         expect((start as Date).getHours()).toBe(9);
         expect(duration).toBe(120);
+    });
+});
+
+describe('WeekViewTask hover overlay (card too small for its content)', () => {
+    afterEach(cleanup);
+
+    /** jsdom has no layout: stub how tall an element's content is vs. its box. */
+    const setHeights = (testId: string, scroll: number, client: number) => {
+        const el = screen.getByTestId(testId);
+        Object.defineProperty(el, 'scrollHeight', { value: scroll, configurable: true });
+        Object.defineProperty(el, 'clientHeight', { value: client, configurable: true });
+    };
+    const card = () => screen.getByTestId('week-view-task');
+
+    it('shows the full details on hover when the card clips its content', async () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1', title: 'Quarterly report' })} columnHeight={1440} />);
+        setHeights('task-content', 80, 20); // content needs 80px, card offers 20px
+
+        fireEvent.pointerEnter(card());
+
+        const overlay = await screen.findByTestId('task-hover-card');
+        expect(overlay).toHaveTextContent('Quarterly report');
+
+        fireEvent.pointerLeave(card());
+        await waitFor(() => expect(screen.queryByTestId('task-hover-card')).toBeNull());
+    });
+
+    it('shows no overlay when everything fits into the card', () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} />);
+        setHeights('task-content', 30, 60);
+        setHeights('task-title', 18, 18);
+
+        fireEvent.pointerEnter(card());
+
+        expect(screen.queryByTestId('task-hover-card')).toBeNull();
+    });
+
+    it('treats a line-clamped (cut off) title as clipped', async () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} />);
+        setHeights('task-content', 40, 60);
+        setHeights('task-title', 54, 36); // title needs 3 lines, 2 are shown
+
+        fireEvent.pointerEnter(card());
+
+        expect(await screen.findByTestId('task-hover-card')).toBeInTheDocument();
+    });
+
+    it('hides the overlay as soon as the card is pressed (click / drag)', async () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} />);
+        setHeights('task-content', 80, 20);
+        fireEvent.pointerEnter(card());
+        await screen.findByTestId('task-hover-card');
+
+        fireEvent.pointerDown(card());
+
+        await waitFor(() => expect(screen.queryByTestId('task-hover-card')).toBeNull());
+    });
+
+    it('never opens for touch — on mobile a tap opens the edit dialog instead', () => {
+        const original = window.PointerEvent;
+        // jsdom has no PointerEvent; a minimal one carries pointerType through.
+        class TouchPointerEvent extends MouseEvent {
+            pointerType: string;
+            constructor(type: string, init: PointerEventInit = {}) {
+                super(type, init);
+                this.pointerType = init.pointerType ?? '';
+            }
+        }
+        window.PointerEvent = TouchPointerEvent as unknown as typeof PointerEvent;
+        try {
+            const onEdit = vi.fn();
+            render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} onEdit={onEdit} />);
+            setHeights('task-content', 80, 20);
+
+            fireEvent.pointerEnter(card(), { pointerType: 'touch' });
+            expect(screen.queryByTestId('task-hover-card')).toBeNull();
+
+            fireEvent.click(card());
+            expect(onEdit).toHaveBeenCalledWith('t1');
+        } finally {
+            window.PointerEvent = original;
+        }
     });
 });
