@@ -571,6 +571,26 @@ L ≈ 2–4 days).
   errors }` covering every §3.3 token, escaping and date format (EN + DE).
 - *Accept:* table-driven tests for each token kind, combinations,
   escapes, ambiguous input (e.g. `>32.1.` → error chip, not silently text).
+- *Delivered (2026-09-28, TDD):* `src/utils/quickAdd.ts` with 68
+  table-driven tests (`quickAdd.test.ts`); 268 frontend tests green.
+  `parseQuickAdd(text, { now, tags, projects })` returns `header`,
+  `durationMinutes`, `tags: { existing: ids, new: names }`, `parentId`,
+  `priority`, `deadline` (local 23:59) and `tokens` (`kind`, `start`/`end`
+  into the input, chip `label`, `message` for error chips) plus `errors`.
+  Also exported: `parseDeadline` and `matchProject` for reuse in the
+  autocomplete. Rules: a duration needs a unit or `h:mm` (bare numbers like
+  "Buy 2 apples" stay text); `+name` matches the exact name, then the name
+  ignoring spaces/dashes (`+company-blog`), then a unique prefix, then a
+  unique name with a word starting with it (`+Blog`) — several matches are
+  an error naming them; a second duration/project/priority/deadline is an
+  error chip, the first one counts; tags repeat freely; a date without year
+  that has passed means next year, an explicit past date is an error; a lone
+  `#`, `+`, `!` or `>` stays text.
+  Deviation: `parentId` is `string | null` (null = no `+project` typed, use
+  the active project) — the spec's `'none'` value is not needed because
+  making a task top-level is the ✕ on the project chip (UI state, UI-5).
+  Note for UI-5: `10:30` parses as a 10h 30m duration (the spec lists `1:30`
+  as a duration); the chip makes this visible and `\10:30` keeps it as text.
 
 **UI-5 · Header: switcher, tracker, quick add, shortcuts — L**
 - `ActiveProjectSwitcher`, `HeaderTracker`, `QuickAdd` (uses UI-4),
