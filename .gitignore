@@ -173,3 +173,7 @@ apps/frontend/coverage/
 .idea/
 apps/backend/media/
 desc.txt
+
+# Container & Atelier isolation state
+project-apps/
+ai/

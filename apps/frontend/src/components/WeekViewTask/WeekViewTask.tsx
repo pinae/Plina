@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { Box, IconButton, Typography } from '@mui/material';
+import React, { useRef, useState } from 'react';
+import { Box, IconButton, Popper, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import CheckIcon from '@mui/icons-material/Check';
 
 import { minutesToPixels, type DragMode } from '../../utils/weekDrag.ts';
 import { useVerticalDrag } from '../../hooks/useVerticalDrag.ts';
+import { TaskHoverCard } from '../TaskHoverCard/TaskHoverCard.tsx';
 
 /** Live state of an in-progress drag, used to move the dragged appointment as a
  *  floating card and to fade/shrink the tasks the edit would overlap. */
@@ -69,10 +70,20 @@ export interface WeekViewTaskProps {
 
 const RESIZE_HANDLE_PX = 10;
 
+/** True when an element's content is taller than the space it is given
+ *  (cut off by overflow or a line clamp). 1px slack absorbs rounding. */
+const isClipped = (el: HTMLElement | null) => Boolean(el && el.scrollHeight > el.clientHeight + 1);
+
 export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay, resolveCursorHalf, onDragChange }) => {
     const date = new Date(task.startTime);
     const startMinutes = date.getHours() * 60 + date.getMinutes();
     const [dragMode, setDragMode] = useState<DragMode | null>(null);
+    // Hover overlay: only opened when the card is too small to show its
+    // content, measured at hover time so it follows zoom and resizes.
+    const [hoverAnchor, setHoverAnchor] = useState<HTMLElement | null>(null);
+    const contentRef = useRef<HTMLDivElement>(null);
+    const titleRef = useRef<HTMLSpanElement>(null);
+    const descriptionRef = useRef<HTMLSpanElement>(null);
 
     const isAppointment = Boolean(task.isAppointment);
     const isAuto = !task.manuallySet;
@@ -127,11 +138,25 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
     const width = shrunk ? '50%' : 'calc(100% - 1px)';
     const left = task.shrinkSide === 'right' ? '50%' : 0;
 
+    const handlePointerEnter = (event: React.PointerEvent<HTMLElement>) => {
+        // Desktop only: touch has no hover (a tap opens the edit dialog, which
+        // shows everything), and no overlay while a button is held (dragging).
+        if (event.pointerType === 'touch' || event.buttons) return;
+        const card = event.currentTarget;
+        if ([card, contentRef.current, titleRef.current, descriptionRef.current].some(isClipped)) {
+            setHoverAnchor(card);
+        }
+    };
+    const closeHover = () => setHoverAnchor(null);
+
     return (
         <Box
             data-testid="week-view-task"
             onMouseDown={canMove ? startDrag('move') : undefined}
             onClick={!canMove && canEdit ? () => onEdit!(task.taskId!) : undefined}
+            onPointerEnter={handlePointerEnter}
+            onPointerLeave={closeHover}
+            onPointerDown={closeHover}
             sx={{
                 position: 'absolute',
                 top: `${top}px`,
@@ -163,8 +188,10 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
             <Box sx={{ width: '0.3em', background: borderBackground, flexShrink: 0 }} />
 
             {/* Content */}
-            <Box sx={{ p: 0.5, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <Box ref={contentRef} data-testid="task-content" sx={{ p: 0.5, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                 <Typography
+                    ref={titleRef}
+                    data-testid="task-title"
                     variant="subtitle2"
                     sx={{
                         fontWeight: 'bold',
@@ -208,6 +235,8 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                     </Box>
                 )}
                 <Typography
+                    ref={descriptionRef}
+                    data-testid="task-description"
                     variant="body2"
                     sx={{
                         fontSize: 'inherit',
@@ -229,6 +258,18 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                     sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: RESIZE_HANDLE_PX, cursor: 'ns-resize', zIndex: 2 }}
                 />
             )}
+
+            {/* Full details for cards too small to show them. Ignores the
+                pointer so it never steals the hover from the card below. */}
+            <Popper
+                open={Boolean(hoverAnchor) && !dragMode}
+                anchorEl={hoverAnchor}
+                placement="right-start"
+                modifiers={[{ name: 'offset', options: { offset: [0, 6] } }]}
+                sx={{ zIndex: 'tooltip', pointerEvents: 'none' }}
+            >
+                <TaskHoverCard task={task} />
+            </Popper>
         </Box>
     );
 };

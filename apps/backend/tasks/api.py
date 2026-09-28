@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Task, Project, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
+from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
 from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer)
@@ -26,6 +26,17 @@ class RecalculatingModelViewSet(viewsets.ModelViewSet):
 class TaskViewSet(RecalculatingModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        """A parent needs ``?children=lift`` or ``?children=delete`` (§4.5)."""
+        from tasks.services.tree import TreeError, delete_task
+        task = self.get_object()
+        try:
+            delete_task(task, request.query_params.get("children"))
+        except TreeError as error:
+            return Response(error.payload, status=400)
+        recalculate_accepted_plan()
+        return Response(status=204)
 
     def _tracking_response(self, task, extra=None):
         payload = {"task": TaskSerializer(task).data}
@@ -86,9 +97,16 @@ class DependencyViewSet(mixins.ListModelMixin,
         super().perform_destroy(instance)
         recalculate_accepted_plan()
 
-class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.all()
+class ProjectViewSet(RecalculatingModelViewSet):
+    """Compatibility view until UI-8: projects are the top-level tasks."""
+    queryset = Task.objects.filter(parent=None).order_by("order", "header")
     serializer_class = ProjectSerializer
+
+    def perform_destroy(self, instance):
+        # Old semantics: deleting a project kept its tasks.
+        from tasks.services.tree import LIFT, delete_task
+        delete_task(instance, LIFT)
+        recalculate_accepted_plan()
 
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
@@ -294,11 +312,7 @@ class PlanAlternativesView(APIView):
 
 
 def serialize_alternatives(alternatives, buckets, plan_ids=None):
-    from tasks.models import Project
-
-    project_names = {
-    project.id: project.name for project in Project.objects.all()
-    }
+    project_names = dict(Task.objects.filter(parent=None).values_list("id", "header"))
     buckets_by_id = {bucket.id: bucket for bucket in buckets}
 
     def serialize_alternative(alternative):
