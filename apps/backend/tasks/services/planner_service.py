@@ -54,11 +54,12 @@ class PlanningTask:
 
     @classmethod
     def from_task(cls, task: Task, project_id: UUID | None | object = ...,
-                  deadline: datetime | None | object = ...) -> "PlanningTask":
+                  deadline: datetime | None | object = ...,
+                  default_duration: timedelta = DEFAULT_DURATION_ESTIMATE) -> "PlanningTask":
         """``project_id`` is the top-level ancestor (None for a top-level
         task); looked up through the parent chain unless given. ``deadline``
         defaults to the task's own deadline (callers pass the effective one)."""
-        estimated = task.duration if task.duration is not None else DEFAULT_DURATION_ESTIMATE
+        estimated = task.duration if task.duration is not None else default_duration
         remaining = max(estimated - task.time_spent, timedelta(0))
         if project_id is ...:
             root = task.parent
@@ -113,7 +114,8 @@ def build_planning_tasks(tasks: Iterable[Task]) -> List[PlanningTask]:
         if task.is_done:
             continue
         if task.id not in tree.nodes:  # unsaved instance (tests)
-            snapshots.append(PlanningTask.from_task(task, project_id=None))
+            snapshots.append(PlanningTask.from_task(task, project_id=None,
+                                                    default_duration=tree.default_duration))
             continue
         deadline = tree.effective_deadline(task.id)
         root = tree.root_id(task.id)
@@ -122,7 +124,8 @@ def build_planning_tasks(tasks: Iterable[Task]) -> List[PlanningTask]:
             if rest:
                 snapshots.append(PlanningTask.rest_of(task, rest, root or task.id, deadline))
         else:
-            snapshots.append(PlanningTask.from_task(task, project_id=root, deadline=deadline))
+            snapshots.append(PlanningTask.from_task(task, project_id=root, deadline=deadline,
+                                                    default_duration=tree.default_duration))
     return [snapshot for snapshot in snapshots if snapshot.remaining_duration > timedelta(0)]
 
 

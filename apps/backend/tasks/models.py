@@ -366,3 +366,21 @@ class PlanEntry(models.Model):
 
     def __str__(self) -> str:
         return f"[{self.order}] {self.task.header} at {self.start}"
+
+
+class UserSettings(models.Model):
+    """Per-user preferences (UI-3). Plina is single-user for now, so there is
+    one row (pk=1, see ``services.settings.get_settings``); it becomes
+    per-user together with authentication."""
+    #: Planning estimate for tasks without an own estimate.
+    default_duration = models.DurationField(default=timedelta(hours=1))
+    #: The project (top-level task or task with subtasks) the user works in;
+    #: preselected as parent of new tasks and synced to all devices.
+    active_task = models.ForeignKey(to=Task, related_name="+", null=True, blank=True,
+                                    default=None, on_delete=models.SET_NULL)
+
+    class Meta:
+        verbose_name_plural = "user settings"
+
+    def __str__(self) -> str:
+        return f"Settings (default {minutely_str(self.default_duration)})"

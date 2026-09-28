@@ -8,6 +8,10 @@ import type {
     Project,
     ProjectWrite,
     RecurrencePreview,
+    ReopenResponse,
+    SettingsWrite,
+    SplitRequest,
+    SplitResponse,
     StoredPlan,
     Tag,
     TagWrite,
@@ -16,6 +20,7 @@ import type {
     TimeBucket,
     TimeBucketType,
     TrackingResponse,
+    UserSettings,
 } from './types';
 
 const api = axios.create({
@@ -58,8 +63,25 @@ export const createTask = (task: TaskWrite) =>
 export const updateTask = (taskId: string, patch: TaskWrite) =>
     api.patch<Task>(`tasks/${taskId}/`, patch).then(r => r.data);
 
-export const deleteTask = (taskId: string) =>
-    api.delete(`tasks/${taskId}/`).then(() => undefined);
+/** A task with subtasks needs ``children``: ``lift`` moves them up one
+ *  level, ``delete`` removes the whole subtree (UI-1). */
+export const deleteTask = (taskId: string, children?: 'lift' | 'delete') =>
+    api.delete(`tasks/${taskId}/`, { params: children ? { children } : undefined })
+        .then(() => undefined);
+
+export const splitTask = (taskId: string, body: SplitRequest) =>
+    api.post<SplitResponse>(`tasks/${taskId}/split/`, body).then(r => r.data);
+
+export const reopenTask = (taskId: string) =>
+    api.post<ReopenResponse>(`tasks/${taskId}/reopen/`).then(r => r.data);
+
+// -------------------------------------------------------------- settings
+
+export const fetchSettings = () =>
+    api.get<UserSettings>('settings/').then(r => r.data);
+
+export const updateSettings = (patch: SettingsWrite) =>
+    api.patch<UserSettings>('settings/', patch).then(r => r.data);
 
 // -------------------------------------------------------------- tracking
 

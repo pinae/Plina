@@ -236,6 +236,66 @@ export interface StoredPlan {
 /** Response of track/start, track/stop. */
 export interface TrackingResponse {
     task: Task;
+    /** track/start only: the task whose running session was closed by
+     *  switching over (UI-3), null when nothing else was running. */
+    stopped_task_id?: string | null;
+    /** track/start only: settings after the active project followed the task. */
+    settings?: UserSettings;
+}
+
+/** Response of POST tasks/{id}/reopen/ (UI-2). */
+export interface ReopenResponse {
+    task: Task;
+    /** The task and its reopened ancestors, bottom-up. */
+    reopened: string[];
+}
+
+// -------------------------------------------------------------- settings
+
+/** GET/PATCH /api/settings/ (UI-3). */
+export interface UserSettings {
+    /** DRF duration; used for tasks without an own estimate. */
+    default_duration: string;
+    /** Active project: a top-level task or a task with subtasks. */
+    active_task_id: string | null;
+    /** Breadcrumb of the active project, root first. */
+    active_task_path: { id: string; header: string }[];
+}
+
+export interface SettingsWrite {
+    default_duration?: string;
+    active_task_id?: string | null;
+}
+
+// ----------------------------------------------------------------- split
+
+/** One row of the split editor; ``children`` splits the row itself. */
+export interface SplitRow {
+    /** Existing subtask to update; omit to create a new one. */
+    id?: string;
+    header: string;
+    /** Null/omitted = unestimated (planned with the default duration). */
+    duration?: string | null;
+    priority?: number;
+    tag_ids?: string[];
+    children?: SplitRow[] | null;
+}
+
+/** Body of POST tasks/{id}/split/: ``children`` is the complete new list of
+ *  direct subtasks in order; existing ones left out are removed. */
+export interface SplitRequest {
+    children: SplitRow[];
+    estimate?: string | null;
+    estimate_reason?: 'split' | 'set_to_sum' | 'raised_from_warning';
+    /** Default true: adds dependencies row 1 → row 2 → … */
+    sequential?: boolean;
+    inherit_tags?: boolean;
+    inherit_priority?: boolean;
+}
+
+export interface SplitResponse {
+    task: Task;
+    children: Task[];
 }
 
 /** Response of complete: choices are embedded when the frontier forks. */
@@ -250,5 +310,4 @@ export interface CompleteResponse {
 export interface TrackingBlockedError {
     detail: string;
     predecessors?: { id: string; header: string }[];
-    open_task_id?: string;
 }

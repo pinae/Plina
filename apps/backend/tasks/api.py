@@ -47,13 +47,19 @@ class TaskViewSet(RecalculatingModelViewSet):
     @action(detail=True, methods=["post"], url_path="track/start")
     def track_start(self, request, pk=None):
         from tasks.services.tracking import TrackingError, start_tracking
+        from tasks.serializers import UserSettingsSerializer
+        from tasks.services.settings import get_settings
         task = self.get_object()
         try:
-            start_tracking(task)
+            _, stopped = start_tracking(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
         task.refresh_from_db()
-        return self._tracking_response(task)
+        return self._tracking_response(task, extra={
+            # The task whose session was closed by switching over (UI-3).
+            "stopped_task_id": stopped.id if stopped is not None else None,
+            "settings": UserSettingsSerializer(get_settings()).data,
+        })
 
     @action(detail=True, methods=["post"], url_path="track/stop")
     def track_stop(self, request, pk=None):
@@ -82,6 +88,31 @@ class TaskViewSet(RecalculatingModelViewSet):
             "alternatives": serialized,
             # Parents completed because their last open child was (bottom-up).
             "auto_completed": [{"id": t.id, "header": t.header} for t in auto_completed],
+        })
+
+    @action(detail=True, methods=["post"])
+    def split(self, request, pk=None):
+        """The split editor's atomic save (UI-3, §4)."""
+        from tasks.serializers import SplitSerializer
+        from tasks.services.split import UNSET, SplitError, split_task
+        task = self.get_object()
+        body = SplitSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        try:
+            children = split_task(
+                task, data["children"], estimate=data.get("estimate", UNSET),
+                estimate_reason=data["estimate_reason"], sequential=data["sequential"],
+                inherit_tags=data["inherit_tags"], inherit_priority=data["inherit_priority"],
+            )
+        except SplitError as error:
+            return Response(error.payload, status=400)
+        recalculate_accepted_plan()
+        task.refresh_from_db()
+        context = self.get_serializer_context()  # shared: one tree snapshot
+        return Response({
+            "task": TaskSerializer(task, context=context).data,
+            "children": TaskSerializer(children, many=True, context=context).data,
         })
 
     @action(detail=True, methods=["post"])
@@ -132,6 +163,27 @@ class TagViewSet(viewsets.ModelViewSet):
 class TimeBucketTypeViewSet(RecalculatingModelViewSet):
     queryset = TimeBucketType.objects.all()
     serializer_class = TimeBucketTypeSerializer
+
+
+class SettingsView(APIView):
+    """GET/PATCH the user settings (UI-3)."""
+
+    def get(self, request):
+        from .serializers import UserSettingsSerializer
+        from .services.settings import get_settings
+        return Response(UserSettingsSerializer(get_settings()).data)
+
+    def patch(self, request):
+        from .serializers import UserSettingsSerializer
+        from .services.settings import get_settings
+        settings = get_settings()
+        old_default = settings.default_duration
+        serializer = UserSettingsSerializer(settings, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        if settings.default_duration != old_default:
+            recalculate_accepted_plan()  # unestimated tasks change size (A7)
+        return Response(serializer.data)
 
 
 class RecurrencePreviewView(APIView):

@@ -143,7 +143,8 @@ export const useUpdateTask = () => {
 export const useDeleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
-        mutationFn: deleteTask,
+        mutationFn: ({ taskId, children }: { taskId: string; children?: 'lift' | 'delete' }) =>
+            deleteTask(taskId, children),
         onSuccess: () =>
             invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan),
     });

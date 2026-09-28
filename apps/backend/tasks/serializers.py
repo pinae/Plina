@@ -1,7 +1,9 @@
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
-from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency
+from datetime import timedelta
+
+from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, UserSettings
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
                                  write_completion_snapshot)
 from .services.tree import (TreeIndex, dependency_cycle, earliest_ancestor_deadline,
@@ -197,6 +199,8 @@ class TaskSerializer(serializers.ModelSerializer):
         if task.completed_at is not None and not was_done:
             write_completion_snapshot(task)
             complete_finished_ancestors(task, task.completed_at)
+            from .services.settings import ensure_active_project_open
+            ensure_active_project_open()
         elif task.completed_at is None and was_done:
             clear_completion_snapshot(task)
             if task.parent is not None and task.parent.is_done:
@@ -249,6 +253,88 @@ class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = ['id', 'name', 'description', 'tags', 'tag_ids', 'priority', 'order', 'task_ids', 'hex_color']
+
+class SplitRowSerializer(serializers.Serializer):
+    """One row of the split editor; ``children`` splits the row itself."""
+    id = serializers.UUIDField(required=False)
+    header = serializers.CharField(max_length=1024, error_messages={
+        'blank': 'The header is empty. Give the part a short name, e.g. “CAD”.',
+    })
+    duration = serializers.DurationField(required=False, allow_null=True)
+    priority = serializers.FloatField(required=False, min_value=0, max_value=10)
+    tag_ids = serializers.PrimaryKeyRelatedField(queryset=Tag.objects.all(), many=True,
+                                                 required=False)
+    children = serializers.ListField(required=False, allow_null=True)
+
+    def validate_duration(self, value):
+        if value is not None and value <= timedelta(0):
+            raise serializers.ValidationError(
+                'A part must take longer than 0 minutes. Leave it empty to use your default.')
+        return value
+
+    def validate_children(self, value):
+        if value is None:
+            return None
+        rows = SplitRowSerializer(data=value, many=True)
+        if not rows.is_valid():
+            raise serializers.ValidationError(rows.errors)
+        return rows.validated_data
+
+
+class SplitSerializer(serializers.Serializer):
+    """Body of POST /api/tasks/{id}/split/ (UI-3)."""
+    children = SplitRowSerializer(many=True)
+    estimate = serializers.DurationField(required=False, allow_null=True)
+    estimate_reason = serializers.ChoiceField(
+        choices=['split', 'set_to_sum', 'raised_from_warning'], default='split')
+    sequential = serializers.BooleanField(default=True)
+    inherit_tags = serializers.BooleanField(default=True)
+    inherit_priority = serializers.BooleanField(default=True)
+
+
+class UserSettingsSerializer(serializers.ModelSerializer):
+    """UI-3 settings: default duration and the server-synced active project."""
+    active_task_id = serializers.PrimaryKeyRelatedField(
+        queryset=Task.objects.all(), source='active_task', allow_null=True, required=False,
+    )
+    #: Breadcrumb of the active project, root first.
+    active_task_path = serializers.SerializerMethodField()
+
+    MAX_DEFAULT = timedelta(hours=1000)
+
+    def get_active_task_path(self, settings):
+        path, task, seen = [], settings.active_task, set()
+        while task is not None and task.id not in seen:
+            seen.add(task.id)
+            path.append({'id': task.id, 'header': task.header})
+            task = task.parent
+        return list(reversed(path))
+
+    def validate_default_duration(self, value):
+        if value <= timedelta(0):
+            raise serializers.ValidationError(
+                'The default duration must be longer than 0 minutes, e.g. 1h or 30m.')
+        if value > self.MAX_DEFAULT:
+            raise serializers.ValidationError('The default duration can be at most 1000 hours.')
+        return value
+
+    def validate_active_task_id(self, task):
+        from .services.settings import is_project
+        if task is None:
+            return task
+        if task.is_done:
+            raise serializers.ValidationError(
+                f'“{task.header}” is completed. Choose an open project.')
+        if not is_project(task):
+            raise serializers.ValidationError(
+                f'“{task.header}” is a single step inside “{task.parent.header}”. Choose a '
+                'project (a top-level task) or a task with subtasks.')
+        return task
+
+    class Meta:
+        model = UserSettings
+        fields = ['default_duration', 'active_task_id', 'active_task_path']
+
 
 class TimeBucketTypeSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)

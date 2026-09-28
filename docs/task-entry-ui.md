@@ -537,6 +537,32 @@ L ≈ 2–4 days).
   time, B running, active project = B's project; split endpoint creates
   children + chain edges in one transaction and rolls back fully on any
   validation error.
+- *Delivered (2026-09-28, TDD):* 30 new backend tests (`test_user_settings.py`,
+  `test_tracking_switch.py`, `test_split.py`); 278 backend / 200 frontend
+  green. `UserSettings` (pk=1, migration 0014) via `services/settings.py`;
+  `TreeIndex.load()` and the planner read the default duration from it, so
+  Σ parts, Rest and planning follow the setting, and changing it
+  recalculates the accepted plan. `GET/PATCH /api/settings/` returns the
+  active project's breadcrumb (`active_task_path`). `start_tracking` returns
+  `(session, stopped_task)`: a running session for another task is closed
+  and booked first, starting the running task again is a no-op, a blocked
+  start leaves the running session alone; the response carries
+  `stopped_task_id` and the new settings. `POST /api/tasks/{id}/split/`
+  (`services/split.py`) takes the complete new list of direct subtasks
+  (rows with `id` update, rows without create, missing ones are removed;
+  rows may nest `children`), optional `estimate` + `estimate_reason`,
+  `sequential` (default on), `inherit_tags`/`inherit_priority` (default on);
+  row errors come back per row (`children[1].header`). Frontend: types and
+  API functions for settings, split, reopen and delete modes (UI-5/UI-6 use
+  them). Verified live over HTTP on the demo data.
+  Decisions beyond the spec: **(1)** the active project must be open and a
+  project (top-level or with subtasks) — a single step is refused with a
+  message; **(2)** when the active project completes, it hands over to its
+  nearest open ancestor (or none); **(3)** the split endpoint refuses to
+  remove a subtask that has tracked time, subtasks of its own or is
+  completed (§4.6: never lose measurement data) — the whole save is rolled
+  back with a message naming it; **(4)** the default duration must be
+  between 1 minute and 1000 hours.
 
 **UI-4 · Quick-add parser — S**
 - Pure `parseQuickAdd(text, { now, tags, projects })` → `{ header,

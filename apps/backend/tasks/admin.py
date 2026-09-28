@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Tag, Task, TaskEstimateChange, TimeBucketType, TimeBucket
+from .models import Tag, Task, TaskEstimateChange, TimeBucketType, TimeBucket, UserSettings
 
 
 class EstimateChangeInline(admin.TabularInline):
@@ -29,3 +29,8 @@ class TimeBucketTypeAdmin(admin.ModelAdmin):
 @admin.register(TimeBucket)
 class TimeBucketAdmin(admin.ModelAdmin):
     pass
+
+
+@admin.register(UserSettings)
+class UserSettingsAdmin(admin.ModelAdmin):
+    list_display = ('default_duration', 'active_task')

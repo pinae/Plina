@@ -23,7 +23,7 @@ from django.db.models import Max
 
 from tasks.models import Task
 
-#: Estimate used for unestimated tasks until the user setting exists (UI-3).
+#: Fallback estimate for unestimated tasks; the user's setting (UI-3) wins.
 DEFAULT_DURATION = timedelta(hours=1)
 
 
@@ -61,7 +61,9 @@ class TreeIndex:
 
     @classmethod
     def load(cls) -> "TreeIndex":
-        return cls(TreeNode(**row) for row in Task.objects.values(*cls.FIELDS))
+        from tasks.services.settings import default_duration
+        return cls((TreeNode(**row) for row in Task.objects.values(*cls.FIELDS)),
+                   default_duration=default_duration())
 
     # Structure --------------------------------------------------------------
 

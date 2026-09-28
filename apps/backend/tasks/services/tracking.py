@@ -4,7 +4,9 @@ The lifecycle implements Plina's fluidity principle (A4/§6 fixing rules):
 
 * ``start_tracking`` **anchors** the task (``is_fixed`` + ``start_date``), so
   every later recalculation keeps its plan entries byte-identical — starting
-  work is the moment a task stops being fluid.
+  work is the moment a task stops being fluid. A session running for another
+  task is closed and booked first (UI-3), and the task's project becomes the
+  active project.
 * ``stop_tracking`` books the elapsed time onto ``time_spent`` and triggers a
   recalculation of the accepted plan (A7).
 * ``complete_task`` closes any open session, marks the task done, recalculates
@@ -36,10 +38,6 @@ class TrackingError(Exception):
         self.payload = {"detail": detail, **extra}
 
 
-class AnotherSessionOpen(TrackingError):
-    status = 409
-
-
 class UnfinishedPredecessors(TrackingError):
     pass
 
@@ -61,7 +59,16 @@ def _open_session() -> Optional[TrackingSession]:
 
 
 @transaction.atomic
-def start_tracking(task: Task, now: Optional[datetime] = None) -> TrackingSession:
+def start_tracking(task: Task, now: Optional[datetime] = None
+                   ) -> Tuple[TrackingSession, Optional[Task]]:
+    """Start working on ``task``; returns ``(session, stopped_task)``.
+
+    A session running for another task is closed and booked first (UI-3:
+    switching tasks is one click, not an error). Starting the running task
+    again changes nothing. The task's project becomes the active project
+    (§2); a blocked start leaves everything as it was.
+    """
+    from tasks.services.settings import activate, project_for_tracking
     if now is None:
         now = timezone.now()
     if task.is_done:
@@ -78,17 +85,31 @@ def start_tracking(task: Task, now: Optional[datetime] = None) -> TrackingSessio
         )
 
     open_session = _open_session()
+    if open_session is not None and open_session.task_id == task.id:
+        activate(project_for_tracking(task))
+        return open_session, None
+    stopped = None
     if open_session is not None:
-        raise AnotherSessionOpen(
-            f"A session for “{open_session.task.header}” is already running.",
-            open_task_id=str(open_session.task_id),
-        )
+        stopped = open_session.task
+        _close(open_session, now)
 
     # Anchor the task (A8): from now on recalculations keep its entries.
     task.is_fixed = True
     task.start_date = now
     task.save(update_fields=["is_fixed", "start_date"])
-    return TrackingSession.objects.create(task=task, start=now)
+    session = TrackingSession.objects.create(task=task, start=now)
+    activate(project_for_tracking(task))
+    if stopped is not None:
+        recalculate_accepted_plan(now=now)  # the stopped task's time changed
+    return session, stopped
+
+
+def _close(session: TrackingSession, now: datetime) -> None:
+    session.end = now
+    session.save(update_fields=["end"])
+    task = session.task
+    task.time_spent += session.end - session.start
+    task.save(update_fields=["time_spent"])
 
 
 @transaction.atomic
@@ -99,10 +120,8 @@ def stop_tracking(task: Task, now: Optional[datetime] = None) -> TrackingSession
     if session is None:
         raise TrackingError("No tracking session is running for this task.")
 
-    session.end = now
-    session.save(update_fields=["end"])
-    task.time_spent += session.end - session.start
-    task.save(update_fields=["time_spent"])
+    session.task = task  # book onto the caller's instance
+    _close(session, now)
 
     recalculate_accepted_plan(now=now)
     return session
@@ -153,6 +172,8 @@ def complete_task(task: Task, now: Optional[datetime] = None) -> Tuple[Task, lis
     from tasks.services.estimates import write_completion_snapshot
     write_completion_snapshot(task)
     auto_completed = complete_finished_ancestors(task, now)
+    from tasks.services.settings import ensure_active_project_open
+    ensure_active_project_open()
 
     recalculate_accepted_plan(now=now)
 

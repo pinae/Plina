@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework import routers
-from tasks.api import (TaskViewSet, ProjectViewSet, TagViewSet, TimeBucketViewSet,
+from tasks.api import (TaskViewSet, ProjectViewSet, TagViewSet, TimeBucketViewSet, SettingsView,
                        TimeBucketTypeViewSet, RecurrencePreviewView,
                        DependencyViewSet, PlannerView, PlanAlternativesView, PlanViewSet)
 from plina.django_views import forbidden_error_view, not_found_error_view, internal_error_view
@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path('api/plan/alternatives/', PlanAlternativesView.as_view(), name='plan-alternatives'),
     path('api/recurrence-preview/', RecurrencePreviewView.as_view(), name='recurrence-preview'),
+    path('api/settings/', SettingsView.as_view(), name='settings'),
     path('api/plan/', PlannerView.as_view()),
     
     # admin
