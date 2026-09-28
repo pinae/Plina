@@ -1,0 +1,20 @@
+import type { Meta, StoryObj } from '@storybook/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { WhatNextDialog } from './WhatNextDialog';
+import { makeAlternative } from '../../testing/treeFixtures';
+
+const meta: Meta<typeof WhatNextDialog> = {
+    title: 'Week/WhatNextDialog',
+    component: WhatNextDialog,
+    decorators: [(Story) => <QueryClientProvider client={new QueryClient()}><Story /></QueryClientProvider>],
+    args: {
+        alternatives: [makeAlternative('a', 'Continue T250'), makeAlternative('b', 'Switch to the blog')],
+        onClose: () => {},
+    },
+};
+
+export default meta;
+type Story = StoryObj<typeof WhatNextDialog>;
+
+/** After completing a task, when the plan forks. */
+export const TwoChoices: Story = {};

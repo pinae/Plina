@@ -219,6 +219,24 @@ class EstimateHistoryTest(TestCase):
         change = TaskEstimateChange.objects.get(task_id=created["id"])
         self.assertEqual((change.reason, change.new_duration), ("created", None))
 
+    def test_patch_can_name_the_reason_of_an_estimate_change(self):
+        # UI-5: "Raise estimate" in the over-budget snackbar.
+        created = self.client.post("/api/tasks/", {"header": "P", "duration": "02:00:00"},
+                                   format="json").data
+        response = self.client.patch(f"/api/tasks/{created['id']}/", {
+            "duration": "03:00:00", "estimate_reason": "raised_from_warning",
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(TaskEstimateChange.objects.filter(task_id=created["id"])
+                         .order_by("changed_at").last().reason, "raised_from_warning")
+
+    def test_unknown_estimate_reason_is_rejected(self):
+        created = self.client.post("/api/tasks/", {"header": "P"}, format="json").data
+        response = self.client.patch(f"/api/tasks/{created['id']}/", {
+            "duration": "03:00:00", "estimate_reason": "because",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+
     def test_edits_without_estimate_change_are_not_recorded(self):
         created = self.client.post("/api/tasks/", {"header": "Report", "duration": "02:00:00"},
                                    format="json").data

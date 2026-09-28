@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 
 import api from '../../api.ts';
-import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
+import { useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
 import { usePlacement } from '../../hooks/usePlacement.ts';
 import { bucketsToZones, firstFreeDay, overlapsAutoTask, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
 import { minutesToDurationString } from '../../utils/duration.ts';
@@ -13,7 +13,7 @@ import type { PlanAlternative } from '../../types.ts';
 import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { WeekView } from '../WeekView/WeekView.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
-import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
+import { WhatNextDialog } from '../WhatNextDialog/WhatNextDialog.tsx';
 import { FeasibilityBanner } from '../FeasibilityBanner/FeasibilityBanner.tsx';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
@@ -112,7 +112,6 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
     const startTracking = useStartTracking();
     const stopTracking = useStopTracking();
     const complete = useCompleteTask();
-    const accept = useAcceptPlan();
     const client = useQueryClient();
     const [choices, setChoices] = useState<PlanAlternative[] | null>(null);
     const [editingZone, setEditingZone] = useState<DayZone | null>(null);
@@ -249,19 +248,7 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                     onClose={() => setNewTaskDraft(null)}
                 />
             )}
-            <Dialog open={choices !== null} onClose={() => setChoices(null)} maxWidth="lg" fullWidth>
-                <DialogTitle>Nice! What next?</DialogTitle>
-                <DialogContent>
-                    {choices && (
-                        <PlanChooser
-                            alternatives={choices}
-                            accepting={accept.isPending}
-                            onAccept={planId =>
-                                accept.mutate(planId, { onSuccess: () => setChoices(null) })}
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
+            <WhatNextDialog alternatives={choices} onClose={() => setChoices(null)} />
             <Snackbar
                 open={toast !== null} autoHideDuration={6000} onClose={clearToast}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}

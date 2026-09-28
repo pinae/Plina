@@ -28,3 +28,10 @@ export function formatDuration(value: string | null): string {
     if (minutes) parts.push(`${minutes}m`);
     return parts.length ? parts.join(' ') : '0m';
 }
+
+/** Seconds -> "hh:mm:ss" for running timers (UI-5 header tracker). */
+export function formatElapsed(totalSeconds: number): string {
+    const s = Math.max(0, Math.floor(totalSeconds));
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+}

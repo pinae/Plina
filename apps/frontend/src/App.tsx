@@ -11,6 +11,7 @@ import DependencyEditor from './components/DependencyEditor/DependencyEditor.tsx
 import { PlanChooserDialog } from './components/PlanChooserDialog/PlanChooserDialog.tsx';
 import { PlanMyWeekButton } from './components/PlanMyWeekButton/PlanMyWeekButton.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary.tsx';
+import { AppHeader } from './components/AppHeader/AppHeader.tsx';
 
 function App() {
   const [tab, setTab] = useState(0);
@@ -32,7 +33,18 @@ function App() {
 
   return (
     <Layout>
-      {/* The tab row is the top header bar (there is no separate title bar). */}
+      {/* Engage bar (UI-5): active project, tracker, quick add. */}
+      <AppHeader
+        onShowAllProjects={() => setTab(3)}
+        actions={
+          <PlanMyWeekButton
+            dirty={planDirty}
+            dragging={dragging}
+            onTrigger={triggerPlan}
+            onClick={triggerPlan}
+          />
+        }
+      />
       <Box sx={{
         flexShrink: 0, borderBottom: 1, borderColor: 'divider',
         display: 'flex', alignItems: 'center', bgcolor: 'background.paper', px: 1,
@@ -46,12 +58,6 @@ function App() {
           <Tab label="Time Buckets" />
           <Tab label="Dependencies" />
         </Tabs>
-        <PlanMyWeekButton
-          dirty={planDirty}
-          dragging={dragging}
-          onTrigger={triggerPlan}
-          onClick={triggerPlan}
-        />
       </Box>
       <PlanChooserDialog
         open={chooserOpen}

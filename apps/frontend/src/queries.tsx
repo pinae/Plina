@@ -30,18 +30,20 @@ import {
     fetchDependencies,
     fetchPlan,
     fetchProjects,
+    fetchSettings,
     fetchTags,
     fetchTasks,
     startTracking,
     stopTracking,
     updateBucketType,
     updateProject,
+    updateSettings,
     updateTag,
     updateTask,
 } from './api';
 import type {
-    BucketTypeWrite, Dependency, DependencyCycleError, ProjectWrite,
-    TagWrite, TaskWrite, TrackingBlockedError,
+    BucketTypeWrite, Dependency, DependencyCycleError, ProjectWrite, SettingsWrite,
+    TagWrite, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
 
 export const queryKeys = {
@@ -51,7 +53,11 @@ export const queryKeys = {
     tags: ['tags'] as const,
     projects: ['projects'] as const,
     bucketTypes: ['bucketTypes'] as const,
+    settings: ['settings'] as const,
 };
+
+/** Other devices pick up a changed active project this often (§3.1). */
+export const SETTINGS_REFRESH_MS = 30_000;
 
 // ----------------------------------------------------------------- queries
 
@@ -72,6 +78,13 @@ export const useProjects = () =>
 
 export const useBucketTypes = () =>
     useQuery({ queryKey: queryKeys.bucketTypes, queryFn: fetchBucketTypes });
+
+/** UI-3 settings (active project, default duration), synced across devices. */
+export const useSettings = () =>
+    useQuery({
+        queryKey: queryKeys.settings, queryFn: fetchSettings,
+        refetchOnWindowFocus: true, refetchInterval: SETTINGS_REFRESH_MS,
+    });
 
 // --------------------------------------------------------------- mutations
 
@@ -94,15 +107,30 @@ export const useAcceptPlan = () => {
     });
 };
 
+/** Every start point (Week view ▶, header, shortcut T) goes through here:
+ *  the server switches the running session over and makes the task's
+ *  project active; the response carries the new settings. */
 export const useStartTracking = () => {
     const invalidate = useInvalidate();
+    const client = useQueryClient();
     return useMutation<
         Awaited<ReturnType<typeof startTracking>>,
         AxiosError<TrackingBlockedError>,
         string
     >({
         mutationFn: startTracking,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: data => {
+            if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
+            return invalidate(queryKeys.tasks, queryKeys.plan);
+        },
+    });
+};
+
+export const useUpdateSettings = () => {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: (patch: SettingsWrite) => updateSettings(patch),
+        onSuccess: data => client.setQueryData<UserSettings>(queryKeys.settings, data),
     });
 };
 
@@ -114,12 +142,13 @@ export const useStopTracking = () => {
     });
 };
 
-/** Completing may return fresh choices; consume them from `data.alternatives`. */
+/** Completing may return fresh choices; consume them from `data.alternatives`.
+ *  Parents may complete too, and a completed active project hands over. */
 export const useCompleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: completeTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings, queryKeys.projects),
     });
 };
 
@@ -127,7 +156,7 @@ export const useCreateTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: createTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.projects),
     });
 };
 

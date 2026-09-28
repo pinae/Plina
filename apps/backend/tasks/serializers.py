@@ -63,6 +63,10 @@ class TaskSerializer(serializers.ModelSerializer):
         queryset=Task.objects.all(), source='compat_project',
         write_only=True, required=False, allow_null=True,
     )
+    #: Why the estimate changes (history, §4.6); plain edits are "edited".
+    estimate_reason = serializers.ChoiceField(
+        choices=['edited', 'set_to_sum', 'raised_from_warning'], write_only=True, required=False,
+    )
 
     _UNSET = object()
 
@@ -176,6 +180,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        validated_data.pop('estimate_reason', None)
         if 'order' not in validated_data:
             parent = validated_data.get('parent')
             validated_data['order'] = next_sibling_order(parent.id if parent else None)
@@ -187,6 +192,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        reason = validated_data.pop('estimate_reason', 'edited')
         old_duration = instance.duration
         was_done = instance.completed_at is not None
         if 'parent' in validated_data and 'order' not in validated_data \
@@ -194,7 +200,7 @@ class TaskSerializer(serializers.ModelSerializer):
             parent = validated_data['parent']
             validated_data['order'] = next_sibling_order(parent.id if parent else None)
         task = super().update(instance, validated_data)
-        record_estimate_change(task, old_duration, task.duration, 'edited')
+        record_estimate_change(task, old_duration, task.duration, reason)
         from .services.completion import complete_finished_ancestors, reopen
         if task.completed_at is not None and not was_done:
             write_completion_snapshot(task)
@@ -213,7 +219,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'id', 'header', 'description', 'start_date', 'duration',
             'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'hex_color', 'is_fixed',
             'is_appointment', 'completed_at', 'is_done', 'active_tracking_start', 'project_id',
-            'parent_id', 'order',
+            'parent_id', 'order', 'estimate_reason',
             'completion_estimate', 'completion_first_estimate', 'completion_time_spent',
             'completion_subtree_time_spent', 'completion_dropped_rest',
         ]

@@ -599,6 +599,36 @@ L ≈ 2–4 days).
   `useStartTracking` hook (sets active project via the server response).
 - *Accept:* §11 scenarios 1 and 2 as integration tests (msw); shortcut
   keys ignored inside inputs.
+- *Delivered (2026-09-28, TDD):* 57 new frontend tests (325 total), 2
+  backend tests (280 total); `yarn build` and `storybook build` green, all
+  32 stories render. New: `AppHeader` (composes the three parts above the
+  tabs, "Plan my week" moved into it; owns the edit and "What next?"
+  dialogs), `ActiveProjectSwitcher` (breadcrumb with clickable ancestors;
+  picker via ▾ or P with type-to-filter, "No project", "+ New project …",
+  "Show all projects" → Projects tab; recently used projects first, kept per
+  browser), `HeaderTracker` + `useTracker` (shared with the T shortcut;
+  live timer in its own component so only it re-renders every second;
+  amber "+h:mm over"; ▶ "Next: …" = first running/upcoming plan item inside
+  the active project; picker lists the active project's single steps
+  first; errors such as a blocked start in a snackbar), `QuickAdd` (live
+  chips from `parseQuickAdd`; the project chip's ✕ makes the task
+  top-level; inherits the parent's tags and priority unless typed; new tags
+  are created on save; the over-budget snackbar's "Raise estimate" PATCHes
+  the estimate to Σ parts with `estimate_reason: raised_from_warning`),
+  `WhatNextDialog` (extracted from the Week view, reused by the header),
+  `useGlobalShortcuts` (ignores inputs, contenteditable, open dialogs and
+  modifier keys), `useSettings` (refetch on focus + every 30 s),
+  `useUpdateSettings`; `useStartTracking` writes the settings from the
+  response into the cache, so the header follows ▶ in the Week view without
+  a refetch. Pure helpers in `utils/projects.ts`. Backend: task PATCH
+  accepts an optional `estimate_reason`. Verified live against the backend
+  with demo data (quick add into the active project with priority/deadline
+  tokens and the over-budget warning, ▶ in the Week view switching the
+  active project, P picker).
+  Decisions beyond the spec: **(1)** Quick add refuses to save until tasks,
+  tags and settings are loaded (it shows "Loading…") — otherwise a task
+  typed right after page load would silently become a top-level project;
+  **(2)** the ⚙ settings entry comes with the settings page (UI-8).
 
 **UI-6 · Split editor — L**
 - Pure helpers: `ghostDurations(available, rows)` (15-min rounding, exact

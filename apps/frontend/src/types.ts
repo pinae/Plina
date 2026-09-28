@@ -74,6 +74,8 @@ export interface TaskWrite {
     project_id?: string | null;
     parent_id?: string | null;
     order?: number;
+    /** Why the estimate changes (history); plain edits are "edited". */
+    estimate_reason?: 'edited' | 'set_to_sum' | 'raised_from_warning';
 }
 
 export interface TagWrite {
