@@ -38,3 +38,12 @@ export const TooSmallShowsOverlayOnHover: Story = {
 export const AutoPlannedTooSmall: Story = {
     args: { task: { ...base, duration: 20, manuallySet: false, color: '#33aa66' } },
 };
+
+/** A parent's Rest placeholder (UI-2): hatched, trackable, not resizable. */
+export const RestPlaceholder: Story = {
+    args: {
+        task: { ...base, title: 'Rest of Hardware Design', description: '', manuallySet: false, isRest: true },
+        onChange: () => {},
+        actions: { trackingActive: false, onTrackStart: () => {}, onTrackStop: () => {}, onComplete: () => {} },
+    },
+};

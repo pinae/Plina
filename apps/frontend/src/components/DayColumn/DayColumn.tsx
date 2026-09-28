@@ -124,7 +124,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({
             >
                 {tasks.map((task, index) => (
                     <WeekViewTask
-                        key={task.taskId ?? index}
+                        key={`${task.taskId ?? index}@${task.startTime}`}
                         task={task}
                         columnHeight={columnHeight}
                         actions={actions}

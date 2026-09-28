@@ -43,6 +43,9 @@ export interface ViewTask {
     /** Transient: an overlapped appointment shrinks to half the column, on this
      *  side, while an appointment is dragged over it. */
     shrinkSide?: 'left' | 'right' | null;
+    /** The not-yet-split remainder of a parent (UI-2). ``taskId`` is the
+     *  parent: it can be tracked and opened, but not resized or completed. */
+    isRest?: boolean;
 }
 
 export interface TaskActions {
@@ -90,7 +93,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
     // Only appointments move as a whole; every other task can be resized from
     // the bottom to change its duration. Any task can be clicked to edit.
     const canMove = Boolean(task.taskId && onChange && isAppointment);
-    const canResize = Boolean(task.taskId && onChange && !isAppointment);
+    const canResize = Boolean(task.taskId && onChange && !isAppointment && !task.isRest);
     const canEdit = Boolean(task.taskId && onEdit);
 
     const dayFor = (ctx: { mode: DragMode; clientX: number }) =>
@@ -152,6 +155,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
     return (
         <Box
             data-testid="week-view-task"
+            data-rest={task.isRest ? 'true' : undefined}
             onMouseDown={canMove ? startDrag('move') : undefined}
             onClick={!canMove && canEdit ? () => onEdit!(task.taskId!) : undefined}
             onPointerEnter={handlePointerEnter}
@@ -164,6 +168,10 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 width,
                 left,
                 backgroundColor: backgroundColor,
+                // A Rest placeholder is hatched: time reserved, not yet split.
+                backgroundImage: task.isRest
+                    ? 'repeating-linear-gradient(135deg, rgba(255,255,255,0.18) 0 6px, transparent 6px 12px)'
+                    : undefined,
                 display: 'flex',
                 fontSize: '0.8rem',
                 // The dragged appointment hides while its floating card leads.
@@ -226,12 +234,14 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                                 <PlayArrowIcon fontSize="inherit" />
                             </IconButton>
                         )}
-                        <IconButton
-                            size="small" aria-label="complete"
-                            onClick={() => actions.onComplete(task.taskId!)}
-                        >
-                            <CheckIcon fontSize="inherit" />
-                        </IconButton>
+                        {!task.isRest && (
+                            <IconButton
+                                size="small" aria-label="complete"
+                                onClick={() => actions.onComplete(task.taskId!)}
+                            >
+                                <CheckIcon fontSize="inherit" />
+                            </IconButton>
+                        )}
                     </Box>
                 )}
                 <Typography

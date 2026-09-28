@@ -491,6 +491,37 @@ L ≈ 2–4 days).
   parent delays successors until all its leaves and Rest are allocated;
   completing the last child completes parent and grandparent; reopen
   restores both.
+- *Delivered (2026-09-28, TDD):* 21 new backend tests (`test_planner_tree.py`
+  + a graph regression test) and 5 frontend tests; 248 backend / 200
+  frontend green. `build_planning_tasks` emits `PlanningTask.rest_of(parent)`
+  units (id = parent id, `is_rest`, header "Rest of …", effective deadline,
+  project = top-level ancestor); `planning_edges()` replaces every raw edge
+  query in the planner, alternatives, recalculation and completion paths.
+  `tree.expand_edges` implements the subtree rule and "Rest after ordered
+  children": the Rest follows every child without a sibling successor
+  whenever the children have at least one dependency among themselves (that
+  is what "do these in this order" creates). Cycle checks model each task as
+  a Start and an End node (parents start before and end after their
+  children), so a cycle only visible through the tree is found both when
+  adding a dependency and when moving a task. Plan entries store `is_rest`;
+  items expose it. Tracking and manual placement respect predecessors of
+  ancestors. `services/completion.py` holds auto-completion (also via PATCH
+  `completed_at`) and `reopen`. Verified live: Rest units planned after
+  CAD → test prints, hatched Rest cards in the Week view, auto-completion of
+  parent and grandparent with the dropped Rest in the snapshot, reopen
+  re-plans both Rests.
+  Decisions beyond the spec: **(1)** a parent with open subtasks cannot be
+  completed directly (400 naming the count) — completing it would silently
+  drop planned work; it completes by itself with its last subtask.
+  **(2)** Reopening a task (also via PATCH) reopens its completed ancestors,
+  since an open task cannot live inside a completed one. **(3)** Frontend:
+  Rest cards are hatched, can be tracked (▶ = time on the parent) and opened,
+  but not resized or completed — resizing would have written the slice
+  length as the parent's estimate.
+  Bugs found and fixed on the way: `graph._find_any_cycle` crashed with
+  `StopIteration` when it started on a node downstream of a cycle (now walks
+  backwards); the Week view left stale cards behind when switching weeks if
+  a task had two slices on one day (duplicate React key `taskId`).
 
 **UI-3 · Settings, active project, tracking switch — M**
 - `UserSettings` singleton (single-user app; becomes per-user with auth):

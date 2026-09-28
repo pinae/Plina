@@ -19,6 +19,7 @@ function toViewTask(item: PlanItem): PlacedViewTask {
         // Solid = anchored (fixed or appointment); pastel = fluid.
         manuallySet: item.is_fixed || item.is_appointment,
         isAppointment: item.is_appointment,
+        isRest: Boolean(item.is_rest),
         description: item.warnings.join(', '),
         tags: [],
         continues: false,

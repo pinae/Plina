@@ -71,14 +71,31 @@ class TaskViewSet(RecalculatingModelViewSet):
         from tasks.services.tracking import TrackingError, complete_task
         task = self.get_object()
         try:
-            task, alternatives, buckets = complete_task(task)
+            task, auto_completed, alternatives, buckets = complete_task(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
         serialized = serialize_alternatives(
             alternatives, buckets,
             plan_ids=[alternative.plan_id for alternative in alternatives],
         ) if alternatives else []
-        return self._tracking_response(task, extra={"alternatives": serialized})
+        return self._tracking_response(task, extra={
+            "alternatives": serialized,
+            # Parents completed because their last open child was (bottom-up).
+            "auto_completed": [{"id": t.id, "header": t.header} for t in auto_completed],
+        })
+
+    @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        """Undo a completion (also of auto-completed parents, §4.5)."""
+        from tasks.services.completion import CompletionError, reopen
+        task = self.get_object()
+        try:
+            reopened = reopen(task)
+        except CompletionError as error:
+            return Response(error.payload, status=400)
+        recalculate_accepted_plan()
+        task.refresh_from_db()
+        return self._tracking_response(task, extra={"reopened": [t.id for t in reopened]})
 
 class DependencyViewSet(mixins.ListModelMixin,
                         mixins.RetrieveModelMixin,
@@ -139,7 +156,8 @@ from rest_framework.response import Response
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
-from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks, UNBUCKETED
+from tasks.services.planner_service import (build_planning_tasks, rank_tasks, allocate_tasks,
+                                            planning_edges, UNBUCKETED)
 from tasks.services.bucket_service import gather_time_buckets
 from tasks.services.plan_store import recalculate_accepted_plan
 from tasks.models import Task, TimeBucket, TaskDependency, Plan
@@ -147,7 +165,8 @@ from tasks.models import Task, TimeBucket, TaskDependency, Plan
 def _serialize_item(item):
     return {
         "task_id": item.task.id,
-        "header": item.task.header,
+        "header": item.header,
+        "is_rest": item.is_rest,
         "start_time": item.start_time,
         "duration": item.duration.total_seconds(),
         "warnings": item.warnings,
@@ -166,7 +185,8 @@ def _entry_warnings(entry):
 def _serialize_entry(entry):
     return {
         "task_id": entry.task.id,
-        "header": entry.task.header,
+        "header": f"Rest of {entry.task.header}" if entry.is_rest else entry.task.header,
+        "is_rest": entry.is_rest,
         "start_time": entry.start,
         "duration": entry.duration.total_seconds(),
         "warnings": _entry_warnings(entry),
@@ -245,9 +265,7 @@ class PlannerView(APIView):
 
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
-        edges = TaskDependency.objects.values_list("predecessor_id", "successor_id")
-
-        plan = allocate_tasks(buckets, ranked_tasks, edges)
+        plan = allocate_tasks(buckets, ranked_tasks, planning_edges(snapshots))
 
         return Response({
             "accepted_plan_id": None,
@@ -288,10 +306,7 @@ class PlanAlternativesView(APIView):
         )
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
-        edges = list(
-            TaskDependency.objects.values_list("predecessor_id", "successor_id")
-        )
-        return generate_alternatives(snapshots, buckets, edges, now), buckets
+        return generate_alternatives(snapshots, buckets, planning_edges(snapshots), now), buckets
 
     def get(self, request):
         """Preview: compute without storing."""

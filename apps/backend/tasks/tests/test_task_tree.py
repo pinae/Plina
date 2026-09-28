@@ -252,7 +252,9 @@ class CompletionSnapshotTest(TreeFixtureMixin, TestCase):
         self.cad.save()
         self.hardware.time_spent = hours(1)
         self.hardware.save()
-        self.client.post(f"/api/tasks/{self.hardware.id}/complete/")
+        # The parent completes automatically with its last child (UI-2).
+        self.client.post(f"/api/tasks/{self.cad.id}/complete/")
+        self.client.post(f"/api/tasks/{self.prints.id}/complete/")
         self.hardware.refresh_from_db()
         self.assertEqual(self.hardware.completion_time_spent, hours(1))
         self.assertEqual(self.hardware.completion_subtree_time_spent, hours(4))
@@ -336,8 +338,9 @@ class PlannerTreeTest(TreeFixtureMixin, TestCase):
         self.make_tree()
 
     def test_parents_are_not_planned_as_blocks(self):
+        # Only their Rest is (UI-2, see test_planner_tree).
         from tasks.services.planner_service import build_planning_tasks
-        headers = {s.header for s in build_planning_tasks(Task.objects.all())}
+        headers = {s.header for s in build_planning_tasks(Task.objects.all()) if not s.is_rest}
         self.assertEqual(headers, {"CAD", "test prints", "Firmware"})
 
     def test_project_id_is_the_top_level_ancestor(self):

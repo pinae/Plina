@@ -193,6 +193,34 @@ describe('WeekViewTask', () => {
     });
 });
 
+describe('WeekViewTask Rest placeholder (UI-2)', () => {
+    afterEach(cleanup);
+
+    const actions = { trackingActive: false, onTrackStart: vi.fn(), onTrackStop: vi.fn(), onComplete: vi.fn() };
+    const rest = () => createMockTask({
+        taskId: 'hw', title: 'Rest of Hardware Design', manuallySet: false, isRest: true,
+    });
+
+    it('is hatched and cannot be resized — it is not a task of its own', () => {
+        render(<WeekViewTask task={rest()} columnHeight={1440} onChange={vi.fn()} />);
+        expect(screen.getByTestId('week-view-task')).toHaveAttribute('data-rest', 'true');
+        expect(screen.queryByTestId('task-resize-bottom')).toBeNull();
+    });
+
+    it('can be tracked (time on the parent) but not completed', () => {
+        render(<WeekViewTask task={rest()} columnHeight={1440} actions={actions} />);
+        expect(screen.getByLabelText('start tracking')).toBeInTheDocument();
+        expect(screen.queryByLabelText('complete')).toBeNull();
+    });
+
+    it('still opens the parent for editing on click', () => {
+        const onEdit = vi.fn();
+        render(<WeekViewTask task={rest()} columnHeight={1440} onEdit={onEdit} />);
+        fireEvent.click(screen.getByTestId('week-view-task'));
+        expect(onEdit).toHaveBeenCalledWith('hw');
+    });
+});
+
 describe('WeekViewTask hover overlay (card too small for its content)', () => {
     afterEach(cleanup);
 

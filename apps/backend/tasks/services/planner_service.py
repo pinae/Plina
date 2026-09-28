@@ -14,9 +14,10 @@ from uuid import UUID
 from django.utils import timezone
 
 from tasks.models import Task, TimeBucket
+from tasks.services.tree import DEFAULT_DURATION, TreeIndex, expand_edges
 
 #: Estimate used for tasks the user has not sized yet.
-DEFAULT_DURATION_ESTIMATE = timedelta(hours=1)
+DEFAULT_DURATION_ESTIMATE = DEFAULT_DURATION
 
 #: Minimum quantum: never start a task in a leftover gap smaller than this
 #: unless the task finishes inside the gap.
@@ -48,11 +49,15 @@ class PlanningTask:
     remaining_duration: timedelta
     project_id: UUID | None
     source: Task = field(compare=False, repr=False)
+    #: The unit is a parent's Rest (planned under the parent's id, UI-2).
+    is_rest: bool = False
 
     @classmethod
-    def from_task(cls, task: Task, project_id: UUID | None | object = ...) -> "PlanningTask":
+    def from_task(cls, task: Task, project_id: UUID | None | object = ...,
+                  deadline: datetime | None | object = ...) -> "PlanningTask":
         """``project_id`` is the top-level ancestor (None for a top-level
-        task); looked up through the parent chain unless given."""
+        task); looked up through the parent chain unless given. ``deadline``
+        defaults to the task's own deadline (callers pass the effective one)."""
         estimated = task.duration if task.duration is not None else DEFAULT_DURATION_ESTIMATE
         remaining = max(estimated - task.time_spent, timedelta(0))
         if project_id is ...:
@@ -64,7 +69,7 @@ class PlanningTask:
             id=task.id,
             header=task.header,
             priority=task.priority,
-            latest_finish_date=task.latest_finish_date,
+            latest_finish_date=task.latest_finish_date if deadline is ... else deadline,
             tag_ids=frozenset(tag.id for tag in task.tags.all()),
             is_fixed=task.is_fixed,
             is_appointment=task.is_appointment,
@@ -74,22 +79,59 @@ class PlanningTask:
             source=task,
         )
 
+    @classmethod
+    def rest_of(cls, parent: Task, rest: timedelta, project_id: UUID,
+                deadline: datetime | None) -> "PlanningTask":
+        """The not-yet-split remainder of a parent's estimate (§4.5)."""
+        return cls(
+            id=parent.id,
+            header=f"Rest of {parent.header}",
+            priority=parent.priority,
+            latest_finish_date=deadline,
+            tag_ids=frozenset(tag.id for tag in parent.tags.all()),
+            is_fixed=parent.is_fixed,
+            is_appointment=False,
+            start_date=parent.start_date,
+            remaining_duration=rest,
+            project_id=project_id,
+            source=parent,
+            is_rest=True,
+        )
+
 
 def build_planning_tasks(tasks: Iterable[Task]) -> List[PlanningTask]:
     """Snapshot all tasks that still need planning.
 
-    Completed tasks and tasks without remaining work are excluded, and so
-    are parents: their children are planned instead (UI-1; the Rest of a
-    parent is planned from UI-2 on).
+    Units are the open leaves plus, for every open parent with a positive
+    Rest, one Rest unit under the parent's id (UI-2). Leaves and Rests carry
+    the effective (earliest ancestor) deadline. Completed tasks and units
+    without remaining work are excluded.
     """
-    from tasks.services.tree import TreeIndex
     tree = TreeIndex.load()
-    snapshots = (
-        PlanningTask.from_task(task, project_id=tree.root_id(task.id) if task.id in tree.nodes else None)
-        for task in tasks
-        if not task.is_done and not tree.has_children(task.id)
-    )
+    snapshots = []
+    for task in tasks:
+        if task.is_done:
+            continue
+        if task.id not in tree.nodes:  # unsaved instance (tests)
+            snapshots.append(PlanningTask.from_task(task, project_id=None))
+            continue
+        deadline = tree.effective_deadline(task.id)
+        root = tree.root_id(task.id)
+        if tree.has_children(task.id):
+            rest = tree.rest(task.id)
+            if rest:
+                snapshots.append(PlanningTask.rest_of(task, rest, root or task.id, deadline))
+        else:
+            snapshots.append(PlanningTask.from_task(task, project_id=root, deadline=deadline))
     return [snapshot for snapshot in snapshots if snapshot.remaining_duration > timedelta(0)]
+
+
+def planning_edges(snapshots: Iterable[PlanningTask]) -> List[tuple]:
+    """Dependencies expanded onto the planning units (see
+    :func:`tasks.services.tree.expand_edges`)."""
+    from tasks.models import TaskDependency
+    raw = TaskDependency.objects.values_list("predecessor_id", "successor_id")
+    return expand_edges(raw, TreeIndex.load(), {snapshot.id for snapshot in snapshots})
 
 
 def calculate_dynamic_score(task: Union[Task, PlanningTask], now: datetime) -> float:
@@ -121,13 +163,26 @@ def rank_tasks(tasks: List[Union[Task, PlanningTask]], now: datetime) -> List[Un
 class PlanItem:
     """One contiguous slice of a task placed inside a bucket."""
 
-    def __init__(self, task: Task, start_time: datetime, duration: timedelta):
+    def __init__(self, task: Task, start_time: datetime, duration: timedelta,
+                 is_rest: bool = False, deadline: datetime | None | object = ...):
         self.task = task
         self.start_time = start_time
         self.duration = duration
+        #: A parent's Rest placeholder (``task`` is the parent).
+        self.is_rest = is_rest
         self.warnings: List[str] = []
-        if task.latest_finish_date and start_time + duration > task.latest_finish_date:
+        deadline = task.latest_finish_date if deadline is ... else deadline
+        if deadline and start_time + duration > deadline:
             self.warnings.append("Deadline exceeded")
+
+    @classmethod
+    def of(cls, snapshot: "PlanningTask", start_time: datetime, duration: timedelta) -> "PlanItem":
+        return cls(snapshot.source, start_time, duration, is_rest=snapshot.is_rest,
+                   deadline=snapshot.latest_finish_date)
+
+    @property
+    def header(self) -> str:
+        return f"Rest of {self.task.header}" if self.is_rest else self.task.header
 
     def __repr__(self) -> str:
         return f"<PlanItem: {self.task.header} at {self.start_time}>"
@@ -265,7 +320,7 @@ def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
             slice_duration = min(run.remaining[snapshot.id], segment.end - begin)
             end_time = begin + slice_duration
             plan.setdefault(segment.bucket_id, []).append(
-                PlanItem(snapshot.source, begin, slice_duration)
+                PlanItem.of(snapshot, begin, slice_duration)
             )
             run.consume(snapshot, slice_duration, end_time)
             head = _Segment(segment.bucket_id, segment.tag_ids, segment.start, begin)
@@ -360,7 +415,7 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
             slice_duration = min(run.remaining[snapshot.id], segment.end - current_time)
             end_time = current_time + slice_duration
             plan[segment.bucket_id].append(
-                PlanItem(snapshot.source, current_time, slice_duration)
+                PlanItem.of(snapshot, current_time, slice_duration)
             )
             run.consume(snapshot, slice_duration, end_time)
             run.last_task = snapshot

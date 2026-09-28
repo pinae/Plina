@@ -145,6 +145,9 @@ export interface DependencyCycleError {
 export interface PlanItem {
     task_id: string;
     header: string;
+    /** A slice of a parent's Rest placeholder (UI-2): ``task_id`` is the
+     *  parent, ``header`` reads "Rest of …". */
+    is_rest?: boolean;
     start_time: string;
     /** Seconds. */
     duration: number;
@@ -239,6 +242,8 @@ export interface TrackingResponse {
 export interface CompleteResponse {
     task: Task;
     alternatives: PlanAlternative[];
+    /** Parents completed because their last open child was (bottom-up, UI-2). */
+    auto_completed?: { id: string; header: string }[];
 }
 
 /** 400 payload of track/start when predecessors are unfinished. */

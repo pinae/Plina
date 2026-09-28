@@ -68,6 +68,19 @@ class BuildDagTest(SimpleTestCase):
         self.assertIn("a", ctx.exception.cycle)
         self.assertIn("b", ctx.exception.cycle)
 
+    def test_cycle_path_is_found_with_nodes_downstream_of_it(self):
+        """Regression (UI-2): the cycle extraction crashed with StopIteration
+        when it started on a node that only hangs off a cycle."""
+        nodes = [Node(n) for n in ("a", "b", "tail1", "tail2", "tail3")]
+        edges = [("a", "b"), ("b", "a"), ("b", "tail1"), ("tail1", "tail2"), ("tail2", "tail3")]
+        with self.assertRaises(CycleError) as ctx:
+            build_dag(nodes, edges)
+        cycle = ctx.exception.cycle
+        self.assertEqual(cycle[0], cycle[-1])
+        self.assertEqual(set(cycle), {"a", "b"})
+        for step in zip(cycle, cycle[1:]):
+            self.assertIn(step, edges)
+
     def test_edges_to_unknown_nodes_are_dropped(self):
         """Edges from completed (filtered-out) tasks are already satisfied."""
         graph = build_dag([Node("b")], [("completed-task", "b")])

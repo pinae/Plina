@@ -4,8 +4,9 @@ from rest_framework import serializers
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
                                  write_completion_snapshot)
-from .services.graph import would_create_cycle
-from .services.tree import TreeIndex, earliest_ancestor_deadline, next_sibling_order, reparent_cycle
+from .services.tree import (TreeIndex, dependency_cycle, earliest_ancestor_deadline,
+                            move_creates_dependency_cycle, next_sibling_order, related_in_tree,
+                            reparent_cycle)
 
 HEX_COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
 
@@ -122,6 +123,21 @@ class TaskSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'parent_id': [message], 'path': [str(node) for node in path],
                 })
+            cycle = move_creates_dependency_cycle(instance.id, new_parent.id if new_parent else None)
+            if cycle is not None:
+                target = f'“{new_parent.header}”' if new_parent else 'the top level'
+                raise serializers.ValidationError({
+                    'parent_id': [f'Moving “{instance.header}” into {target} would create a '
+                                  'dependency cycle, because a parent’s dependencies apply to '
+                                  'all of its subtasks.'],
+                    'cycle': [str(node) for node in cycle],
+                })
+        if instance is not None and attrs.get('completed_at') is not None and not instance.is_done:
+            from .services.completion import CompletionError, ensure_completable
+            try:
+                ensure_completable(instance)
+            except CompletionError as error:
+                raise serializers.ValidationError({'completed_at': [str(error)]})
         deadline = attrs.get('latest_finish_date')
         if deadline is not None:
             parent = new_parent if new_parent is not self._UNSET else (
@@ -177,10 +193,14 @@ class TaskSerializer(serializers.ModelSerializer):
             validated_data['order'] = next_sibling_order(parent.id if parent else None)
         task = super().update(instance, validated_data)
         record_estimate_change(task, old_duration, task.duration, 'edited')
+        from .services.completion import complete_finished_ancestors, reopen
         if task.completed_at is not None and not was_done:
             write_completion_snapshot(task)
+            complete_finished_ancestors(task, task.completed_at)
         elif task.completed_at is None and was_done:
             clear_completion_snapshot(task)
+            if task.parent is not None and task.parent.is_done:
+                reopen(task.parent)  # an open task cannot live in a completed one
         return task
 
     class Meta:
@@ -274,8 +294,17 @@ class TaskDependencySerializer(serializers.ModelSerializer):
                 {"detail": "This dependency already exists."}
             )
 
-        edges = TaskDependency.objects.values_list("predecessor_id", "successor_id")
-        cycle = would_create_cycle(edges, (predecessor.id, successor.id))
+        related = related_in_tree(predecessor.id, successor.id)
+        if related is not None:
+            inner, outer = (predecessor, successor) if related[0] == predecessor.id \
+                else (successor, predecessor)
+            raise serializers.ValidationError({"detail": (
+                f"“{inner.header}” is part of “{outer.header}”. A task cannot depend on "
+                "its own parent or subtask."
+            )})
+
+        # Counts the tree: a parent's dependencies apply to all its subtasks.
+        cycle = dependency_cycle(predecessor.id, successor.id)
         # UUIDs are serialized as strings in the JSON error payload.
         cycle = [str(node) for node in cycle] if cycle is not None else None
         if cycle is not None:

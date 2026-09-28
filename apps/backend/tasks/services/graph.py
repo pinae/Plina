@@ -139,15 +139,22 @@ def _find_any_cycle(node_ids: Iterable[Hashable], edges: List[Edge]) -> Optional
 
     if seen == len(in_degree):
         return None
-    # Some node sits on a cycle: walk within the residual graph until we repeat.
+    # Some node sits on a cycle. Every residual node has a residual
+    # *predecessor* (its in-degree never reached 0), but not necessarily a
+    # residual successor (nodes downstream of a cycle), so walk backwards
+    # until a node repeats, then reverse into edge direction.
     residual = {node_id for node_id, degree in in_degree.items() if degree > 0}
+    predecessors: Dict[Hashable, List[Hashable]] = defaultdict(list)
+    for predecessor, successor in edges:
+        predecessors[successor].append(predecessor)
     start = next(iter(residual))
     path, visited = [start], {start}
     node = start
     while True:
-        node = next(succ for succ in adjacency[node] if succ in residual)
+        node = next(pred for pred in predecessors[node] if pred in residual)
         if node in visited:
-            return path[path.index(node):] + [node]
+            cycle = path[path.index(node):] + [node]
+            return list(reversed(cycle))
         path.append(node)
         visited.add(node)
 

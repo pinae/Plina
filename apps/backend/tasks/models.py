@@ -357,6 +357,8 @@ class PlanEntry(models.Model):
     start = models.DateTimeField()
     duration = models.DurationField()
     order = models.PositiveIntegerField()
+    #: A slice of the parent's Rest placeholder (``task`` is the parent, UI-2).
+    is_rest = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["order"]

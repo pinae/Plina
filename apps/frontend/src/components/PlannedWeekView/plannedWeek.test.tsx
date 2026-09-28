@@ -55,6 +55,24 @@ const planPayload: PlanResponse = {
 };
 
 describe('planToViewTasks', () => {
+    it('marks the Rest placeholder of a parent (UI-2)', () => {
+        const withRest: PlanResponse = {
+            ...planPayload,
+            buckets: [{
+                ...planPayload.buckets[0],
+                items: [{
+                    task_id: 'hw', header: 'Rest of Hardware Design', is_rest: true,
+                    start_time: '2026-07-08T11:00:00', duration: 7200,
+                    warnings: [], is_fixed: false, is_appointment: false, hex_color: null,
+                }],
+            }],
+        };
+        const rest = planToViewTasks(withRest).find(t => t.taskId === 'hw')!;
+        expect(rest.isRest).toBe(true);
+        expect(rest.title).toBe('Rest of Hardware Design');
+        expect(planToViewTasks(planPayload).every(t => !t.isRest)).toBe(true);
+    });
+
     it('maps plan items and appointments to ViewTasks', () => {
         const tasks = planToViewTasks(planPayload);
 
