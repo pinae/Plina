@@ -14,6 +14,7 @@ import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { WeekView } from '../WeekView/WeekView.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { WhatNextDialog } from '../WhatNextDialog/WhatNextDialog.tsx';
+import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import { FeasibilityBanner } from '../FeasibilityBanner/FeasibilityBanner.tsx';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
@@ -236,9 +237,13 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
             {editingZone && (
                 <BucketEditDialog zone={editingZone} onClose={() => setEditingZone(null)} />
             )}
-            {editingTask && (
+            {/* A card of a task with subtasks is its Rest: it opens the split
+                editor (§4.5); every other card opens the task dialog. */}
+            {editingTask && (editingTask.children_ids?.length ? (
+                <SplitEditor open task={editingTask} onClose={() => setEditingTaskId(null)} />
+            ) : (
                 <TaskFormDialog open task={editingTask} onClose={() => setEditingTaskId(null)} />
-            )}
+            ))}
             {newTaskDraft && (
                 <TaskFormDialog
                     open

@@ -33,6 +33,7 @@ import {
     fetchSettings,
     fetchTags,
     fetchTasks,
+    splitTask,
     startTracking,
     stopTracking,
     updateBucketType,
@@ -42,7 +43,7 @@ import {
     updateTask,
 } from './api';
 import type {
-    BucketTypeWrite, Dependency, DependencyCycleError, ProjectWrite, SettingsWrite,
+    BucketTypeWrite, Dependency, DependencyCycleError, ProjectWrite, SettingsWrite, SplitRequest,
     TagWrite, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
 
@@ -123,6 +124,15 @@ export const useStartTracking = () => {
             if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
             return invalidate(queryKeys.tasks, queryKeys.plan);
         },
+    });
+};
+
+/** The split editor's atomic save (UI-3/UI-6). */
+export const useSplitTask = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ taskId, body }: { taskId: string; body: SplitRequest }) => splitTask(taskId, body),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.dependencies, queryKeys.projects),
     });
 };
 

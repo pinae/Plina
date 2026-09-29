@@ -279,7 +279,10 @@ export interface SplitRow {
     /** Null/omitted = unestimated (planned with the default duration). */
     duration?: string | null;
     priority?: number;
+    /** ISO; must not be later than an ancestor's deadline. */
+    latest_finish_date?: string | null;
     tag_ids?: string[];
+    /** Omitted/null = keep this task's own subtree as it is. */
     children?: SplitRow[] | null;
 }
 

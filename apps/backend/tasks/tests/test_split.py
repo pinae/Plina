@@ -157,3 +157,74 @@ class SplitTest(TestCase):
         self.hardware.save()
         response = self.split(self.hardware, {"children": [{"header": "late"}]})
         self.assertEqual(response.status_code, 400)
+
+
+class SplitRestructureTest(TestCase):
+    """UI-6: the editor can move existing subtasks between levels."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.hardware = Task.objects.create(header="Hardware Design", duration=hours(12))
+        self.cad = Task.objects.create(header="CAD", parent=self.hardware, order=0, duration=hours(3))
+        self.housing = Task.objects.create(header="housing", parent=self.cad, order=0, duration=hours(2))
+        self.mount = Task.objects.create(header="mount", parent=self.cad, order=1, duration=hours(1))
+
+    def split(self, payload):
+        return self.client.post(f"/api/tasks/{self.hardware.id}/split/", payload, format="json")
+
+    def test_outdenting_a_nested_part_moves_it_up(self):
+        response = self.split({"sequential": False, "children": [
+            {"id": str(self.cad.id), "header": "CAD", "duration": "03:00:00", "children": [
+                {"id": str(self.housing.id), "header": "housing", "duration": "02:00:00"},
+            ]},
+            {"id": str(self.mount.id), "header": "mount", "duration": "01:00:00"},
+        ]})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.mount.refresh_from_db()
+        self.assertEqual((self.mount.parent_id, self.mount.order), (self.hardware.id, 1))
+
+    def test_a_row_without_children_keeps_its_subtree(self):
+        response = self.split({"sequential": False, "children": [
+            {"id": str(self.cad.id), "header": "CAD v2", "duration": "03:00:00"},
+        ]})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(Task.objects.filter(parent=self.cad).count(), 2)
+
+    def test_parts_missing_from_the_payload_are_removed_at_any_depth(self):
+        response = self.split({"sequential": False, "children": [
+            {"id": str(self.cad.id), "header": "CAD", "duration": "03:00:00", "children": [
+                {"id": str(self.housing.id), "header": "housing", "duration": "02:00:00"},
+            ]},
+        ]})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(Task.objects.filter(id=self.mount.id).exists())
+
+    def test_rows_can_carry_a_deadline_within_the_ancestors(self):
+        self.hardware.latest_finish_date = timezone.now() + timedelta(days=10)
+        self.hardware.save()
+        ok = timezone.now() + timedelta(days=5)
+        response = self.split({"children": [{"header": "orders", "latest_finish_date": ok.isoformat()}]})
+        self.assertEqual(response.status_code, 200, response.data)
+        late = timezone.now() + timedelta(days=20)
+        response = self.split({"children": [{"header": "late", "latest_finish_date": late.isoformat()}]})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Hardware Design", response.data["detail"])
+
+    def test_a_move_that_creates_a_dependency_cycle_rolls_back(self):
+        # CAD's whole subtree waits for "order filament", which waits for
+        # "second". Moving "second" into CAD would make it wait for itself.
+        outside = Task.objects.create(header="order filament")
+        second = Task.objects.create(header="second", parent=self.hardware, order=1)
+        TaskDependency.objects.create(predecessor=outside, successor=self.cad)
+        TaskDependency.objects.create(predecessor=second, successor=outside)
+        response = self.split({"sequential": False, "children": [
+            {"id": str(self.cad.id), "header": "CAD", "children": [
+                {"id": str(self.housing.id), "header": "housing"},
+                {"id": str(self.mount.id), "header": "mount"},
+                {"id": str(second.id), "header": "second"},  # moved into CAD → cycle
+            ]},
+        ]})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cycle", response.data["detail"])
+        second.refresh_from_db()
+        self.assertEqual(second.parent_id, self.hardware.id)

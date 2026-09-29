@@ -140,3 +140,39 @@ describe('TaskFormDialog validation', () => {
         expect(onClose).not.toHaveBeenCalled();
     });
 });
+
+describe('TaskFormDialog — splitting (UI-6)', () => {
+    const existing = {
+        id: 'hw', header: 'Hardware Design', description: '', start_date: null, duration: '12:00:00',
+        latest_finish_date: null, time_spent: '00:00:00', priority: 7, tags: [], hex_color: null,
+        is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
+        active_tracking_start: null, project_id: null, children_ids: [],
+    };
+
+    it('offers "Split into subtasks" when editing and opens the split editor', async () => {
+        server.use(
+            http.get(`${API}/tasks/`, () => HttpResponse.json([existing])),
+            http.get(`${API}/settings/`, () => HttpResponse.json({
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+            })),
+        );
+        const onClose = vi.fn();
+        render(<TaskFormDialog open task={existing} onClose={onClose} />, { wrapper });
+        fireEvent.click(screen.getByRole('button', { name: /split into subtasks/i }));
+        expect(await screen.findByText('Split “Hardware Design”')).toBeInTheDocument();
+        expect(screen.queryByText('Edit “Hardware Design”')).toBeNull();
+
+        fireEvent.click(await screen.findByRole('button', { name: /^cancel$/i }));
+        expect(onClose).toHaveBeenCalled();
+    });
+
+    it('calls it "Edit parts" for a task that already has subtasks', () => {
+        render(<TaskFormDialog open task={{ ...existing, children_ids: ['a', 'b'] }} onClose={() => {}} />, { wrapper });
+        expect(screen.getByRole('button', { name: /edit parts \(2\)/i })).toBeInTheDocument();
+    });
+
+    it('is not offered for a new task', () => {
+        render(<TaskFormDialog open onClose={() => {}} />, { wrapper });
+        expect(screen.queryByRole('button', { name: /split into subtasks/i })).toBeNull();
+    });
+});

@@ -638,6 +638,30 @@ L ≈ 2–4 days).
   `SplitEditor` (dialog, calls the split endpoint).
 - *Accept:* §11 scenario 3; paste of an indented list builds nested rows;
   over-budget state shows the raise button and saves correctly.
+- *Delivered (2026-09-29, TDD):* 49 new frontend tests (374 total) and 5
+  backend tests (285 total); `yarn build`, `storybook build` (38 stories)
+  green. Pure helpers `utils/outline.ts` (flat row model with depth; insert,
+  indent, outdent, move, remove, to-tree, paste parsing, `commitRowTokens`
+  reusing the quick-add parser) and `utils/splitMath.ts` (`ghostDurations`,
+  `computeBudgets` for nested rows incl. "parts +x over" per row,
+  `allocation` for the bar), `utils/splitPayload.ts` (task subtree ↔ rows ↔
+  request). Components `OutlineRows` (reused by UI-7), `AllocationBar`,
+  `SplitEditor` (waits for tasks/tags/settings before building its rows;
+  "Set estimate to Σ parts" = `set_to_sum`, "Raise estimate to …" in the
+  overflow line = `raised_from_warning`, a typed estimate = `split`).
+  Entry points: "Split into subtasks" / "Edit parts (n)" in the edit dialog,
+  and clicking a Rest card in the Week view. Verified live: pasting a nested
+  list into "Implement API" (8h) saved Endpoints 3:30 › Orders 2h, Payments
+  1:30; Auth 1h; Tests 3:30, with chains per level and inherited tags.
+  Backend change (supersedes UI-3 decision 3): the split request is the
+  complete outline below the task — a row may reference any task of the
+  subtree (moving it between levels), a row with an id and without
+  `children` keeps its subtree, everything else of the subtree that is not
+  listed is removed (refused for tracked time or completed tasks); rows
+  accept `latest_finish_date` (not later than an ancestor's); a final
+  tree-aware cycle check rolls everything back with the cycle named.
+  Not yet: the S shortcut on Week-view cards (needs a hovered/selected card;
+  S arrives with the outline's row selection in UI-7).
 
 **UI-7 · Outline view + sorting session — L**
 - `OutlineView` replaces `ProjectList` in the Projects tab: tree rows

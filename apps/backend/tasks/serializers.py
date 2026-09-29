@@ -268,6 +268,7 @@ class SplitRowSerializer(serializers.Serializer):
     })
     duration = serializers.DurationField(required=False, allow_null=True)
     priority = serializers.FloatField(required=False, min_value=0, max_value=10)
+    latest_finish_date = serializers.DateTimeField(required=False, allow_null=True)
     tag_ids = serializers.PrimaryKeyRelatedField(queryset=Tag.objects.all(), many=True,
                                                  required=False)
     children = serializers.ListField(required=False, allow_null=True)

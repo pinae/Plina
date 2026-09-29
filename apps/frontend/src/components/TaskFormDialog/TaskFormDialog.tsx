@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 
 import { useCreateTask, useProjects, useTags, useUpdateTask } from '../../queries.tsx';
+import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
 import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import {
@@ -66,6 +67,7 @@ export function TaskFormDialog({
     open, onClose, task, initialStart, initialDurationMinutes, defaultAppointment,
 }: TaskFormDialogProps) {
     const editing = task !== undefined;
+    const [splitting, setSplitting] = useState(false);
     const tags = useTags();
     const projects = useProjects();
     const create = useCreateTask();
@@ -181,6 +183,11 @@ export function TaskFormDialog({
     const projectFeedback = shown('project');
     const priorityFeedback = shown('priority');
 
+    // Splitting replaces this dialog; closing the split editor closes both.
+    if (splitting && task) {
+        return <SplitEditor open={open} task={task} onClose={onClose} />;
+    }
+
     return (
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
             <DialogTitle>{editing ? `Edit “${task.header}”` : 'New task'}</DialogTitle>
@@ -288,6 +295,11 @@ export function TaskFormDialog({
                 {generalError && <Alert severity="error">{generalError}</Alert>}
             </DialogContent>
             <DialogActions>
+                {editing && (
+                    <Button onClick={() => setSplitting(true)} sx={{ mr: 'auto' }}>
+                        {task.children_ids?.length ? `Edit parts (${task.children_ids.length})` : 'Split into subtasks'}
+                    </Button>
+                )}
                 <Button onClick={onClose}>Cancel</Button>
                 <Button variant="contained" onClick={submit} disabled={pending}>
                     {editing ? 'Save' : 'Create'}

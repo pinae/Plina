@@ -279,6 +279,41 @@ describe('PlannedWeekView', () => {
     });
 });
 
+describe('Rest placeholder (UI-6)', () => {
+    it('opens the split editor of its parent when clicked', async () => {
+        const parent: Task = {
+            id: 'hw', header: 'Hardware Design', description: '', start_date: null, duration: '12:00:00',
+            latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null,
+            is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
+            active_tracking_start: null, project_id: null, children_ids: ['cad'],
+        };
+        const child: Task = { ...parent, id: 'cad', header: 'CAD', duration: '03:00:00', children_ids: [], parent_id: 'hw', ancestor_ids: ['hw'] };
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                ...planPayload,
+                buckets: [{
+                    ...planPayload.buckets[0],
+                    items: [{
+                        task_id: 'hw', header: 'Rest of Hardware Design', is_rest: true,
+                        start_time: '2026-07-08T10:00:00', duration: 7200, warnings: [],
+                        is_fixed: false, is_appointment: false, hex_color: null,
+                    }],
+                }],
+            })),
+            http.get(`${API}/tasks/`, () => HttpResponse.json([parent, child])),
+            http.get(`${API}/tags/`, () => HttpResponse.json([])),
+            http.get(`${API}/settings/`, () => HttpResponse.json({
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+            })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        const card = await screen.findByText('Rest of Hardware Design');
+        fireEvent.click(card);
+        expect(await screen.findByText('Split “Hardware Design”')).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('textbox', { name: /^part 1$/i })).toHaveValue('CAD'));
+    });
+});
+
 describe('dragging a task (regression: sticky + fades overlaps)', () => {
     it('keeps the dropped task in place and fades the auto task it now overlaps', async () => {
         const patched: Array<Record<string, unknown>> = [];

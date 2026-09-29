@@ -303,12 +303,22 @@ def dependency_cycle(predecessor_id: UUID, successor_id: UUID) -> Optional[List[
     return _task_path(path) if path else None
 
 
-def move_creates_dependency_cycle(task_id: UUID, new_parent_id: Optional[UUID]) -> Optional[List[UUID]]:
-    """The cycle moving ``task_id`` under ``new_parent_id`` would create."""
+def _cycle_in(parents: Dict[UUID, Optional[UUID]]) -> Optional[List[UUID]]:
     from tasks.services.graph import _find_any_cycle
-    parents = _parent_map()
-    parents[task_id] = new_parent_id
     edges = _start_end_edges(parents, _dependency_edges())
     nodes = {node for edge in edges for node in edge}
     cycle = _find_any_cycle(nodes, edges)
     return _task_path(cycle) if cycle else None
+
+
+def move_creates_dependency_cycle(task_id: UUID, new_parent_id: Optional[UUID]) -> Optional[List[UUID]]:
+    """The cycle moving ``task_id`` under ``new_parent_id`` would create."""
+    parents = _parent_map()
+    parents[task_id] = new_parent_id
+    return _cycle_in(parents)
+
+
+def current_dependency_cycle() -> Optional[List[UUID]]:
+    """A cycle in the tree + dependencies as they are stored right now (used
+    after bulk changes inside a transaction, which then rolls back)."""
+    return _cycle_in(_parent_map())
