@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -62,7 +62,8 @@ async function type(input: HTMLElement, text: string) {
 describe('QuickAdd', () => {
     it('adds a task to the active project in one line (spec scenario 1)', async () => {
         const input = renderQuickAdd();
-        input.focus();
+        // A direct DOM focus runs React focus handlers: wrap it in act().
+        act(() => input.focus());
         await type(input, 'Order filament 30m #maker');
         expect(screen.getByTestId('quick-add-project')).toHaveTextContent('T250 › Hardware Design');
         expect(screen.getByText('⏱ 30m')).toBeInTheDocument();

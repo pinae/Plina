@@ -2,7 +2,7 @@
  * UI-5 acceptance (docs/task-entry-ui.md §11, scenarios 1 and 2): the header
  * together with the real Week view against a small stateful fake backend.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -132,7 +132,8 @@ describe('Scenario 1 — capture from the Week view', () => {
     it('typing n inside the quick-add input is just a letter', async () => {
         renderApp();
         const input = screen.getByRole('textbox', { name: /add task/i });
-        input.focus();
+        // A direct DOM focus runs React focus handlers: wrap it in act().
+        act(() => input.focus());
         fireEvent.keyDown(input, { key: 'p' });
         expect(screen.queryByRole('combobox')).toBeNull(); // the P picker did not open
     });

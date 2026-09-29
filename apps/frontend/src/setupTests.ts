@@ -1,4 +1,26 @@
 import '@testing-library/jest-dom';
+import { afterEach } from 'vitest';
+
+// --- Fail on React act() warnings ------------------------------------------
+// "An update to X inside a test was not wrapped in act(...)" means a test
+// changed state behind React Testing Library's back (e.g. a direct
+// element.focus()), so its assertions may not see what a user would. Turn
+// the warning into a failure of the test that caused it instead of noise.
+const actWarnings: string[] = [];
+const originalConsoleError = console.error;
+console.error = (...args: unknown[]) => {
+    const text = args.map(String).join(' ');
+    if (text.includes('not wrapped in act(')) actWarnings.push(text.split('\n')[0]);
+    originalConsoleError(...args);
+};
+afterEach(() => {
+    if (actWarnings.length === 0) return;
+    const found = actWarnings.splice(0);
+    throw new Error(
+        `React act() warning(s) in this test:\n${found.join('\n')}\n` +
+        'Wrap direct DOM calls such as element.focus() in act(), or use fireEvent.',
+    );
+});
 
 // --- React Flow in jsdom -----------------------------------------------
 // @xyflow/react measures its viewport; jsdom provides neither ResizeObserver
