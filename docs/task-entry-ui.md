@@ -671,6 +671,30 @@ L ≈ 2–4 days).
 - *Accept:* toggling A shows all projects; Tab on a row re-parents it and
   the new parent's Σ/Rest update; sort mode removes a row from the list
   once an estimate is entered.
+- *Delivered (2026-09-29, TDD):* 26 new frontend tests (400 total);
+  `yarn build` and `storybook build` (42 stories) green. `OutlineView`
+  replaces `ProjectList` in the Projects tab (the old component stays until
+  UI-8's cleanup): rows edited in place with every change saved at once,
+  filter *Active project / All projects* (A, remembered per browser;
+  "Show all projects" in the header opens it with *All*), collapsible
+  parents with `Σ parts / estimate` (amber when over budget), Rest rows
+  (▶ tracks the parent, Enter/S open the split editor), and the full key
+  set of §5/§5.1 including Enter on the last row of a level adding a new
+  sibling (tokens work; it inherits the parent's tags and priority like
+  quick add). Sorting session = inbox of unestimated tasks with their path;
+  once a row gets an estimate the next row is selected. Pure helpers in
+  `utils/outlineTree.ts`; `ProjectPicker` extracted from the header switcher
+  and reused for M. Verified live: Shift+Tab re-parents, estimating in the
+  sorting session empties the inbox row by row, and a Tab that would create
+  a dependency loop is refused with the server's explanation.
+  Decisions beyond the spec: **(1)** the outline has its own live row
+  component instead of reusing `OutlineRows` (that one edits a local draft
+  saved in one request; the outline saves each change immediately) — they
+  share the pure token/outline helpers; **(2)** Del on a leaf hides the row
+  and deletes after 6 s unless undone; Del on a parent asks "move its
+  subtasks up / delete everything" (§4.5) and has no undo; **(3)** the inbox
+  is ordered by project path (top-level tasks first); **(4)** A, digits and
+  the other single keys act only while the outline has the focus.
 
 **UI-8 · Form, settings page, Week view, migration of old UI — M**
 - `TaskFormDialog`: Parent field, optional duration with default hint,

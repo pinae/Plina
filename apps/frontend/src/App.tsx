@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import Layout from './components/Layout/Layout.tsx';
 import { Box, Tabs, Tab } from '@mui/material';
 import TaskList from './components/TaskList/TaskList.tsx';
-import ProjectList from './components/ProjectList/ProjectList.tsx';
+import { OutlineView } from './components/OutlineView/OutlineView.tsx';
+import { storeOutlineFilter } from './utils/outlineFilter.ts';
 import TagList from './components/TagList/TagList.tsx';
 import BucketTypeList from './components/BucketTypeList/BucketTypeList.tsx';
 import Calendar from './components/Calendar/Calendar.tsx';
@@ -20,6 +21,7 @@ function App() {
   // the "Plan my week" button then triggers planning once dragging settles.
   const [planDirty, setPlanDirty] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [outlineKey, setOutlineKey] = useState(0);
 
   const handleChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTab(newValue);
@@ -35,7 +37,12 @@ function App() {
     <Layout>
       {/* Engage bar (UI-5): active project, tracker, quick add. */}
       <AppHeader
-        onShowAllProjects={() => setTab(3)}
+        onShowAllProjects={() => {
+          // Projects tab with the "All projects" filter (§3.1).
+          storeOutlineFilter('all');
+          setOutlineKey(key => key + 1);
+          setTab(3);
+        }}
         actions={
           <PlanMyWeekButton
             dirty={planDirty}
@@ -75,7 +82,7 @@ function App() {
           )}
           {tab === 1 && <Calendar />}
           {tab === 2 && <TaskList />}
-          {tab === 3 && <ProjectList />}
+          {tab === 3 && <OutlineView key={outlineKey} />}
           {tab === 4 && <TagList />}
           {tab === 5 && <BucketTypeList />}
           {tab === 6 && <DependencyEditor />}
