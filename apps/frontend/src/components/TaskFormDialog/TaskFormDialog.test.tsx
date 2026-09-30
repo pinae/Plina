@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 
 import { TaskFormDialog } from './TaskFormDialog.tsx';
 import { treeDefaults } from '../../testing/treeFixtures.ts';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 
 const API = 'http://localhost:8000/api';
 let posted: Record<string, unknown>[] = [];
@@ -273,3 +274,16 @@ describe('TaskFormDialog — the task tree (UI-8)', () => {
         expect(patches).toHaveLength(0);
     });
 });
+
+describe('TaskFormDialog on a phone (UI-9)', () => {
+    it('fills the screen', async () => {
+        const restore = fakeScreen(PHONE);
+        try {
+            render(<TaskFormDialog open onClose={vi.fn()} />, { wrapper });
+            expect(await screen.findByRole('dialog')).toHaveClass('MuiDialog-paperFullScreen');
+        } finally {
+            restore();
+        }
+    });
+});
+

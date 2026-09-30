@@ -46,4 +46,23 @@ describe('ProjectPicker', () => {
         renderPicker({ recentIds: ['hw'] });
         expect(screen.getAllByRole('option')[1]).toHaveTextContent('T250 › Hardware Design');
     });
+
+    it('puts an exact name match first, even before a recent project', () => {
+        // "T250" also matches the recent "T250 › Hardware Design" by path.
+        const { onPick, input } = renderPicker({ recentIds: ['hw'] });
+        fireEvent.change(input, { target: { value: 't250' } });
+        expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['T250', 'T250 › Hardware Design']);
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(onPick).toHaveBeenCalledWith({ kind: 'project', id: 't250' });
+    });
+
+    it('ranks names starting with the text before other path matches', () => {
+        const { input } = renderPicker({ recentIds: ['blog'] });
+        fireEvent.change(input, { target: { value: 'co' } });
+        // Nothing starts with "co" except "Company Blog"; order otherwise unchanged.
+        expect(screen.getAllByRole('option')[0]).toHaveTextContent('Company Blog');
+        fireEvent.change(input, { target: { value: 'de' } });
+        expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['T250 › Hardware Design']);
+    });
 });
+

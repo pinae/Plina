@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { WhatNextDialog } from './WhatNextDialog.tsx';
 import { API, makeAlternative } from '../../testing/treeFixtures.ts';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 
 const accepted: string[] = [];
 const reopened: string[] = [];
@@ -71,4 +72,15 @@ describe('WhatNextDialog', () => {
         // The alternatives were computed without the reopened tasks: stale.
         await waitFor(() => expect(onClose).toHaveBeenCalled());
     });
+
+    it('fills the screen on a phone (UI-9)', () => {
+        const restore = fakeScreen(PHONE);
+        try {
+            renderDialog();
+            expect(screen.getByRole('dialog')).toHaveClass('MuiDialog-paperFullScreen');
+        } finally {
+            restore();
+        }
+    });
 });
+

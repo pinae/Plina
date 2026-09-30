@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { QuickAdd } from './QuickAdd.tsx';
 import { API, makeTask, makerTag, settingsFor, treeTasks } from '../../testing/treeFixtures.ts';
 import type { Task, TaskWrite } from '../../types.ts';
+import { readRecent, RECENT_PROJECTS, RECENT_TAGS } from '../../utils/recent.ts';
 
 let posted: TaskWrite[] = [];
 let patched: { id: string; body: TaskWrite }[] = [];
@@ -42,6 +43,7 @@ afterEach(() => {
     cleanup();
     server.resetHandlers();
     posted = []; patched = []; tagPosts = []; parentAfterSave = {};
+    localStorage.clear();
 });
 afterAll(() => server.close());
 
@@ -170,3 +172,69 @@ describe('QuickAdd', () => {
         expect(input).toHaveValue('');
     });
 });
+
+describe('QuickAdd sheet variant (phones, UI-9)', () => {
+    function renderSheet() {
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        render(<QueryClientProvider client={client}><QuickAdd variant="sheet" /></QueryClientProvider>);
+        return screen.getByRole('textbox', { name: /add task/i });
+    }
+    const pressed = (name: string) => screen.getByRole('button', { name }).getAttribute('aria-pressed');
+
+    it('captures a task by tapping only, plus typing the header (UI-9 acceptance)', async () => {
+        const input = renderSheet();
+        fireEvent.click(await screen.findByRole('button', { name: 'Company Blog' }));
+        fireEvent.click(screen.getByRole('button', { name: '#maker' }));
+        fireEvent.click(screen.getByRole('button', { name: '30m' }));
+        fireEvent.change(input, { target: { value: 'Order filament' } });
+        expect(screen.getByTestId('quick-add-project')).toHaveTextContent('Company Blog');
+        fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({
+            header: 'Order filament', parent_id: 'blog', tag_ids: ['tag-maker'], duration: '00:30:00',
+        });
+        // Ready for the next one: text and taps are reset, back to the active project.
+        await waitFor(() => expect(input).toHaveValue(''));
+        expect(pressed('30m')).toBe('false');
+        expect(pressed('Hardware Design')).toBe('true');
+        // The chips remember what was used on this device.
+        expect(readRecent(RECENT_PROJECTS)[0]).toBe('blog');
+        expect(readRecent(RECENT_TAGS)).toEqual(['tag-maker']);
+        expect(await screen.findByText(/Added “Order filament” to Company Blog/)).toBeInTheDocument();
+    });
+
+    it('shows the chips without focusing the input, with the active project chosen', async () => {
+        renderSheet();
+        await waitFor(() => expect(screen.getByTestId('quick-add-project')).toHaveTextContent('T250 › Hardware Design'));
+        expect(pressed('Hardware Design')).toBe('true');
+    });
+
+    it('typed tokens win over tapped chips', async () => {
+        const input = renderSheet();
+        fireEvent.click(await screen.findByRole('button', { name: '30m' }));
+        fireEvent.change(input, { target: { value: 'Call landlord 1h' } });
+        expect(pressed('1h')).toBe('true');
+        fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({ header: 'Call landlord', duration: '01:00:00' });
+    });
+
+    it('"No project" makes the task a project of its own', async () => {
+        const input = renderSheet();
+        fireEvent.click(await screen.findByRole('button', { name: 'No project' }));
+        fireEvent.change(input, { target: { value: 'Garden shed' } });
+        fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({ header: 'Garden shed', parent_id: null });
+    });
+
+    it('explains an empty header instead of saving', async () => {
+        renderSheet();
+        fireEvent.click(await screen.findByRole('button', { name: '30m' }));
+        fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+        expect(await screen.findByText(/Type a name for the task/)).toBeInTheDocument();
+        expect(posted).toHaveLength(0);
+    });
+});
+

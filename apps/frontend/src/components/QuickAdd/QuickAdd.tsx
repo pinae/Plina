@@ -9,6 +9,11 @@
  * task for details; Escape clears. New tasks inherit the parent's tags and
  * priority unless typed, and consume the project's Rest — the snackbar warns
  * (with "Raise estimate") when that pushes the project over budget.
+ *
+ * UI-9: the ``sheet`` variant (phones, inside the ⊕ bottom sheet) shows the
+ * chips permanently plus tappable suggestions for project, tags and
+ * estimate, and an Add button — a task can be captured by tapping, apart
+ * from typing its name. Typed tokens win over taps.
  */
 import { useMemo, useState, type Ref } from 'react';
 import { Alert, Box, Button, Chip, IconButton, Paper, Popper, Snackbar, TextField, Typography } from '@mui/material';
@@ -22,6 +27,9 @@ import { useNow } from '../../hooks/useNow.ts';
 import { parseQuickAdd, type QuickAddToken } from '../../utils/quickAdd.ts';
 import { projectOptions } from '../../utils/projects.ts';
 import { formatDuration, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
+import { readRecent, rememberRecent, RECENT_PROJECTS, RECENT_TAGS } from '../../utils/recent.ts';
+import { suggestProjects, suggestTags } from '../../utils/suggestions.ts';
+import { QuickAddSuggestions } from '../QuickAddSuggestions/QuickAddSuggestions.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
 
 const TOKEN_ICON: Partial<Record<QuickAddToken['kind'], string>> = {
@@ -49,9 +57,12 @@ export interface QuickAddProps {
     inputRef?: Ref<HTMLInputElement>;
     /** Ctrl/⌘+Enter: open the created task in the full dialog. */
     onOpenTask?: (taskId: string) => void;
+    /** ``sheet``: phone layout with tappable suggestions (UI-9). */
+    variant?: 'header' | 'sheet';
 }
 
-export function QuickAdd({ inputRef, onOpenTask }: QuickAddProps) {
+export function QuickAdd({ inputRef, onOpenTask, variant = 'header' }: QuickAddProps) {
+    const sheet = variant === 'sheet';
     const tasks = useTasks();
     const tags = useTags();
     const settings = useSettings();
@@ -59,7 +70,11 @@ export function QuickAdd({ inputRef, onOpenTask }: QuickAddProps) {
     const client = useQueryClient();
     const now = useNow(60_000);
     const [text, setText] = useState('');
-    const [topLevel, setTopLevel] = useState(false);
+    // Tapped choices (sheet) and the ✕ on the project chip; undefined = not
+    // chosen, so the active project applies. null parent = top level.
+    const [pickedParent, setPickedParent] = useState<string | null | undefined>(undefined);
+    const [pickedTagIds, setPickedTagIds] = useState<string[]>([]);
+    const [pickedMinutes, setPickedMinutes] = useState<number | null>(null);
     const [focused, setFocused] = useState(false);
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const [hint, setHint] = useState<string | null>(null);
@@ -76,13 +91,16 @@ export function QuickAdd({ inputRef, onOpenTask }: QuickAddProps) {
     // land at the top level instead of in the project.
     const ready = tasks.isSuccess && tags.isSuccess && settings.isSuccess;
     const activeId = settings.data?.active_task_id ?? null;
-    const parentId = parsed.parentId ?? (topLevel ? null : activeId);
+    const parentId = parsed.parentId ?? (pickedParent !== undefined ? pickedParent : activeId);
+    const minutes = parsed.durationMinutes ?? pickedMinutes;
     const parent: Task | undefined = taskList.find(t => t.id === parentId);
     const parentPath = projects.find(p => p.id === parentId)?.path ?? parent?.header ?? null;
 
     const reset = () => {
         setText('');
-        setTopLevel(false);
+        setPickedParent(undefined);
+        setPickedTagIds([]);
+        setPickedMinutes(null);
         setHint(null);
     };
 
@@ -124,17 +142,19 @@ export function QuickAdd({ inputRef, onOpenTask }: QuickAddProps) {
         try {
             const newTags = await Promise.all(parsed.tags.new.map(name => createTag({ name })));
             if (newTags.length) client.invalidateQueries({ queryKey: queryKeys.tags });
-            const typedTags = [...parsed.tags.existing, ...newTags.map(tag => tag.id)];
+            const typedTags = [...new Set([...parsed.tags.existing, ...newTags.map(tag => tag.id), ...pickedTagIds])];
             const body: TaskWrite = {
                 header: parsed.header,
                 parent_id: parentId,
                 tag_ids: typedTags.length ? typedTags : parent?.tags.map(tag => tag.id) ?? [],
             };
-            if (parsed.durationMinutes !== null) body.duration = minutesToDurationString(parsed.durationMinutes);
+            if (minutes !== null) body.duration = minutesToDurationString(minutes);
             const priority = parsed.priority ?? parent?.priority;
             if (priority !== undefined) body.priority = priority;
             if (parsed.deadline) body.latest_finish_date = parsed.deadline.toISOString();
             const created = await createTask.mutateAsync(body);
+            if (parentId) rememberRecent(RECENT_PROJECTS, parentId);
+            for (const id of [...typedTags].reverse()) rememberRecent(RECENT_TAGS, id, 8);
             reset();
             if (openAfterwards) onOpenTask?.(created.id);
             await afterSave(parsed.header);
@@ -153,94 +173,142 @@ export function QuickAdd({ inputRef, onOpenTask }: QuickAddProps) {
     };
 
     const showChips = focused && text.trim() !== '';
+    // Small lists; recomputed each render so fresh recents show after a save.
+    const suggestedProjects = sheet ? suggestProjects(projects, readRecent(RECENT_PROJECTS)) : [];
+    const suggestedTags = sheet ? suggestTags(tags.data ?? [], taskList, readRecent(RECENT_TAGS)) : [];
     const errorMessages = parsed.tokens.filter(t => t.kind === 'error').map(t => t.message!);
+
+    const input = (
+        <TextField
+            inputRef={inputRef}
+            size={sheet ? 'medium' : 'small'} fullWidth
+            autoFocus={sheet}
+            placeholder={sheet ? 'What needs doing?  e.g. Call landlord' : 'Add task…  e.g. Order filament 30m #maker >fri'}
+            value={text}
+            onChange={event => { setText(event.target.value); setHint(null); }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    save(event.ctrlKey || event.metaKey);
+                } else if (event.key === 'Escape' && !sheet) {
+                    // In the sheet, Escape closes the sheet instead.
+                    reset();
+                    (event.target as HTMLInputElement).blur();
+                }
+            }}
+            slotProps={{
+                htmlInput: {
+                    'aria-label': 'Add task', 'aria-invalid': errorMessages.length > 0,
+                    enterKeyHint: sheet ? 'done' : undefined,
+                },
+                input: sheet ? undefined : {
+                    endAdornment: (
+                        <Typography variant="caption" color="text.disabled"
+                            sx={{ border: 1, borderColor: 'divider', borderRadius: 0.5, px: 0.5 }}>
+                            N
+                        </Typography>
+                    ),
+                },
+            }}
+        />
+    );
+
+    // How the text was understood: target project first, then the tokens.
+    const chips = (
+        <>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                <Box sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <Chip
+                        data-testid="quick-add-project" size="small"
+                        label={!ready ? 'Loading…' : parentPath ? `● ${parentPath}` : 'New project (top level)'}
+                        variant={parentPath ? 'filled' : 'outlined'}
+                    />
+                    {!sheet && ready && parentPath && parsed.parentId === null && (
+                        <IconButton size="small" aria-label="no project for this task"
+                            title="Add this task as a new project instead" onClick={() => setPickedParent(null)}>
+                            <CloseIcon fontSize="inherit" />
+                        </IconButton>
+                    )}
+                </Box>
+                {parsed.tokens.map(token => (
+                    <Chip key={token.start} size="small"
+                        color={token.kind === 'error' ? 'error' : token.kind === 'newTag' ? 'secondary' : 'default'}
+                        variant={token.kind === 'error' ? 'filled' : 'outlined'}
+                        label={`${TOKEN_ICON[token.kind] ?? ''}${token.label}`}
+                        title={token.message}
+                    />
+                ))}
+            </Box>
+            {errorMessages.map(message => (
+                <Typography key={message} variant="caption" color="error" component="div" sx={{ mt: 0.5 }}>
+                    {message}
+                </Typography>
+            ))}
+            {hint && (
+                <Typography variant="caption" color="warning.main" component="div" sx={{ mt: 0.5 }}>
+                    {hint}
+                </Typography>
+            )}
+        </>
+    );
+
+    const snackbar = (
+    <Snackbar open={feedback !== null} autoHideDuration={feedback?.raise ? 10000 : 4000}
+        onClose={() => setFeedback(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert
+            severity={feedback?.severity ?? 'success'} variant="filled" onClose={() => setFeedback(null)}
+            action={feedback?.raise ? (
+                <Button color="inherit" size="small" onClick={() => raiseEstimate(feedback.raise!)}>
+                    Raise estimate
+                </Button>
+            ) : undefined}
+        >
+            {feedback?.message}
+        </Alert>
+    </Snackbar>
+    );
+
+    if (sheet) {
+        return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {input}
+                {/* Keep the input focused (and the phone keyboard open) on taps. */}
+                <Box onMouseDown={event => event.preventDefault()}>{chips}</Box>
+                <QuickAddSuggestions
+                    projects={suggestedProjects.map(p => ({ id: p.id, label: p.header }))}
+                    parentId={parentId}
+                    onParent={id => { setPickedParent(id); setHint(null); }}
+                    tags={suggestedTags}
+                    tagIds={[...parsed.tags.existing, ...pickedTagIds]}
+                    onToggleTag={id => setPickedTagIds(prev => (prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]))}
+                    minutes={minutes}
+                    onMinutes={setPickedMinutes}
+                />
+                <Button variant="contained" size="large" disabled={saving}
+                    onMouseDown={event => event.preventDefault()} onClick={() => save(false)}>
+                    Add
+                </Button>
+                {snackbar}
+            </Box>
+        );
+    }
 
     return (
         <Box ref={setAnchor} sx={{ flex: 1, minWidth: 180, maxWidth: 560 }}>
-            <TextField
-                inputRef={inputRef}
-                size="small" fullWidth
-                placeholder="Add task…  e.g. Order filament 30m #maker >fri"
-                value={text}
-                onChange={event => { setText(event.target.value); setHint(null); }}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                onKeyDown={event => {
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        save(event.ctrlKey || event.metaKey);
-                    } else if (event.key === 'Escape') {
-                        reset();
-                        (event.target as HTMLInputElement).blur();
-                    }
-                }}
-                slotProps={{
-                    htmlInput: { 'aria-label': 'Add task', 'aria-invalid': errorMessages.length > 0 },
-                    input: {
-                        endAdornment: (
-                            <Typography variant="caption" color="text.disabled"
-                                sx={{ border: 1, borderColor: 'divider', borderRadius: 0.5, px: 0.5 }}>
-                                N
-                            </Typography>
-                        ),
-                    },
-                }}
-            />
+            {input}
             <Popper open={showChips && anchor !== null} anchorEl={anchor} placement="bottom-start"
                 sx={{ zIndex: 'modal', width: anchor?.clientWidth }}>
                 {/* Keep the input focused when chips are clicked. */}
                 <Paper elevation={6} sx={{ p: 1, mt: 0.5 }} onMouseDown={event => event.preventDefault()}>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        <Box sx={{ display: 'inline-flex', alignItems: 'center' }}>
-                            <Chip
-                                data-testid="quick-add-project" size="small"
-                                label={!ready ? 'Loading…' : parentPath ? `● ${parentPath}` : 'New project (top level)'}
-                                variant={parentPath ? 'filled' : 'outlined'}
-                            />
-                            {ready && parentPath && parsed.parentId === null && (
-                                <IconButton size="small" aria-label="no project for this task"
-                                    title="Add this task as a new project instead" onClick={() => setTopLevel(true)}>
-                                    <CloseIcon fontSize="inherit" />
-                                </IconButton>
-                            )}
-                        </Box>
-                        {parsed.tokens.map(token => (
-                            <Chip key={token.start} size="small"
-                                color={token.kind === 'error' ? 'error' : token.kind === 'newTag' ? 'secondary' : 'default'}
-                                variant={token.kind === 'error' ? 'filled' : 'outlined'}
-                                label={`${TOKEN_ICON[token.kind] ?? ''}${token.label}`}
-                                title={token.message}
-                            />
-                        ))}
-                    </Box>
-                    {errorMessages.map(message => (
-                        <Typography key={message} variant="caption" color="error" component="div" sx={{ mt: 0.5 }}>
-                            {message}
-                        </Typography>
-                    ))}
-                    {hint && (
-                        <Typography variant="caption" color="warning.main" component="div" sx={{ mt: 0.5 }}>
-                            {hint}
-                        </Typography>
-                    )}
+                    {chips}
                     <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
                         Enter adds · Ctrl+Enter adds and opens details · Esc clears
                     </Typography>
                 </Paper>
             </Popper>
-            <Snackbar open={feedback !== null} autoHideDuration={feedback?.raise ? 10000 : 4000}
-                onClose={() => setFeedback(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-                <Alert
-                    severity={feedback?.severity ?? 'success'} variant="filled" onClose={() => setFeedback(null)}
-                    action={feedback?.raise ? (
-                        <Button color="inherit" size="small" onClick={() => raiseEstimate(feedback.raise!)}>
-                            Raise estimate
-                        </Button>
-                    ) : undefined}
-                >
-                    {feedback?.message}
-                </Alert>
-            </Snackbar>
+            {snackbar}
         </Box>
     );
 }

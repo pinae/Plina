@@ -8,6 +8,9 @@
  * Space track · Del delete (with undo) · A active project / all projects.
  * "Sort" switches to the sorting session: the inbox of unestimated tasks
  * from all projects, where Enter opens the full dialog.
+ *
+ * Touch screens (UI-9): the selected row gets buttons for what lives on keys
+ * — outdent, indent, move, details (no double-click on a phone), split.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,6 +20,12 @@ import {
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FormatIndentDecreaseIcon from '@mui/icons-material/FormatIndentDecrease';
+import FormatIndentIncreaseIcon from '@mui/icons-material/FormatIndentIncrease';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import EditIcon from '@mui/icons-material/Edit';
+import CallSplitIcon from '@mui/icons-material/CallSplit';
 import type { AxiosError } from 'axios';
 
 import { ProjectPicker, type ProjectPick } from '../ProjectPicker/ProjectPicker.tsx';
@@ -35,6 +44,7 @@ import { projectOptions } from '../../utils/projects.ts';
 import { readOutlineFilter, storeOutlineFilter, type OutlineFilter } from '../../utils/outlineFilter.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
 import type { Task, TaskWrite } from '../../types.ts';
+import { useIsMobile, useIsTouch } from '../../hooks/useResponsive.ts';
 
 type Filter = OutlineFilter;
 
@@ -114,6 +124,9 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         return found >= 0 ? found : Math.min(selection.index, items.length - 1);
     })();
     const selected = selectedIndex >= 0 ? items[selectedIndex] : null;
+    const touch = useIsTouch();
+    const mobile = useIsMobile();
+    const rowButtons = touch || mobile;
 
     const select = (index: number) => {
         const item = items[Math.max(0, Math.min(index, items.length - 1))];
@@ -376,11 +389,11 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                     {sortMode ? 'Done sorting' : 'Sort ▶'}
                 </Button>
             </Box>
-            <Typography variant="caption" color="text.secondary">
+            {!rowButtons && <Typography variant="caption" color="text.secondary">
                 {sortMode
                     ? '↑/↓ select · E estimate · M move · # tag · 0–9 priority · S split · Space track · Del delete · Enter details'
                     : '↑/↓ select · Enter edit · Tab / Shift+Tab indent · Alt+↑/↓ move · E estimate · M move to · # tag · 0–9 priority · S split · Space track · Del delete · A all projects'}
-            </Typography>
+            </Typography>}
             <Box
                 ref={container}
                 role="tree"
@@ -418,6 +431,22 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                             else rowElements.current.delete(item.key);
                         }}
                     />,
+                    rowButtons && index === selectedIndex && !editing ? (
+                        <RowTools
+                            key={`${item.key}-tools`}
+                            item={item}
+                            sortMode={sortMode}
+                            canOutdent={outdentParent(item.task, visibleTasks) !== undefined}
+                            canIndent={indentParent(item.task, visibleTasks) !== null}
+                            canMoveUp={reorderPatches(item.task, visibleTasks, -1).length > 0}
+                            canMoveDown={reorderPatches(item.task, visibleTasks, 1).length > 0}
+                            onOutdent={() => reparent(item.task, outdentParent(item.task, visibleTasks))}
+                            onIndent={() => reparent(item.task, indentParent(item.task, visibleTasks) ?? undefined)}
+                            onMove={direction => reorder(item.task, direction)}
+                            onDetails={() => setDialogTask(item.task)}
+                            onSplit={() => setSplitTask(item.task)}
+                        />
+                    ) : null,
                     draft?.afterKey === item.key ? renderDraft() : null,
                 ])}
             </Box>
@@ -575,6 +604,42 @@ function OutlineItemRow({
                     </IconButton>
                 )}
             </Box>
+        </Box>
+    );
+}
+
+interface RowToolsProps {
+    item: OutlineItem;
+    sortMode: boolean;
+    canOutdent: boolean;
+    canIndent: boolean;
+    canMoveUp: boolean;
+    canMoveDown: boolean;
+    onOutdent: () => void;
+    onIndent: () => void;
+    onMove: (direction: -1 | 1) => void;
+    onDetails: () => void;
+    onSplit: () => void;
+}
+
+/** Touch: the keys of the selected row as buttons (UI-9). */
+function RowTools({
+    item, sortMode, canOutdent, canIndent, canMoveUp, canMoveDown, onOutdent, onIndent, onMove, onDetails, onSplit,
+}: RowToolsProps) {
+    const isTask = item.kind === 'task';
+    return (
+        <Box role="toolbar" aria-label={itemName(item)}
+            sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, pl: 1 + item.depth * 3 + 4.5, pr: 1, py: 0.25, bgcolor: 'action.selected' }}>
+            {isTask && !sortMode && (
+                <>
+                    <IconButton aria-label="outdent" disabled={!canOutdent} onClick={onOutdent}><FormatIndentDecreaseIcon fontSize="small" /></IconButton>
+                    <IconButton aria-label="indent" disabled={!canIndent} onClick={onIndent}><FormatIndentIncreaseIcon fontSize="small" /></IconButton>
+                    <IconButton aria-label="move up" disabled={!canMoveUp} onClick={() => onMove(-1)}><ArrowUpwardIcon fontSize="small" /></IconButton>
+                    <IconButton aria-label="move down" disabled={!canMoveDown} onClick={() => onMove(1)}><ArrowDownwardIcon fontSize="small" /></IconButton>
+                </>
+            )}
+            {isTask && <IconButton aria-label="details" onClick={onDetails}><EditIcon fontSize="small" /></IconButton>}
+            <IconButton aria-label="split" onClick={onSplit}><CallSplitIcon fontSize="small" /></IconButton>
         </Box>
     );
 }

@@ -12,6 +12,7 @@ import { OutlineView } from './OutlineView.tsx';
 import { API, makeTask, makerTag, settingsFor } from '../../testing/treeFixtures.ts';
 import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import type { Task, TaskWrite } from '../../types.ts';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 
 let tasks: Task[] = [];
 let activeId: string | null = 'hw';
@@ -264,3 +265,54 @@ describe('sorting session', () => {
         expect(await screen.findByText('Edit “Buy milk”')).toBeInTheDocument();
     });
 });
+
+describe('touch screens (UI-9)', () => {
+    let restore: () => void;
+    beforeEach(() => { restore = fakeScreen(PHONE); });
+    afterEach(() => restore());
+
+    const tools = (name: string) => within(outline()).getByRole('toolbar', { name });
+
+    it('the selected row gets buttons instead of Tab / Alt+↑↓ / Enter', async () => {
+        renderOutline();
+        await select('test prints');
+        expect(within(outline()).getAllByRole('toolbar')).toHaveLength(1);
+        const bar = tools('test prints');
+
+        fireEvent.click(within(bar).getByRole('button', { name: 'indent' }));
+        await waitFor(() => expect(log).toContain('PATCH prints {"parent_id":"cad"}'));
+    });
+
+    it('outdent and move by buttons', async () => {
+        renderOutline();
+        await select('CAD');
+        fireEvent.click(within(tools('CAD')).getByRole('button', { name: 'move down' }));
+        await waitFor(() => expect(log).toEqual(['PATCH prints {"order":0}', 'PATCH cad {"order":1}']));
+        log = [];
+        fireEvent.click(within(tools('CAD')).getByRole('button', { name: 'outdent' }));
+        await waitFor(() => expect(log).toContain('PATCH cad {"parent_id":"t250"}'));
+    });
+
+    it('disables what is impossible for the row', async () => {
+        renderOutline();
+        await select('CAD'); // first child of Hardware Design
+        const bar = tools('CAD');
+        expect(within(bar).getByRole('button', { name: 'indent' })).toBeDisabled();
+        expect(within(bar).getByRole('button', { name: 'move up' })).toBeDisabled();
+        expect(within(bar).getByRole('button', { name: 'outdent' })).toBeEnabled();
+    });
+
+    it('"Details" opens the edit dialog — there is no double-click on a phone', async () => {
+        renderOutline();
+        await select('CAD');
+        fireEvent.click(within(tools('CAD')).getByRole('button', { name: 'details' }));
+        expect(await screen.findByRole('dialog')).toHaveTextContent('Edit “CAD”');
+    });
+
+    it('hides the keyboard help line', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(screen.queryByText(/Tab \/ Shift\+Tab indent/)).toBeNull();
+    });
+});
+

@@ -65,8 +65,16 @@ export function ProjectPicker({
     const filterOptions = (list: Option[], { inputValue }: { inputValue: string }) => {
         const query = inputValue.trim().toLowerCase();
         if (!query) return list;
-        const matches = list.filter(o => o.kind === 'project' && o.project.path.toLowerCase().includes(query));
-        const exact = matches.some(o => o.kind === 'project' && o.project.header.toLowerCase() === query);
+        // Exact name, then names starting with the text, then other path
+        // matches; the sort is stable, so recents stay first within a rank.
+        const rank = (o: Option) => {
+            const header = o.kind === 'project' ? o.project.header.toLowerCase() : '';
+            return header === query ? 0 : header.startsWith(query) ? 1 : 2;
+        };
+        const matches = list
+            .filter(o => o.kind === 'project' && o.project.path.toLowerCase().includes(query))
+            .sort((a, b) => rank(a) - rank(b));
+        const exact = matches.some(o => rank(o) === 0);
         return allowCreate && !exact ? [...matches, { kind: 'create', name: inputValue.trim() } as Option] : matches;
     };
 

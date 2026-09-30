@@ -753,6 +753,46 @@ L ≈ 2–4 days).
   split editor/outline row buttons for indent/outdent.
 - *Accept:* at 390 px width header fits without horizontal scroll;
   quick add works by tapping only (plus typing the header).
+- *Delivered (2026-09-30, TDD):* 48 new frontend tests (469 total), backend
+  unchanged (281); `yarn build` and `storybook build` (52 stories, all
+  render) green. `hooks/useResponsive.ts`: `useIsMobile` (≤ 600 px) and
+  `useIsTouch` (coarse pointer); tests switch layouts with
+  `testing/matchMedia.ts` (jsdom has no `matchMedia`, so every other test
+  keeps the desktop). On phones the header shows the active project's last
+  level (tapping the name opens the picker), a compact tracker (⏹, the
+  running time — tapping it opens the task — and ✓; idle ▶ "start next"),
+  "Plan my week" as an icon and ⚙; the tabs get short labels. The quick add
+  moves into `QuickAddSheet`: ⊕ in the corner opens a bottom sheet with the
+  quick add's `sheet` variant — chips always visible, `QuickAddSuggestions`
+  to tap a project ("No project", recently used, then by priority), tags
+  (recently used, then by use in open tasks) and an estimate (15m … 4h), and
+  an Add button; the sheet stays open for the next task, N opens it. Recent
+  projects/tags per browser in `utils/recent.ts` (shared with the switcher).
+  On touch screens the focused split-editor row and the selected outline row
+  get buttons for outdent, indent and move up/down; the outline row also has
+  "details" (the edit dialog) and "split", and both hide the keyboard help.
+  The edit dialog, the split editor and both plan choosers fill the screen
+  on phones. Verified live at 390 px with touch against the demo data: the
+  header fits (no horizontal scroll, no button outside, idle and tracking),
+  a task captured by typing its name and tapping a tag, 30m and Add landed in
+  the active project, ▶ "start next" in the header, outline indent/outdent by
+  buttons (and a dependency cycle refused with the server's message), the
+  full-screen edit dialog, split-editor indent by button with the focus kept;
+  desktop and a touch tablet keep the desktop header.
+  Decisions beyond the spec: **(1)** ⚙ stays in the header row (as an icon
+  next to "Plan my week") instead of the tab row — it fits and keeps the
+  settings dialog with the header; **(2)** the compact tracker names the
+  running task only in the label of its time button; **(3)** in the sheet
+  "No project" is a chip instead of the ✕ on the project chip; typed tokens
+  win over tapped chips; **(4)** row buttons follow the pointer, not the
+  width: tablets get them too; **(5)** the sheet has no "add and open
+  details" (Ctrl+Enter) — "details" on the outline row covers it.
+  Bug found and fixed on the way: in the project picker a recently used
+  project matching by path came before an exact name ("T250" + Enter picked
+  "T250 › Hardware Design"); typed matches now rank exact name, then names
+  starting with the text, then other matches (recents first within each).
+  Also: the ⊕ button gets bottom padding in the tab content so the last rows
+  scroll clear of it.
 
 ---
 

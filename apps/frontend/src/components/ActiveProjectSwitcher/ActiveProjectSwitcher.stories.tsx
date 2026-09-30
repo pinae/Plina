@@ -4,12 +4,12 @@ import { useState } from 'react';
 import { ActiveProjectSwitcher } from './ActiveProjectSwitcher';
 import { seededClient } from '../../testing/treeFixtures';
 
-function Switcher({ activeId, startOpen = false }: { activeId: string | null; startOpen?: boolean }) {
+function Switcher({ activeId, startOpen = false, compact = false }: { activeId: string | null; startOpen?: boolean; compact?: boolean }) {
     const [client] = useState(() => seededClient({ activeId }));
     const [open, setOpen] = useState(startOpen);
     return (
         <QueryClientProvider client={client}>
-            <ActiveProjectSwitcher open={open} onOpenChange={setOpen} onShowAllProjects={() => {}} />
+            <ActiveProjectSwitcher open={open} onOpenChange={setOpen} onShowAllProjects={() => {}} compact={compact} />
         </QueryClientProvider>
     );
 }
@@ -28,3 +28,5 @@ export const InSubProject: Story = {};
 export const NoProject: Story = { args: { activeId: null } };
 /** The picker (▾ or P): type to filter, "No project", create a new one. */
 export const PickerOpen: Story = { args: { startOpen: true } };
+/** Phones (UI-9): only the last level; tap the name to open the picker. */
+export const Compact: Story = { args: { compact: true } };

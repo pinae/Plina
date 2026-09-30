@@ -41,3 +41,10 @@ export const IdleNothingPlanned: Story = {};
 export const BlockedStart: Story = {
     args: { controls: { ...base, error: 'Can’t start yet — first finish “Design schema”.' } },
 };
+/** Phones (UI-9): ⏹ time ✓ — tap the time to open the task. */
+export const CompactTracking: Story = {
+    args: { compact: true, controls: { ...base, tracked: makeTask('cad', { header: 'CAD', active_tracking_start: minutesAgo(42) }) } },
+};
+export const CompactIdleWithNext: Story = {
+    args: { compact: true, controls: IdleWithNext.args!.controls },
+};

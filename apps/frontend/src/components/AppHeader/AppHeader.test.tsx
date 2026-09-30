@@ -12,6 +12,7 @@ import { AppHeader } from './AppHeader.tsx';
 import PlannedWeekView from '../PlannedWeekView/PlannedWeekView.tsx';
 import { API, makeTask, makerTag, settingsFor, treeTasks } from '../../testing/treeFixtures.ts';
 import { projectFor } from '../../utils/projects.ts';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 import type { PlanResponse, SettingsWrite, Task, TaskWrite } from '../../types.ts';
 
 let tasks: Task[] = [];
@@ -85,6 +86,7 @@ beforeEach(() => {
     activeId = 'hw';
     requests = [];
     posted = [];
+    localStorage.clear(); // recent projects/tags
 });
 afterEach(() => { cleanup(); server.resetHandlers(); });
 afterAll(() => server.close());
@@ -196,3 +198,50 @@ describe('Settings (UI-8)', () => {
         await waitFor(() => expect(screen.queryByRole('textbox', { name: /default duration/i })).toBeNull());
     });
 });
+
+describe('On a phone (UI-9)', () => {
+    let restore: () => void;
+    beforeEach(() => { restore = fakeScreen(PHONE); localStorage.clear(); });
+    afterEach(() => restore());
+
+    it('the header is compact: last project level, ▶, icons — the quick add moves to ⊕', async () => {
+        renderApp();
+        expect(await within(header()).findByRole('button', { name: 'active project: Hardware Design' })).toBeInTheDocument();
+        expect(within(header()).queryByRole('textbox', { name: /add task/i })).toBeNull();
+        expect(within(header()).getByRole('button', { name: 'settings' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'add task' })).toBeInTheDocument();
+    });
+
+    it('capture by tapping: ⊕, type the name, tap estimate and tag, Add (UI-9 acceptance)', async () => {
+        renderApp();
+        await weekCard('CAD');
+        fireEvent.click(screen.getByRole('button', { name: 'add task' }));
+        const sheet = await screen.findByRole('dialog', { name: 'Add task' });
+        fireEvent.change(within(sheet).getByRole('textbox', { name: /add task/i }), { target: { value: 'Order filament' } });
+        fireEvent.click(await within(sheet).findByRole('button', { name: '30m' }));
+        fireEvent.click(within(sheet).getByRole('button', { name: '#maker' }));
+        fireEvent.click(within(sheet).getByRole('button', { name: /^add$/i }));
+
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({
+            header: 'Order filament', duration: '00:30:00', tag_ids: ['tag-maker'], parent_id: 'hw',
+        });
+    });
+
+    it('▶ on a card: the compact tracker shows ⏹ time ✓ (spec §3 mobile)', async () => {
+        renderApp();
+        fireEvent.click(within(await weekCard('CAD')).getByRole('button', { name: /start tracking/i }));
+        const time = await within(header()).findByRole('button', { name: 'tracking CAD' });
+        expect(time).toHaveTextContent(/^\d\d:\d\d:\d\d$/);
+        expect(within(header()).getByRole('button', { name: /stop tracking/i })).toBeInTheDocument();
+        expect(within(header()).getByRole('button', { name: /complete tracked task/i })).toBeInTheDocument();
+    });
+
+    it('N still opens the quick add (external keyboards)', async () => {
+        renderApp();
+        await weekCard('CAD');
+        fireEvent.keyDown(document.body, { key: 'n' });
+        expect(await screen.findByRole('dialog', { name: 'Add task' })).toBeInTheDocument();
+    });
+});
+

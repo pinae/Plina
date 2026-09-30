@@ -43,12 +43,12 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-function Harness({ onShowAll = vi.fn() }: { onShowAll?: () => void }) {
+function Harness({ onShowAll = vi.fn(), compact = false }: { onShowAll?: () => void; compact?: boolean }) {
     const [open, setOpen] = useState(false);
     const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }));
     return (
         <QueryClientProvider client={client}>
-            <ActiveProjectSwitcher open={open} onOpenChange={setOpen} onShowAllProjects={onShowAll} />
+            <ActiveProjectSwitcher open={open} onOpenChange={setOpen} onShowAllProjects={onShowAll} compact={compact} />
         </QueryClientProvider>
     );
 }
@@ -121,5 +121,26 @@ describe('ActiveProjectSwitcher', () => {
         const options = (await screen.findAllByRole('option')).map(o => o.textContent ?? '');
         expect(options[0]).toMatch(/no project/i);
         expect(options[1]).toContain('Company Blog');
+    });
+});
+
+describe('ActiveProjectSwitcher compact (phones, UI-9)', () => {
+    it('shows only the last level of the breadcrumb (spec §7)', async () => {
+        render(<Harness compact />);
+        const name = await screen.findByRole('button', { name: /active project: Hardware Design/i });
+        expect(name).toHaveTextContent(/^Hardware Design$/);
+        expect(screen.queryByText('T250')).toBeNull();
+    });
+
+    it('opens the picker by tapping the project name — a big tap target', async () => {
+        render(<Harness compact />);
+        fireEvent.click(await screen.findByRole('button', { name: /active project: Hardware Design/i }));
+        expect(await screen.findByRole('combobox')).toBeInTheDocument();
+    });
+
+    it('reads "No project" when none is active', async () => {
+        settings = settingsFor(tasks, null);
+        render(<Harness compact />);
+        expect(await screen.findByRole('button', { name: /active project: none/i })).toHaveTextContent('No project');
     });
 });

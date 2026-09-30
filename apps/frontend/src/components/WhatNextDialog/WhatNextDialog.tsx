@@ -10,6 +10,7 @@ import { CompletedTooAlert } from '../CompletionSnackbar/CompletionSnackbar.tsx'
 import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
 import { useAcceptPlan } from '../../queries.tsx';
 import type { PlanAlternative } from '../../types.ts';
+import { useIsMobile } from '../../hooks/useResponsive.ts';
 
 export interface WhatNextDialogProps {
     /** Null = closed. */
@@ -20,9 +21,10 @@ export interface WhatNextDialogProps {
 }
 
 export function WhatNextDialog({ alternatives, autoCompleted, onClose }: WhatNextDialogProps) {
+    const fullScreen = useIsMobile(); // phones (UI-9)
     const accept = useAcceptPlan();
     return (
-        <Dialog open={alternatives !== null} onClose={onClose} maxWidth="lg" fullWidth>
+        <Dialog open={alternatives !== null} onClose={onClose} maxWidth="lg" fullWidth fullScreen={fullScreen}>
             <DialogTitle>Nice! What next?</DialogTitle>
             <DialogContent>
                 {autoCompleted?.length ? (

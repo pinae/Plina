@@ -25,6 +25,7 @@ import { allocation as computeAllocation, computeBudgets } from '../../utils/spl
 import { rowsFromTasks, rowsToRequest } from '../../utils/splitPayload.ts';
 import { formatDuration, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import type { SplitRequest, Task } from '../../types.ts';
+import { useIsMobile, useIsTouch } from '../../hooks/useResponsive.ts';
 
 const human = (minutes: number) => formatDuration(minutesToDurationString(minutes));
 
@@ -48,6 +49,7 @@ export interface SplitEditorProps {
 }
 
 export function SplitEditor({ task, open, onClose }: SplitEditorProps) {
+    const fullScreen = useIsMobile(); // phones (UI-9)
     const tasks = useTasks();
     const tags = useTags();
     const settings = useSettings();
@@ -55,7 +57,7 @@ export function SplitEditor({ task, open, onClose }: SplitEditorProps) {
     // empty outline would remove the existing parts on save.
     const ready = tasks.isSuccess && tags.isSuccess && settings.isSuccess;
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={fullScreen}>
             {ready ? (
                 <SplitEditorForm key={task.id} task={task} tasks={tasks.data} tagList={tags.data}
                     defaultDuration={settings.data.default_duration} onClose={onClose} />
@@ -77,6 +79,10 @@ interface SplitEditorFormProps {
 }
 
 function SplitEditorForm({ task, tasks, tagList, defaultDuration, onClose }: SplitEditorFormProps) {
+    // No Tab/Alt keys on touch screens: the rows have buttons instead (UI-9).
+    const touch = useIsTouch();
+    const mobile = useIsMobile();
+    const keyboardHelp = !touch && !mobile;
     const split = useSplitTask();
     const defaultMinutes = parseDurationMinutes(defaultDuration) ?? 60;
     const initialEstimate = parseDurationMinutes(task.duration);
@@ -178,10 +184,12 @@ function SplitEditorForm({ task, tasks, tagList, defaultDuration, onClose }: Spl
                 </Box>
                 <AllocationBar allocation={bar} />
                 <OutlineRows rows={rows} budgets={budgets} onChange={setRows} context={context} />
-                <Typography variant="caption" color="text.secondary">
-                    Enter: new part · Tab / Shift+Tab: indent · Alt+↑/↓: move · “CAD 3h #tag” sets estimate and tags ·
-                    paste a list to add many
-                </Typography>
+                {keyboardHelp && (
+                    <Typography variant="caption" color="text.secondary">
+                        Enter: new part · Tab / Shift+Tab: indent · Alt+↑/↓: move · “CAD 3h #tag” sets estimate and tags ·
+                        paste a list to add many
+                    </Typography>
+                )}
                 <FormControlLabel
                     control={<Checkbox checked={sequential} onChange={event => setSequential(event.target.checked)} />}
                     label="Do these in this order (adds dependencies 1 → 2 → 3 …)"

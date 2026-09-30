@@ -98,3 +98,51 @@ describe('HeaderTracker', () => {
         expect(screen.getByRole('alert')).toHaveTextContent('first finish “Design schema”');
     });
 });
+
+describe('HeaderTracker compact (phones, UI-9)', () => {
+    afterEach(cleanup);
+
+    it('shows ⏹ time ✓ without the task name; the time opens the task (spec §3 mobile)', () => {
+        const c = controls({ tracked: makeTask('cad', { header: 'CAD', active_tracking_start: minutesAgo(5) }) });
+        const onEdit = vi.fn();
+        render(<HeaderTracker compact controls={c} onEditTask={onEdit} />);
+
+        expect(screen.queryByText('CAD')).toBeNull();
+        const time = screen.getByRole('button', { name: /tracking CAD/i });
+        expect(time).toHaveTextContent(/^00:0[45]:\d\d$/);
+        fireEvent.click(time);
+        expect(onEdit).toHaveBeenCalledWith('cad');
+        fireEvent.click(screen.getByRole('button', { name: /stop tracking/i }));
+        expect(c.stop).toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: /complete/i }));
+        expect(c.complete).toHaveBeenCalled();
+    });
+
+    it('keeps the amber colour over the estimate but drops the "+… over" text', () => {
+        const c = controls({ tracked: makeTask('cad', {
+            header: 'CAD', duration: '01:00:00', time_spent: '00:55:00', active_tracking_start: minutesAgo(10),
+        }) });
+        render(<HeaderTracker compact controls={c} onEditTask={vi.fn()} />);
+        expect(screen.queryByTestId('tracker-over')).toBeNull();
+        expect(screen.getByTestId('tracker-elapsed')).toHaveAttribute('data-over', 'true');
+    });
+
+    it('idle: ▶ starts the next task, named only in its label', () => {
+        const next = { task_id: 'cad', header: 'CAD', start_time: minutesAgo(-10), duration: 3600,
+            warnings: [], is_fixed: false, is_appointment: false, hex_color: null };
+        const c = controls({ next });
+        render(<HeaderTracker compact controls={c} onEditTask={vi.fn()} />);
+        expect(screen.queryByText(/Next:/)).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'start next: CAD' }));
+        expect(c.start).toHaveBeenCalledWith('cad');
+    });
+
+    it('idle with nothing planned: ▶ opens the task picker', () => {
+        const c = controls({ pickable: { inProject: [makeTask('cad', { header: 'CAD' })], others: [] } });
+        render(<HeaderTracker compact controls={c} onEditTask={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start a task/i }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'CAD' }));
+        expect(c.start).toHaveBeenCalledWith('cad');
+    });
+});
+

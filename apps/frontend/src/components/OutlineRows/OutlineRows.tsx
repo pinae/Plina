@@ -5,9 +5,16 @@
  * Enter new row · Tab / Shift+Tab indent / outdent · Backspace in an empty
  * row removes it · Alt+↑/↓ move · ↑/↓ focus · "CAD 3h #maker" moves the
  * tokens into the row · pasting several lines creates (nested) rows.
+ *
+ * Touch screens (UI-9) have no Tab or Alt keys: the focused row gets buttons
+ * to outdent, indent and move it.
  */
-import { useEffect, useRef } from 'react';
-import { Box, Chip, InputBase, Typography } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
+import { Box, Chip, IconButton, InputBase, Typography } from '@mui/material';
+import FormatIndentDecreaseIcon from '@mui/icons-material/FormatIndentDecrease';
+import FormatIndentIncreaseIcon from '@mui/icons-material/FormatIndentIncrease';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 
 import {
     commitRowTokens, indent, insertAfter, minutesToText, move, outdent, removeAt, rowsFromText,
@@ -17,6 +24,7 @@ import type { RowBudget } from '../../utils/splitMath.ts';
 import type { QuickAddContext } from '../../utils/quickAdd.ts';
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
+import { useIsMobile, useIsTouch } from '../../hooks/useResponsive.ts';
 
 const human = (minutes: number) => formatDuration(minutesToDurationString(minutes));
 
@@ -31,6 +39,10 @@ export interface OutlineRowsProps {
 export function OutlineRows({ rows, budgets, onChange, context }: OutlineRowsProps) {
     const tagNames = new Map(context.tags.map(tag => [tag.id, tag.name]));
     const inputs = useRef(new Map<string, HTMLInputElement>());
+    const touch = useIsTouch();
+    const mobile = useIsMobile();
+    const rowButtons = touch || mobile;
+    const [focusedKey, setFocusedKey] = useState<string | null>(null);
     // Focus requests are applied after the render that shows the new rows.
     const pendingFocus = useRef<string | null>(null);
     useEffect(() => {
@@ -81,6 +93,15 @@ export function OutlineRows({ rows, budgets, onChange, context }: OutlineRowsPro
         }
     };
 
+    /** Row buttons (touch): the same operations as Tab / Alt+↑↓. */
+    const shiftRow = (index: number, op: 'indent' | 'outdent') => {
+        const base = committed(index);
+        update((op === 'indent' ? indent : outdent)(base, index), rows[index].key);
+    };
+    const moveRow = (index: number, direction: -1 | 1) => {
+        update(move(committed(index), index, direction).rows, rows[index].key);
+    };
+
     const onPaste = (event: React.ClipboardEvent<HTMLInputElement>, index: number) => {
         const text = event.clipboardData.getData('text/plain');
         if (!text.includes('\n')) return;
@@ -123,7 +144,12 @@ export function OutlineRows({ rows, budgets, onChange, context }: OutlineRowsPro
                                     else inputs.current.delete(row.key);
                                 }}
                                 onChange={event => update(replace(index, { ...row, header: event.target.value, error: undefined }))}
-                                onBlur={() => { const next = committed(index); if (next !== rows) update(next); }}
+                                onFocus={() => setFocusedKey(row.key)}
+                                onBlur={() => {
+                                    setFocusedKey(key => (key === row.key ? null : key));
+                                    const next = committed(index);
+                                    if (next !== rows) update(next);
+                                }}
                                 onKeyDown={event => onHeaderKeyDown(event as React.KeyboardEvent<HTMLInputElement>, index)}
                                 onPaste={event => onPaste(event as React.ClipboardEvent<HTMLInputElement>, index)}
                                 inputProps={{ 'aria-label': label }}
@@ -154,6 +180,29 @@ export function OutlineRows({ rows, budgets, onChange, context }: OutlineRowsPro
                         </Box>
                         {row.error && (
                             <Typography variant="caption" color="error" sx={{ pl: row.depth * 3 + 3.5 }}>{row.error}</Typography>
+                        )}
+                        {rowButtons && focusedKey === row.key && !row.done && (
+                            <Box role="toolbar" aria-label={label}
+                                // Keep the focus in the row (and the phone keyboard open).
+                                onMouseDown={event => event.preventDefault()}
+                                sx={{ display: 'flex', gap: 0.5, pl: row.depth * 3 + 3.5, py: 0.25 }}>
+                                <IconButton aria-label={`outdent ${label}`} disabled={row.depth === 0}
+                                    onClick={() => shiftRow(index, 'outdent')}>
+                                    <FormatIndentDecreaseIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton aria-label={`indent ${label}`} disabled={indent(rows, index) === rows}
+                                    onClick={() => shiftRow(index, 'indent')}>
+                                    <FormatIndentIncreaseIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton aria-label={`move ${label} up`} disabled={move(rows, index, -1).rows === rows}
+                                    onClick={() => moveRow(index, -1)}>
+                                    <ArrowUpwardIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton aria-label={`move ${label} down`} disabled={move(rows, index, 1).rows === rows}
+                                    onClick={() => moveRow(index, 1)}>
+                                    <ArrowDownwardIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
                         )}
                     </Box>
                 );

@@ -61,4 +61,13 @@ describe('PlanMyWeekButton', () => {
         fireEvent.click(screen.getByRole('button', { name: /plan my week/i }));
         expect(onClick).toHaveBeenCalledTimes(1);
     });
+
+    it('is an icon button with the same name on phones (UI-9)', () => {
+        const onClick = vi.fn();
+        render(<PlanMyWeekButton compact dirty={false} dragging={false} onTrigger={vi.fn()} onClick={onClick} />);
+        const button = screen.getByRole('button', { name: /plan my week/i });
+        expect(button).not.toHaveTextContent(/plan my week/i);
+        fireEvent.click(button);
+        expect(onClick).toHaveBeenCalledTimes(1);
+    });
 });

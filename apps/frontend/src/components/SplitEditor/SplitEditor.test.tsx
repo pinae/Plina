@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { SplitEditor } from './SplitEditor.tsx';
 import { API, makeTask, makerTag, settingsFor } from '../../testing/treeFixtures.ts';
 import type { SplitRequest, Task } from '../../types.ts';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 
 let tasks: Task[] = [];
 let requests: SplitRequest[] = [];
@@ -175,3 +176,18 @@ describe('SplitEditor — more', () => {
         expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
     });
 });
+
+describe('SplitEditor on a phone (UI-9)', () => {
+    it('fills the screen, without the keyboard help', async () => {
+        const restore = fakeScreen(PHONE);
+        try {
+            await renderEditor(hardware());
+            expect(screen.getByRole('dialog')).toHaveClass('MuiDialog-paperFullScreen');
+            // Tab / Alt keys don't exist there: the row buttons replace the help line.
+            expect(screen.queryByText(/Tab \/ Shift\+Tab/)).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+});
+

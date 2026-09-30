@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { OutlineRows } from './OutlineRows.tsx';
 import { newRow, type OutlineRow } from '../../utils/outline.ts';
 import { computeBudgets } from '../../utils/splitMath.ts';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 
 const context = { now: new Date(2026, 8, 28, 10), tags: [{ id: 'tag-maker', name: 'maker' }], projects: [] };
 let latest: OutlineRow[] = [];
@@ -109,3 +110,50 @@ describe('OutlineRows', () => {
         expect(headers()[0]).toBeDisabled();
     });
 });
+
+describe('OutlineRows on touch screens (UI-9)', () => {
+    let restore: () => void;
+    beforeEach(() => { restore = fakeScreen(PHONE); });
+    afterEach(() => { restore(); cleanup(); latest = []; });
+
+    const focusRow = (index: number) => fireEvent.focus(headers()[index]);
+
+    it('shows row buttons only on the focused row', () => {
+        render(<Harness initial={[row('CAD'), row('housing')]} />);
+        expect(screen.queryByRole('button', { name: /indent/i })).toBeNull();
+        focusRow(1);
+        expect(screen.getByRole('button', { name: 'indent Part 2' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'indent Part 1' })).toBeNull();
+    });
+
+    it('indent / outdent / move by buttons (no Tab or Alt keys on a phone)', () => {
+        render(<Harness initial={[row('CAD'), row('housing'), row('prints')]} />);
+        focusRow(1);
+        fireEvent.click(screen.getByRole('button', { name: 'indent Part 2' }));
+        expect(shape()).toEqual(['CAD', '-housing', 'prints']);
+        fireEvent.click(screen.getByRole('button', { name: 'outdent Part 2' }));
+        expect(shape()).toEqual(['CAD', 'housing', 'prints']);
+        fireEvent.click(screen.getByRole('button', { name: 'move Part 2 down' }));
+        expect(shape()).toEqual(['CAD', 'prints', 'housing']);
+        // The moved row keeps the focus, so its buttons stay under the finger.
+        expect(headers()[2]).toHaveFocus();
+        fireEvent.click(screen.getByRole('button', { name: 'move Part 3 up' }));
+        expect(shape()).toEqual(['CAD', 'housing', 'prints']);
+    });
+
+    it('the buttons keep the input focused (the keyboard stays open)', () => {
+        render(<Harness initial={[row('CAD'), row('housing')]} />);
+        focusRow(1);
+        expect(fireEvent.mouseDown(screen.getByRole('toolbar', { name: 'Part 2' }))).toBe(false);
+    });
+
+    it('disables what is impossible: first row cannot be indented or moved up', () => {
+        render(<Harness initial={[row('CAD'), row('housing')]} />);
+        focusRow(0);
+        expect(screen.getByRole('button', { name: 'indent Part 1' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'outdent Part 1' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'move Part 1 up' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'move Part 1 down' })).toBeEnabled();
+    });
+});
+

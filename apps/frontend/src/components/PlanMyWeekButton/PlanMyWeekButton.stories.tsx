@@ -13,3 +13,5 @@ type Story = StoryObj<typeof PlanMyWeekButton>;
 export const Idle: Story = {};
 export const Dirty: Story = { args: { dirty: true } };
 export const DirtyWhileDragging: Story = { args: { dirty: true, dragging: true } };
+/** Phones (UI-9): icon only. */
+export const Compact: Story = { args: { compact: true } };

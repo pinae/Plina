@@ -14,6 +14,7 @@ import {
     formatHoursInput, mapServerErrors, parseDurationInput, validateTaskForm,
     type TaskField, type TaskFormErrors,
 } from './taskFormValidation.ts';
+import { useIsMobile } from '../../hooks/useResponsive.ts';
 
 interface TaskFormDialogProps {
     open: boolean;
@@ -66,6 +67,7 @@ const invalidSx = (attempt: number) => {
 export function TaskFormDialog({
     open, onClose, task, initialStart, initialDurationMinutes, defaultAppointment,
 }: TaskFormDialogProps) {
+    const fullScreen = useIsMobile(); // phones (UI-9)
     const editing = task !== undefined;
     const [splitting, setSplitting] = useState(false);
     const tags = useTags();
@@ -222,7 +224,7 @@ export function TaskFormDialog({
     }
 
     return (
-        <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+        <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" fullScreen={fullScreen}>
             <DialogTitle>{editing ? `Edit “${task.header}”` : 'New task'}</DialogTitle>
             <DialogContent ref={contentRef} sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
                 <TextField

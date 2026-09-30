@@ -13,6 +13,18 @@ import { PlanChooserDialog } from './components/PlanChooserDialog/PlanChooserDia
 import { PlanMyWeekButton } from './components/PlanMyWeekButton/PlanMyWeekButton.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary.tsx';
 import { AppHeader } from './components/AppHeader/AppHeader.tsx';
+import { useIsMobile } from './hooks/useResponsive.ts';
+
+// [desktop, phone] labels — short ones keep more tabs in view on a phone.
+const TABS: [string, string][] = [
+  ['Week Overview', 'Week'],
+  ['Calendar Plan', 'Calendar'],
+  ['Tasks', 'Tasks'],
+  ['Projects', 'Projects'],
+  ['Tags', 'Tags'],
+  ['Time Buckets', 'Buckets'],
+  ['Dependencies', 'Deps'],
+];
 
 function App() {
   const [tab, setTab] = useState(0);
@@ -22,6 +34,7 @@ function App() {
   const [planDirty, setPlanDirty] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [outlineKey, setOutlineKey] = useState(0);
+  const compact = useIsMobile();
 
   const handleChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTab(newValue);
@@ -49,6 +62,7 @@ function App() {
             dragging={dragging}
             onTrigger={triggerPlan}
             onClick={triggerPlan}
+            compact={compact}
           />
         }
       />
@@ -57,13 +71,9 @@ function App() {
         display: 'flex', alignItems: 'center', bgcolor: 'background.paper', px: 1,
       }}>
         <Tabs value={tab} onChange={handleChange} aria-label="plina tabs" variant="scrollable" scrollButtons="auto" sx={{ flexGrow: 1 }}>
-          <Tab label="Week Overview" />
-          <Tab label="Calendar Plan" />
-          <Tab label="Tasks" />
-          <Tab label="Projects" />
-          <Tab label="Tags" />
-          <Tab label="Time Buckets" />
-          <Tab label="Dependencies" />
+          {TABS.map(([long, short]) => (
+            <Tab key={long} label={compact ? short : long} aria-label={long} sx={compact ? { minWidth: 0, px: 1.5 } : undefined} />
+          ))}
         </Tabs>
       </Box>
       <PlanChooserDialog
@@ -72,7 +82,9 @@ function App() {
         onAccepted={() => setTab(0)}
       />
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', p: tab === 0 || tab === 6 ? 0 : 2 }}>
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', p: tab === 0 || tab === 6 ? 0 : compact ? 1 : 2,
+        // Phones: room to scroll the last rows clear of the ⊕ button.
+        pb: compact ? 11 : undefined }}>
         <ErrorBoundary key={tab}>
           {tab === 0 && (
             <PlannedWeekView

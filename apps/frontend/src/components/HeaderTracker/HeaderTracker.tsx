@@ -27,10 +27,26 @@ function durationSeconds(value: string | null): number {
     return (days ? +days * 86400 : 0) + +h * 3600 + +m * 60 + +s;
 }
 
-function RunningTimer({ start, spent, estimateMinutes }: { start: string; spent: string; estimateMinutes: number }) {
+interface RunningTimerProps {
+    start: string;
+    spent: string;
+    estimateMinutes: number;
+    /** Phones: the time alone, amber when over (no "+… over" text). */
+    compact?: boolean;
+}
+
+function RunningTimer({ start, spent, estimateMinutes, compact = false }: RunningTimerProps) {
     const now = useNow(1000);
     const elapsed = (now.getTime() - new Date(start).getTime()) / 1000;
     const overMinutes = Math.floor((durationSeconds(spent) + elapsed) / 60) - estimateMinutes;
+    if (compact) {
+        return (
+            <Typography data-testid="tracker-elapsed" data-over={overMinutes > 0} variant="body2" component="span"
+                sx={{ fontVariantNumeric: 'tabular-nums', color: overMinutes > 0 ? 'warning.main' : 'text.primary' }}>
+                {formatElapsed(elapsed)}
+            </Typography>
+        );
+    }
     return (
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75 }}>
             <Typography data-testid="tracker-elapsed" variant="body2"
@@ -49,9 +65,11 @@ function RunningTimer({ start, spent, estimateMinutes }: { start: string; spent:
 export interface HeaderTrackerProps {
     controls: TrackerControls;
     onEditTask: (taskId: string) => void;
+    /** Phones (UI-9): ⏹ time ✓ — the task is named in the time's label. */
+    compact?: boolean;
 }
 
-export function HeaderTracker({ controls, onEditTask }: HeaderTrackerProps) {
+export function HeaderTracker({ controls, onEditTask, compact = false }: HeaderTrackerProps) {
     const { tracked, next, pickable } = controls;
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const pick = (taskId: string) => {
@@ -69,24 +87,34 @@ export function HeaderTracker({ controls, onEditTask }: HeaderTrackerProps) {
                             <StopIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
-                    <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-                        {controls.outsidePath && (
-                            <Typography variant="caption" color="text.secondary" noWrap sx={{ lineHeight: 1.1 }}>
-                                {controls.outsidePath}
-                            </Typography>
-                        )}
-                        <Button size="small" color="inherit" onClick={() => onEditTask(tracked.id)}
-                            sx={{ textTransform: 'none', p: 0, minWidth: 0, justifyContent: 'flex-start', fontWeight: 'bold' }}>
-                            <Typography variant="body2" noWrap sx={{ maxWidth: 220, fontWeight: 'bold' }}>
-                                {tracked.header}
-                            </Typography>
+                    {compact ? (
+                        <Button size="small" color="inherit" aria-label={`tracking ${tracked.header}`}
+                            onClick={() => onEditTask(tracked.id)} sx={{ minWidth: 0, px: 0.5 }}>
+                            <RunningTimer compact start={tracked.active_tracking_start!} spent={tracked.time_spent}
+                                estimateMinutes={parseDurationMinutes(tracked.duration) ?? controls.defaultDurationMinutes} />
                         </Button>
-                    </Box>
-                    <RunningTimer
-                        start={tracked.active_tracking_start!}
-                        spent={tracked.time_spent}
-                        estimateMinutes={parseDurationMinutes(tracked.duration) ?? controls.defaultDurationMinutes}
-                    />
+                    ) : (
+                        <>
+                            <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+                                {controls.outsidePath && (
+                                    <Typography variant="caption" color="text.secondary" noWrap sx={{ lineHeight: 1.1 }}>
+                                        {controls.outsidePath}
+                                    </Typography>
+                                )}
+                                <Button size="small" color="inherit" onClick={() => onEditTask(tracked.id)}
+                                    sx={{ textTransform: 'none', p: 0, minWidth: 0, justifyContent: 'flex-start', fontWeight: 'bold' }}>
+                                    <Typography variant="body2" noWrap sx={{ maxWidth: 220, fontWeight: 'bold' }}>
+                                        {tracked.header}
+                                    </Typography>
+                                </Button>
+                            </Box>
+                            <RunningTimer
+                                start={tracked.active_tracking_start!}
+                                spent={tracked.time_spent}
+                                estimateMinutes={parseDurationMinutes(tracked.duration) ?? controls.defaultDurationMinutes}
+                            />
+                        </>
+                    )}
                     <Tooltip title="Complete">
                         <IconButton size="small" aria-label="complete tracked task" onClick={controls.complete}
                             disabled={controls.pending}>
@@ -94,6 +122,16 @@ export function HeaderTracker({ controls, onEditTask }: HeaderTrackerProps) {
                         </IconButton>
                     </Tooltip>
                 </>
+            ) : next && compact ? (
+                <IconButton size="small" aria-label={`start next: ${next.header}`}
+                    onClick={() => controls.start(next.task_id)} disabled={controls.pending}>
+                    <PlayArrowIcon fontSize="small" />
+                </IconButton>
+            ) : compact ? (
+                <IconButton size="small" aria-label="start a task…"
+                    onClick={event => setMenuAnchor(event.currentTarget)}>
+                    <PlayArrowIcon fontSize="small" />
+                </IconButton>
             ) : next ? (
                 <Button size="small" color="inherit" startIcon={<PlayArrowIcon />}
                     aria-label={`start next: ${next.header}`} onClick={() => controls.start(next.task_id)}
