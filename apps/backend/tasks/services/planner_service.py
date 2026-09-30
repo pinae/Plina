@@ -257,7 +257,9 @@ class _AllocationRun:
 
 
 def _matches_affinity(snapshot: PlanningTask, bucket_tag_ids: frozenset) -> bool:
-    if not bucket_tag_ids:
+    """Untagged buckets take every task; untagged tasks go into every bucket
+    (as if they had all tags — the user just did not sort them yet)."""
+    if not bucket_tag_ids or not snapshot.tag_ids:
         return True
     return bool(bucket_tag_ids & snapshot.tag_ids)
 

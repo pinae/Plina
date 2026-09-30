@@ -111,6 +111,8 @@ instances. For each bucket:
 
 * Affinity Filtering: It checks the TimeBucketType's tags. If tags 
   exist, it only considers Tasks sharing at least one matching Tag.
+  Tasks without any tag are the exception: they fit every bucket, as 
+  if they had all tags (usually they just were not sorted yet).
 * Stickiness Bonus: The algorithm looks at the previously scheduled 
   task. If that task is incomplete and fits the current bucket's 
   affinity, it receives a heavy "stickiness bonus" to prevent 

@@ -220,7 +220,9 @@ class CapacityWindow:
     tag_ids: frozenset = frozenset()
 
     def accepts(self, task_tag_ids: frozenset) -> bool:
-        return not self.tag_ids or bool(self.tag_ids & task_tag_ids)
+        # A task without tags counts as having every tag: it was not sorted
+        # yet, which should not keep it out of every tagged bucket.
+        return not self.tag_ids or not task_tag_ids or bool(self.tag_ids & task_tag_ids)
 
 
 class CapacityTimeline:
