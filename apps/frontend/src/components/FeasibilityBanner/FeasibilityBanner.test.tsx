@@ -16,8 +16,12 @@ function renderBanner(warnings: PlanWarning[]) {
     render(<QueryClientProvider client={client}><FeasibilityBanner warnings={warnings} /></QueryClientProvider>);
 }
 
+// Built from local time (like real deadlines: local 23:59), so the banner's
+// local formatting shows Oct 9 in every timezone.
 const warning = (task_id: string, header: string): PlanWarning => ({
-    task_id, header, kind: 'deadline_missed', deadline: '2026-10-09T23:59:00Z', projected_finish: '2026-10-12T12:00:00Z',
+    task_id, header, kind: 'deadline_missed',
+    deadline: new Date(2026, 9, 9, 23, 59).toISOString(),
+    projected_finish: new Date(2026, 9, 12, 12, 0).toISOString(),
 });
 
 describe('FeasibilityBanner', () => {

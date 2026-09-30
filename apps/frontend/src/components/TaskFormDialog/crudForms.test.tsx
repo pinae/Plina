@@ -177,7 +177,9 @@ describe('TaskFormDialog', () => {
 
         await waitFor(() => expect(created.tasks).toHaveLength(1));
         expect(created.tasks[0]).toMatchObject({ is_appointment: true, header: 'Team Sync' });
-        expect((created.tasks[0] as { start_date: string }).start_date).toContain('2026-07-09');
+        // The input is local time; compare instants, not the UTC date string.
+        expect(new Date((created.tasks[0] as { start_date: string }).start_date).getTime())
+            .toBe(new Date('2026-07-09T10:00').getTime());
     });
 
     it('edit mode prefills and PATCHes the task', async () => {

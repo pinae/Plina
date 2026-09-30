@@ -18,6 +18,10 @@ import { PlanChooser } from './PlanChooser.tsx';
 import { PlanChooserDialog } from '../PlanChooserDialog/PlanChooserDialog.tsx';
 import type { PlanAlternative } from '../../types.ts';
 
+// Local times: the mini timeline groups by local day, so UTC fixtures would
+// split a day in far-off timezones.
+const at = (day: number, hour: number) => new Date(2026, 6, day, hour).toISOString();
+
 function alternative(
     id: string, label: string,
     overrides: Partial<PlanAlternative> = {},
@@ -36,18 +40,18 @@ function alternative(
         buckets: [
             {
                 id: 'b1',
-                start_date: '2026-07-08T09:00:00Z', end_date: '2026-07-08T13:00:00Z',
+                start_date: at(8, 9), end_date: at(8, 13),
                 type_name: 'Daily', type_id: 1, hex_color: '#539dad', persisted: true,
                 items: [
                     {
                         task_id: 't1', header: 'Design Schema',
-                        start_time: '2026-07-08T09:00:00Z', duration: 7200,
+                        start_time: at(8, 9), duration: 7200,
                         warnings: [], is_fixed: false, is_appointment: false,
                         hex_color: '#3357ff',
                     },
                     {
                         task_id: 't2', header: 'Implement API',
-                        start_time: '2026-07-08T11:00:00Z', duration: 7200,
+                        start_time: at(8, 11), duration: 7200,
                         warnings: [], is_fixed: false, is_appointment: false,
                         hex_color: null,
                     },
@@ -55,12 +59,12 @@ function alternative(
             },
             {
                 id: 'b2',
-                start_date: '2026-07-09T09:00:00Z', end_date: '2026-07-09T13:00:00Z',
+                start_date: at(9, 9), end_date: at(9, 13),
                 type_name: 'Daily', type_id: 1, hex_color: '#539dad', persisted: true,
                 items: [
                     {
                         task_id: 't3', header: 'Load Test',
-                        start_time: '2026-07-09T09:00:00Z', duration: 3600,
+                        start_time: at(9, 9), duration: 3600,
                         warnings: [], is_fixed: false, is_appointment: false,
                         hex_color: null,
                     },
