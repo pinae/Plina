@@ -119,19 +119,16 @@ describe('dropTimeFromOffset', () => {
 });
 
 const API = 'http://localhost:8000/api';
-let planRequests = 0;
-
 const server = setupServer(
-    http.get(`${API}/plan/`, () => {
-        planRequests += 1;
-        return HttpResponse.json(planPayload);
-    }),
+    http.get(`${API}/plan/`, () => HttpResponse.json(planPayload)),
+    http.get(`${API}/settings/`, () => HttpResponse.json({
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+    })),
     http.get(`${API}/tasks/`, () => HttpResponse.json([] as Task[])),
-    http.get(`${API}/projects/`, () => HttpResponse.json([])),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-afterEach(() => { server.resetHandlers(); planRequests = 0; });
+afterEach(() => { server.resetHandlers(); });
 afterAll(() => server.close());
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -279,13 +276,64 @@ describe('PlannedWeekView', () => {
     });
 });
 
+describe('tracked time over the estimate (UI-8)', () => {
+    it('marks the card of a task whose tracked time exceeds its estimate', async () => {
+        const base = {
+            description: '', start_date: null, latest_finish_date: null, priority: 5, tags: [], hex_color: null,
+            is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
+        };
+        server.use(
+            http.get(`${API}/tasks/`, () => HttpResponse.json([
+                { ...base, id: 't1', header: 'Design Schema', duration: '01:00:00', time_spent: '01:20:00',
+                    active_tracking_start: null },
+                { ...base, id: 't2', header: 'Implement API', duration: '02:00:00', time_spent: '00:30:00',
+                    active_tracking_start: null },
+            ])),
+            http.get(`${API}/settings/`, () => HttpResponse.json({
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+            })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        const over = await screen.findByTestId('over-estimate');
+        expect(over).toHaveTextContent('+20m over');
+        expect(screen.getAllByTestId('over-estimate')).toHaveLength(1);
+    });
+});
+
+describe('completion cascade (UI-8 acceptance)', () => {
+    it('completing the last child shows an undo snackbar; Undo reopens the parent', async () => {
+        const reopened: string[] = [];
+        server.use(
+            http.post(`${API}/tasks/t1/complete/`, () => HttpResponse.json({
+                task: { id: 't1', header: 'Design Schema', is_done: true }, alternatives: [],
+                auto_completed: [{ id: 'hw', header: 'Hardware Design' }],
+            })),
+            http.post(`${API}/tasks/hw/reopen/`, () => {
+                reopened.push('hw');
+                return HttpResponse.json({ task: { id: 'hw' }, reopened: ['hw'] });
+            }),
+            http.get(`${API}/settings/`, () => HttpResponse.json({
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+            })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+
+        fireEvent.click(screen.getAllByRole('button', { name: /complete/i })[0]);
+
+        expect(await screen.findByText('“Hardware Design” completed too')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /undo/i }));
+        await waitFor(() => expect(reopened).toEqual(['hw']));
+    });
+});
+
 describe('Rest placeholder (UI-6)', () => {
     it('opens the split editor of its parent when clicked', async () => {
         const parent: Task = {
             id: 'hw', header: 'Hardware Design', description: '', start_date: null, duration: '12:00:00',
             latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null,
             is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
-            active_tracking_start: null, project_id: null, children_ids: ['cad'],
+            active_tracking_start: null, ...treeDefaults, children_ids: ['cad'],
         };
         const child: Task = { ...parent, id: 'cad', header: 'CAD', duration: '03:00:00', children_ids: [], parent_id: 'hw', ancestor_ids: ['hw'] };
         server.use(
@@ -486,6 +534,7 @@ describe('moving a bucket (regression: no duplicate)', () => {
 
 import { firstFreeDay } from '../../utils/planToWeek.ts';
 import type { PlannedBucket } from '../../types.ts';
+import { treeDefaults } from '../../testing/treeFixtures.ts';
 
 function emptyBucket(id: string, day: string): PlannedBucket {
     return {

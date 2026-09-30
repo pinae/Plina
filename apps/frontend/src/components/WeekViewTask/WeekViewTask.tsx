@@ -6,6 +6,7 @@ import CheckIcon from '@mui/icons-material/Check';
 
 import { minutesToPixels, type DragMode } from '../../utils/weekDrag.ts';
 import { useVerticalDrag } from '../../hooks/useVerticalDrag.ts';
+import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
 import { TaskHoverCard } from '../TaskHoverCard/TaskHoverCard.tsx';
 
 /** Live state of an in-progress drag, used to move the dragged appointment as a
@@ -46,6 +47,8 @@ export interface ViewTask {
     /** The not-yet-split remainder of a parent (UI-2). ``taskId`` is the
      *  parent: it can be tracked and opened, but not resized or completed. */
     isRest?: boolean;
+    /** Tracked time beyond the estimate, in minutes (UI-8, informational). */
+    overEstimateMinutes?: number;
 }
 
 export interface TaskActions {
@@ -213,9 +216,18 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 >
                     {task.title}
                 </Typography>
+                {task.overEstimateMinutes ? (
+                    <Typography data-testid="over-estimate" variant="caption"
+                        sx={{ color: 'warning.light', fontWeight: 'bold', lineHeight: 1.2 }}>
+                        +{formatDuration(minutesToDurationString(task.overEstimateMinutes))} over
+                    </Typography>
+                ) : null}
                 {actions && task.taskId && !task.isAppointment && (
                     <Box
-                        sx={{ display: 'flex', gap: 0.25 }}
+                        data-testid="task-actions"
+                        // Above the resize handle, which overlaps the buttons
+                        // on cards too short for title + buttons.
+                        sx={{ display: 'flex', gap: 0.25, position: 'relative', zIndex: 3 }}
                         onClick={event => event.stopPropagation()}
                         onMouseDown={event => event.stopPropagation()}
                     >

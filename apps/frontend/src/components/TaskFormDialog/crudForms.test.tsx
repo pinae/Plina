@@ -29,8 +29,10 @@ let patched: Record<string, unknown>[] = [];
 const server = setupServer(
     http.get(`${API}/tasks/`, () => HttpResponse.json([] as Task[])),
     http.get(`${API}/tags/`, () => HttpResponse.json(tags)),
-    http.get(`${API}/projects/`, () => HttpResponse.json([])),
     http.get(`${API}/buckettypes/`, () => HttpResponse.json([])),
+    http.get(`${API}/settings/`, () => HttpResponse.json({
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+    })),
     http.post(`${API}/tags/`, async ({ request }) => {
         const body = (await request.json()) as { name: string; hex_color: string };
         const tag = { id: `tag-${tags.length + 1}`, name: body.name, hex_color: body.hex_color };
@@ -169,6 +171,8 @@ describe('TaskFormDialog', () => {
         fireEvent.change(screen.getByLabelText(/start/i), {
             target: { value: '2026-07-09T10:00' },
         });
+        // An appointment needs a duration (a normal task may leave it empty).
+        fireEvent.change(screen.getByLabelText(/duration/i), { target: { value: '1' } });
         fireEvent.click(screen.getByRole('button', { name: /create/i }));
 
         await waitFor(() => expect(created.tasks).toHaveLength(1));
@@ -180,7 +184,7 @@ describe('TaskFormDialog', () => {
         const existing: Partial<Task> = {
             id: 'task-7', header: 'Old header', description: 'desc',
             duration: '02:00:00', priority: 7, tags: [], is_appointment: false,
-            start_date: null, latest_finish_date: null, project_id: null,
+            start_date: null, latest_finish_date: null,
         };
         render(
             <TaskFormDialog open onClose={() => { }} task={existing as Task} />,

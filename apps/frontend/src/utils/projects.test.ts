@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { PlanResponse, Task } from '../types.ts';
 import { isInside, nextPlannedItem, projectFor, projectOptions, trackedTask } from './projects.ts';
+import { treeDefaults } from '../testing/treeFixtures.ts';
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
     id, header: id, description: '', start_date: null, duration: '01:00:00',
     latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null,
     is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
-    active_tracking_start: null, project_id: null, parent_id: null, order: 0,
-    children_ids: [], ancestor_ids: [], ...over,
+    active_tracking_start: null, ...treeDefaults, ...over,
 });
 
 // T250 › Hardware Design › CAD ; T250 › Firmware ; Blog › Article ; Milk ; Old (done)

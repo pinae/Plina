@@ -18,3 +18,9 @@ type Story = StoryObj<typeof WhatNextDialog>;
 
 /** After completing a task, when the plan forks. */
 export const TwoChoices: Story = {};
+
+/** The completed task was the last open part: its parents completed too.
+ *  The Undo sits in the dialog (a snackbar behind the modal is unreachable). */
+export const WithParentsCompleted: Story = {
+    args: { autoCompleted: [{ id: 'hw', header: 'Hardware Design' }, { id: 't250', header: 'T250' }] },
+};

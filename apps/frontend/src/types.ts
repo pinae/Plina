@@ -31,31 +31,27 @@ export interface Task {
     completed_at: string | null;
     is_done: boolean;
     active_tracking_start: string | null;
-    /** Compat alias until UI-8: id of the top-level ancestor (null for a
-     *  top-level task). Writing it moves the task under that project. */
-    project_id: string | null;
-    // Task tree (UI-1). Always sent by the backend; optional here until the
-    // test fixtures are migrated with the new UI (UI-8).
-    parent_id?: string | null;
-    order?: number;
-    children_ids?: string[];
+    // Task tree (UI-1).
+    parent_id: string | null;
+    order: number;
+    children_ids: string[];
     /** Root first, excluding the task itself. */
-    ancestor_ids?: string[];
+    ancestor_ids: string[];
     /** Earliest deadline of the task and its ancestors. */
-    effective_deadline?: string | null;
+    effective_deadline: string | null;
     /** False = no own estimate; planned with the default duration. */
-    is_estimated?: boolean;
+    is_estimated: boolean;
     /** Parents only (null for leaves): Σ of the children's estimates. */
-    parts_total?: string | null;
+    parts_total: string | null;
     /** Parents only: estimate − Σ parts − own time spent, never negative. */
-    rest?: string | null;
-    over_budget?: boolean;
+    rest: string | null;
+    over_budget: boolean;
     // Completion snapshot (§4.6), null while open.
-    completion_estimate?: string | null;
-    completion_first_estimate?: string | null;
-    completion_time_spent?: string | null;
-    completion_subtree_time_spent?: string | null;
-    completion_dropped_rest?: string | null;
+    completion_estimate: string | null;
+    completion_first_estimate: string | null;
+    completion_time_spent: string | null;
+    completion_subtree_time_spent: string | null;
+    completion_dropped_rest: string | null;
 }
 
 /** Fields accepted when creating/updating a task (tag_ids is write-only). */
@@ -71,7 +67,6 @@ export interface TaskWrite {
     is_fixed?: boolean;
     is_appointment?: boolean;
     completed_at?: string | null;
-    project_id?: string | null;
     parent_id?: string | null;
     order?: number;
     /** Why the estimate changes (history); plain edits are "edited". */
@@ -83,13 +78,6 @@ export interface TagWrite {
     hex_color?: string;
 }
 
-export interface ProjectWrite {
-    name: string;
-    description?: string;
-    priority?: number;
-    tag_ids?: string[];
-}
-
 export interface BucketTypeWrite {
     name: string;
     start_times: string;
@@ -99,19 +87,6 @@ export interface BucketTypeWrite {
 
 export interface RecurrencePreview {
     occurrences: string[];
-}
-
-export interface Project {
-    id: string;
-    name: string;
-    description: string;
-    tags: Tag[];
-    priority: number;
-    /** Project-level ordering integer (not the task list!). */
-    order: number;
-    /** Task ids in project order — the task->project mapping. */
-    task_ids: string[];
-    hex_color: string | null;
 }
 
 export interface TimeBucketType {

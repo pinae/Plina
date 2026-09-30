@@ -1,24 +1,28 @@
 import '@testing-library/jest-dom';
 import { afterEach } from 'vitest';
 
-// --- Fail on React act() warnings ------------------------------------------
+// --- Fail on act() warnings and unhandled requests --------------------------
 // "An update to X inside a test was not wrapped in act(...)" means a test
 // changed state behind React Testing Library's back (e.g. a direct
-// element.focus()), so its assertions may not see what a user would. Turn
-// the warning into a failure of the test that caused it instead of noise.
-const actWarnings: string[] = [];
+// element.focus()), so its assertions may not see what a user would. An
+// unhandled msw request means a component fetched something the test did
+// not expect. Turn both into a failure of the test that caused them instead
+// of noise in the output.
+const testWarnings: string[] = [];
 const originalConsoleError = console.error;
 console.error = (...args: unknown[]) => {
     const text = args.map(String).join(' ');
-    if (text.includes('not wrapped in act(')) actWarnings.push(text.split('\n')[0]);
+    if (text.includes('not wrapped in act(') || text.includes('without a matching request handler')) {
+        testWarnings.push(text.split('\n').slice(0, 3).join(' ').trim());
+    }
     originalConsoleError(...args);
 };
 afterEach(() => {
-    if (actWarnings.length === 0) return;
-    const found = actWarnings.splice(0);
+    if (testWarnings.length === 0) return;
+    const found = testWarnings.splice(0);
     throw new Error(
-        `React act() warning(s) in this test:\n${found.join('\n')}\n` +
-        'Wrap direct DOM calls such as element.focus() in act(), or use fireEvent.',
+        `Warning(s) in this test:\n${found.join('\n')}\n` +
+        'Wrap direct DOM calls such as element.focus() in act(), and give every request an msw handler.',
     );
 });
 

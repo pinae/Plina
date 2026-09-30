@@ -4,13 +4,16 @@
  * P (project picker) and T (toggle tracking).
  */
 import { useRef, useState, type ReactNode } from 'react';
-import { Box, Divider } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Tooltip } from '@mui/material';
+import SettingsIcon from '@mui/icons-material/Settings';
 
 import { ActiveProjectSwitcher } from '../ActiveProjectSwitcher/ActiveProjectSwitcher.tsx';
 import { HeaderTracker } from '../HeaderTracker/HeaderTracker.tsx';
 import { QuickAdd } from '../QuickAdd/QuickAdd.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { WhatNextDialog } from '../WhatNextDialog/WhatNextDialog.tsx';
+import { SettingsPage } from '../SettingsPage/SettingsPage.tsx';
+import { CompletionSnackbar } from '../CompletionSnackbar/CompletionSnackbar.tsx';
 import { useGlobalShortcuts } from '../../hooks/useGlobalShortcuts.ts';
 import { useTracker } from '../../hooks/useTracker.ts';
 import { useTasks } from '../../queries.tsx';
@@ -28,8 +31,10 @@ export function AppHeader({ onShowAllProjects, actions }: AppHeaderProps) {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [choices, setChoices] = useState<PlanAlternative[] | null>(null);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const quickAddInput = useRef<HTMLInputElement>(null);
-    const tracker = useTracker(setChoices);
+    const [autoCompleted, setAutoCompleted] = useState<{ id: string; header: string }[] | null>(null);
+    const tracker = useTracker(setChoices, setAutoCompleted);
 
     useGlobalShortcuts({
         n: () => quickAddInput.current?.focus(),
@@ -50,11 +55,27 @@ export function AppHeader({ onShowAllProjects, actions }: AppHeaderProps) {
             <HeaderTracker controls={tracker} onEditTask={setEditingTaskId} />
             <Divider orientation="vertical" flexItem />
             <QuickAdd inputRef={quickAddInput} onOpenTask={setEditingTaskId} />
-            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>{actions}</Box>
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+                {actions}
+                <Tooltip title="Settings">
+                    <IconButton aria-label="settings" onClick={() => setSettingsOpen(true)}>
+                        <SettingsIcon />
+                    </IconButton>
+                </Tooltip>
+            </Box>
+            <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Settings</DialogTitle>
+                <DialogContent sx={{ pt: '8px !important' }}><SettingsPage /></DialogContent>
+                <DialogActions><Button onClick={() => setSettingsOpen(false)}>Close</Button></DialogActions>
+            </Dialog>
             {editingTask && (
                 <TaskFormDialog open task={editingTask} onClose={() => setEditingTaskId(null)} />
             )}
-            <WhatNextDialog alternatives={choices} onClose={() => setChoices(null)} />
+            {/* With choices, the Undo sits in the dialog (see WhatNextDialog). */}
+            <WhatNextDialog alternatives={choices} autoCompleted={autoCompleted}
+                onClose={() => { setChoices(null); setAutoCompleted(null); }} />
+            <CompletionSnackbar autoCompleted={choices ? null : autoCompleted}
+                onClose={() => setAutoCompleted(null)} />
         </Box>
     );
 }

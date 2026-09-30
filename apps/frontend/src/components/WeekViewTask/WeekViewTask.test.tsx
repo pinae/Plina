@@ -191,6 +191,32 @@ describe('WeekViewTask', () => {
         expect((start as Date).getHours()).toBe(9);
         expect(duration).toBe(120);
     });
+
+    it('keeps the action buttons above the resize handle on short cards', () => {
+        // A 30-minute card is shorter than title + buttons: the bottom handle
+        // then overlaps the buttons and must not swallow their clicks.
+        const actions = { trackingActive: false, onTrackStart: vi.fn(), onTrackStop: vi.fn(), onComplete: vi.fn() };
+        const task = createMockTask({ taskId: 't1', manuallySet: false, duration: 30 });
+        render(<WeekViewTask task={task} columnHeight={1440} onChange={vi.fn()} actions={actions} />);
+        const handleZ = Number(getComputedStyle(screen.getByTestId('task-resize-bottom')).zIndex);
+        const row = screen.getByTestId('task-actions');
+        expect(getComputedStyle(row).position).toBe('relative');
+        expect(Number(getComputedStyle(row).zIndex)).toBeGreaterThan(handleZ);
+    });
+});
+
+describe('WeekViewTask tracked over the estimate (UI-8)', () => {
+    afterEach(cleanup);
+
+    it('shows how far the tracked time exceeds the estimate', () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1', overEstimateMinutes: 80 })} columnHeight={1440} />);
+        expect(screen.getByTestId('over-estimate')).toHaveTextContent('+1h 20m over');
+    });
+
+    it('shows nothing within the estimate', () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} />);
+        expect(screen.queryByTestId('over-estimate')).toBeNull();
+    });
 });
 
 describe('WeekViewTask Rest placeholder (UI-2)', () => {

@@ -51,7 +51,6 @@ const server = setupServer(
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),
     http.get(`${API}/settings/`, () => HttpResponse.json(settingsFor(withTree(tasks), activeId))),
     http.get(`${API}/plan/`, () => HttpResponse.json({ accepted_plan_id: null, warnings: [], appointments: [], buckets: [] })),
-    http.get(`${API}/projects/`, () => HttpResponse.json([])),
     http.patch(`${API}/tasks/:id/`, async ({ params, request }) => {
         const body = await request.json() as TaskWrite;
         log.push(`PATCH ${params.id} ${JSON.stringify(body)}`);

@@ -709,6 +709,44 @@ L ≈ 2–4 days).
 - *Accept:* existing tests migrated; saving a task with empty duration
   works and it is planned with the default; completing the last child in
   the Week view shows the undo snackbar and Undo reopens the parent.
+- *Delivered (2026-09-30, TDD):* 21 new frontend tests (421 total), backend
+  281 tests (old project tests replaced by removal checks); `yarn build` and
+  `storybook build` (45 stories, all render) green. `TaskFormDialog`: the
+  project select became a **Parent** autocomplete over all open tasks (new
+  tasks start in the active project; an emptied field = a project of its
+  own), the duration may stay empty ("Empty = your default (1h)", saved as
+  `null`), parents show `Σ parts` with "Set estimate to Σ parts (x)"
+  (`set_to_sum`) next to "Edit parts", and "Spent x of y (+z)"; a deadline
+  later than an ancestor's is refused before saving, naming the ancestor.
+  `SettingsPage` (default duration) opens from the ⚙ button in the header.
+  `CompletionSnackbar` ("“T250” completed too · Undo", Undo reopens the
+  lowest auto-completed parent and with it the others) after completing in
+  the Week view and in the header tracker. Week-view cards of leaves show
+  "+x over" once the tracked time, including a running session, exceeds the
+  estimate (or the default). Removed: `ProjectList`, `ProjectFormDialog`, the
+  `Project` types, `project_id` on tasks, `/api/projects/`, the
+  `Project`/`ProjectTaskItem` models (migration 0015) and the `project_id`
+  write alias; the dependency editor and the feasibility banner name projects
+  via `ancestor_ids`. The `Task` type's tree fields are now required, with
+  `treeDefaults` for fixtures. The test setup now also fails a test on a
+  request without an msw handler (in addition to act() warnings). Verified
+  live against the backend with demo data: new task with empty duration
+  saved into the active project and planned with the default, default
+  changed to 30m in ⚙, completing the last subtask of a project + Undo,
+  "+15m over" on a tracked card.
+  Decisions beyond the spec: **(1)** appointments still require a duration
+  (they are placed at a fixed time, a default length would be a guess);
+  **(2)** "Set estimate to Σ parts" includes the parent's own tracked time
+  (Σ parts + spent), otherwise the button would itself create a negative
+  Rest; **(3)** when completing also opens "What next?", the Undo is shown
+  inside that dialog instead of the snackbar (the modal hides the page from
+  keyboard and screen readers), and Undo closes the dialog because its
+  alternatives no longer fit; **(4)** a card that has used up its estimate
+  is not planned any more, so "+x over" appears on cards still in the
+  accepted plan — typically the one being tracked; the header tracker shows
+  it anyway (UI-5).
+  Bug found and fixed on the way: on cards shorter than title + buttons the
+  bottom resize handle covered ▶/✓ and swallowed their clicks.
 
 **UI-9 · Mobile — M**
 - Compact header, ⊕ quick-add bottom sheet with recent tag/project chips,

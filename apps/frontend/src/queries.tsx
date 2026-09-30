@@ -21,7 +21,6 @@ import {
     computeAlternatives,
     createBucketType,
     createDependency,
-    createProject,
     createTag,
     createTask,
     deleteDependency,
@@ -29,21 +28,20 @@ import {
     fetchBucketTypes,
     fetchDependencies,
     fetchPlan,
-    fetchProjects,
     fetchSettings,
     fetchTags,
     fetchTasks,
+    reopenTask,
     splitTask,
     startTracking,
     stopTracking,
     updateBucketType,
-    updateProject,
     updateSettings,
     updateTag,
     updateTask,
 } from './api';
 import type {
-    BucketTypeWrite, Dependency, DependencyCycleError, ProjectWrite, SettingsWrite, SplitRequest,
+    BucketTypeWrite, Dependency, DependencyCycleError, SettingsWrite, SplitRequest,
     TagWrite, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
 
@@ -52,7 +50,6 @@ export const queryKeys = {
     tasks: ['tasks'] as const,
     dependencies: ['dependencies'] as const,
     tags: ['tags'] as const,
-    projects: ['projects'] as const,
     bucketTypes: ['bucketTypes'] as const,
     settings: ['settings'] as const,
 };
@@ -74,8 +71,6 @@ export const useDependencies = () =>
 export const useTags = () =>
     useQuery({ queryKey: queryKeys.tags, queryFn: fetchTags });
 
-export const useProjects = () =>
-    useQuery({ queryKey: queryKeys.projects, queryFn: fetchProjects });
 
 export const useBucketTypes = () =>
     useQuery({ queryKey: queryKeys.bucketTypes, queryFn: fetchBucketTypes });
@@ -132,7 +127,7 @@ export const useSplitTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: ({ taskId, body }: { taskId: string; body: SplitRequest }) => splitTask(taskId, body),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.dependencies, queryKeys.projects),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.dependencies),
     });
 };
 
@@ -158,7 +153,16 @@ export const useCompleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: completeTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings, queryKeys.projects),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
+    });
+};
+
+/** Undo a completion; completed ancestors reopen too (UI-2). */
+export const useReopenTask = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: reopenTask,
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
     });
 };
 
@@ -166,7 +170,7 @@ export const useCreateTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: createTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.projects),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
     });
 };
 
@@ -267,24 +271,6 @@ export const useUpdateTag = () => {
             updateTag(id, patch),
         // Tag colour/affinity can influence planning, so refresh the plan too.
         onSuccess: () => invalidate(queryKeys.tags, queryKeys.plan),
-    });
-};
-
-export const useCreateProject = () => {
-    const invalidate = useInvalidate();
-    return useMutation({
-        mutationFn: createProject,
-        onSuccess: () => invalidate(queryKeys.projects),
-    });
-};
-
-export const useUpdateProject = () => {
-    const invalidate = useInvalidate();
-    return useMutation({
-        mutationFn: ({ id, patch }: { id: string; patch: Partial<ProjectWrite> }) =>
-            updateProject(id, patch),
-        // Priority/tags feed the scheduler, so the plan may change.
-        onSuccess: () => invalidate(queryKeys.projects, queryKeys.plan),
     });
 };
 

@@ -7,10 +7,10 @@ import {
 
 import { previewRecurrence } from '../../api.ts';
 import {
-    useCreateBucketType, useCreateProject, useCreateTag,
-    useTags, useUpdateBucketType, useUpdateProject, useUpdateTag,
+    useCreateBucketType, useCreateTag,
+    useTags, useUpdateBucketType, useUpdateTag,
 } from '../../queries.tsx';
-import type { Project, Tag, TimeBucketType } from '../../types.ts';
+import type { Tag, TimeBucketType } from '../../types.ts';
 import { parseDurationMinutes } from '../../utils/duration.ts';
 
 interface FormDialogProps {
@@ -86,57 +86,6 @@ function TagMultiSelect({ value, onChange }: {
                 ))}
             </Select>
         </FormControl>
-    );
-}
-
-export function ProjectFormDialog({ open, onClose, project }: FormDialogProps & { project?: Project }) {
-    const editing = project !== undefined;
-    const [name, setName] = useState(project?.name ?? '');
-    const [description, setDescription] = useState(project?.description ?? '');
-    const [priority, setPriority] = useState(String(project?.priority ?? 5));
-    const [tagIds, setTagIds] = useState<string[]>(project?.tags.map(t => t.id) ?? []);
-    const create = useCreateProject();
-    const update = useUpdateProject();
-
-    const submit = () => {
-        if (!name.trim()) return;
-        const payload = {
-            name: name.trim(), description,
-            priority: Number(priority) || 5, tag_ids: tagIds,
-        };
-        const done = { onSuccess: () => { setName(''); onClose(); } };
-        if (editing) {
-            update.mutate({ id: project.id, patch: payload }, done);
-        } else {
-            create.mutate(payload, done);
-        }
-    };
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>{editing ? 'Edit project' : 'New project'}</DialogTitle>
-            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                <TextField
-                    label="Name" value={name} autoFocus margin="dense"
-                    onChange={event => setName(event.target.value)}
-                />
-                <TextField
-                    label="Description" value={description} multiline minRows={2}
-                    onChange={event => setDescription(event.target.value)}
-                />
-                <TextField
-                    label="Priority" type="number" value={priority}
-                    onChange={event => setPriority(event.target.value)}
-                />
-                <TagMultiSelect value={tagIds} onChange={setTagIds} />
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" onClick={submit} disabled={create.isPending || update.isPending}>
-                    {editing ? 'Save' : 'Create'}
-                </Button>
-            </DialogActions>
-        </Dialog>
     );
 }
 

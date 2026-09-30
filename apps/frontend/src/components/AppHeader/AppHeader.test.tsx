@@ -45,7 +45,6 @@ const server = setupServer(
     http.get(`${API}/plan/`, () => HttpResponse.json(plan())),
     http.get(`${API}/tasks/`, () => HttpResponse.json(withTracking())),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),
-    http.get(`${API}/projects/`, () => HttpResponse.json([])),
     http.get(`${API}/settings/`, () => HttpResponse.json(settingsFor(tasks, activeId))),
     http.patch(`${API}/settings/`, async ({ request }) => {
         const patch = await request.json() as SettingsWrite;
@@ -185,5 +184,15 @@ describe('Scenario 2 — engage from the Week view', () => {
         await waitFor(() => expect(within(header()).getByRole('button', { name: /start next/i })).toBeInTheDocument());
         fireEvent.keyDown(document.body, { key: 't' });
         await waitFor(() => expect(requests).toEqual(['stop cad', 'start cad']));
+    });
+});
+
+describe('Settings (UI-8)', () => {
+    it('⚙ opens the settings page', async () => {
+        renderApp();
+        fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+        expect(await screen.findByRole('textbox', { name: /default duration/i })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /close/i }));
+        await waitFor(() => expect(screen.queryByRole('textbox', { name: /default duration/i })).toBeNull());
     });
 });

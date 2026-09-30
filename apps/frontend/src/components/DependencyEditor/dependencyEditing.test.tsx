@@ -21,6 +21,7 @@ import { applyCycleHighlight, buildFlowGraph } from '../../utils/dependencyGraph
 import { TaskNodeCard } from '../TaskNode/TaskNode.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import type { Dependency, Task } from '../../types.ts';
+import { treeDefaults } from '../../testing/treeFixtures.ts';
 
 const API = 'http://localhost:8000/api';
 
@@ -33,8 +34,8 @@ function task(id: string, header: string): Task {
         id, header, description: '', start_date: null, duration: '01:00:00',
         latest_finish_date: null, time_spent: '00:00:00', priority: 5,
         tags: [], hex_color: null, is_fixed: false, is_appointment: false,
-        completed_at: null, is_done: false, active_tracking_start: null,
-        project_id: null,
+        completed_at: null, is_done: false, active_tracking_start: null, ...treeDefaults,
+       
     };
 }
 
@@ -43,7 +44,10 @@ let createdTasks: unknown[] = [];
 const server = setupServer(
     http.get(`${API}/dependencies/`, () => HttpResponse.json(serverEdges)),
     http.get(`${API}/tags/`, () => HttpResponse.json([])),
-    http.get(`${API}/projects/`, () => HttpResponse.json([])),
+    http.get(`${API}/tasks/`, () => HttpResponse.json([])),
+    http.get(`${API}/settings/`, () => HttpResponse.json({
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+    })),
     http.post(`${API}/tasks/`, async ({ request }) => {
         const body = await request.json();
         createdTasks.push(body);
@@ -199,7 +203,7 @@ describe('applyCycleHighlight', () => {
             { id: 'd1', predecessor: 't1', successor: 't2' },
             { id: 'd2', predecessor: 't2', successor: 't3' },
         ];
-        const graph = buildFlowGraph(tasks, deps, []);
+        const graph = buildFlowGraph(tasks, deps);
 
         const highlighted = applyCycleHighlight(graph.nodes, graph.edges, ['t1', 't2', 't1']);
 

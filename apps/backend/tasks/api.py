@@ -3,7 +3,7 @@ from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
-from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
+from .serializers import (TaskSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer)
 
@@ -143,17 +143,6 @@ class DependencyViewSet(mixins.ListModelMixin,
 
     def perform_destroy(self, instance):
         super().perform_destroy(instance)
-        recalculate_accepted_plan()
-
-class ProjectViewSet(RecalculatingModelViewSet):
-    """Compatibility view until UI-8: projects are the top-level tasks."""
-    queryset = Task.objects.filter(parent=None).order_by("order", "header")
-    serializer_class = ProjectSerializer
-
-    def perform_destroy(self, instance):
-        # Old semantics: deleting a project kept its tasks.
-        from tasks.services.tree import LIFT, delete_task
-        delete_task(instance, LIFT)
         recalculate_accepted_plan()
 
 class TagViewSet(viewsets.ModelViewSet):

@@ -1,8 +1,6 @@
 from __future__ import annotations
 from typing import List
 from django.db import models
-from django.db.models.signals import pre_delete
-from django.dispatch import receiver
 from django.utils import timezone
 from datetime import timedelta, datetime
 from parsedatetime import Constants as pdtConstants
@@ -81,7 +79,7 @@ class Task(OptionallyColored):
     #: API decides whether they are lifted or deleted (services.tree).
     parent = models.ForeignKey(to="self", related_name="children", null=True, blank=True,
                                default=None, on_delete=models.PROTECT)
-    #: Position among the siblings (top-level order replaces Project.order).
+    #: Position among the siblings (the top-level order is the project order).
     order = models.PositiveIntegerField(default=0)
     # Completion snapshot (§4.6): estimate vs. reality, kept for analysis.
     completion_estimate = models.DurationField(null=True, blank=True, default=None)
@@ -131,75 +129,6 @@ class TaskEstimateChange(models.Model):
 
     def __str__(self) -> str:
         return f"{self.task.header}: {self.old_duration} → {self.new_duration} ({self.reason})"
-
-
-class Project(OptionallyColored):
-    """Legacy: projects were migrated into the task tree (migration 0012,
-    UI-1). Nothing writes projects any more; the model is removed in UI-8."""
-    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
-    name = models.CharField(max_length=512)
-    description = models.TextField(default="", blank=True)
-    tags = models.ManyToManyField(to=Tag, related_name="projects", blank=True)
-    priority = models.FloatField(default=5.0)
-    order = models.PositiveIntegerField(default=0)
-
-    def __str__(self):
-        return "Project {}: {} ({:d}:{:.2f})".format(str(self.id), self.name, self.order, self.priority)
-
-    @property
-    def tasks(self) -> List[Task]:
-        return [pti.task for pti in self.task_list.order_by('order', '-task__priority').all()]
-
-    def add(self, task: Task):
-        task_item = ProjectTaskItem(project=self, task=task, order=ProjectTaskItem.objects.filter(project=self).count())
-        task_item.save()
-
-    def insert(self, task: Task, position: int = 0):
-        new_task_item = ProjectTaskItem(project=self, task=task, order=0)
-        for i, pti in enumerate(ProjectTaskItem.objects.filter(project=self).order_by("order").all()):
-            if i == position:
-                new_task_item.order = pti.order
-            if i >= position:
-                pti.order = pti.order + 1
-                pti.save()
-        new_task_item.save()
-
-    def remove(self, task: Task):
-        try:
-            pti = ProjectTaskItem.objects.get(project=self, task=task)
-            for subsequent_pti in ProjectTaskItem.objects.filter(project=self, order__gt=pti.order):
-                subsequent_pti.order = subsequent_pti.order - 1
-                subsequent_pti.save()
-            pti.delete()
-        except ProjectTaskItem.DoesNotExist:
-            pass
-
-    def get_color(self) -> bytes:
-        if self.color is not None:
-            return self.color
-        colored_tags = self.tags.exclude(color=None).all()
-        if colored_tags.count() > 0:
-            return self.mix_colors([tag.color for tag in colored_tags])
-        else:
-            return b'\x53\x9d\xad'
-
-    class Meta:
-        ordering = ['order']
-
-
-class ProjectTaskItem(models.Model):
-    project = models.ForeignKey(to=Project, related_name="task_list", on_delete=models.CASCADE)
-    task = models.OneToOneField(to=Task, related_name="project_item", on_delete=models.CASCADE)
-    order = models.PositiveIntegerField()
-
-    class Meta:
-        ordering = ['order']
-
-
-@receiver(pre_delete, sender=Task)
-def pre_task_delete(sender, instance: Task, using, **kwargs):
-    for pti in ProjectTaskItem.objects.filter(task=instance).all():
-        pti.project.remove(instance)
 
 
 class TaskDependency(models.Model):

@@ -40,7 +40,11 @@ function describeError(error: unknown, fallback: string): string {
     return data?.detail ?? fallback;
 }
 
-export function useTracker(onChoices: (alternatives: PlanAlternative[]) => void): TrackerControls {
+export function useTracker(
+    onChoices: (alternatives: PlanAlternative[]) => void,
+    /** Parents that completed with the tracked task (for the undo snackbar). */
+    onAutoCompleted?: (completed: { id: string; header: string }[]) => void,
+): TrackerControls {
     const tasks = useTasks();
     const settings = useSettings();
     const plan = usePlan();
@@ -77,7 +81,10 @@ export function useTracker(onChoices: (alternatives: PlanAlternative[]) => void)
     const complete = () => {
         if (!tracked) return;
         completeMutation.mutate(tracked.id, {
-            onSuccess: data => { if (data.alternatives.length > 0) onChoices(data.alternatives); },
+            onSuccess: data => {
+                if (data.alternatives.length > 0) onChoices(data.alternatives);
+                if (data.auto_completed?.length) onAutoCompleted?.(data.auto_completed);
+            },
             onError: e => setError(describeError(e, 'Could not complete the task.')),
         });
     };

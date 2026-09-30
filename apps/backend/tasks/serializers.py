@@ -57,12 +57,6 @@ class TaskSerializer(serializers.ModelSerializer):
     parent_id = serializers.PrimaryKeyRelatedField(
         queryset=Task.objects.all(), source='parent', required=False, allow_null=True,
     )
-    # Compatibility until UI-8: the old "project" is the top-level ancestor.
-    # Writing it moves the task under that task, unless it already is inside.
-    project_id = serializers.PrimaryKeyRelatedField(
-        queryset=Task.objects.all(), source='compat_project',
-        write_only=True, required=False, allow_null=True,
-    )
     #: Why the estimate changes (history, §4.6); plain edits are "edited".
     estimate_reason = serializers.ChoiceField(
         choices=['edited', 'set_to_sum', 'raised_from_warning'], write_only=True, required=False,
@@ -81,7 +75,6 @@ class TaskSerializer(serializers.ModelSerializer):
         tree = self._tree()
         if task.id not in tree.nodes:  # created after the index was loaded
             self.context['_tree_index'] = tree = TreeIndex.load()
-        data['project_id'] = tree.root_id(task.id)
         data['children_ids'] = tree.children_ids(task.id)
         data['ancestor_ids'] = tree.ancestor_ids(task.id)
         deadline = tree.effective_deadline(task.id)
@@ -100,20 +93,8 @@ class TaskSerializer(serializers.ModelSerializer):
         return session.start if session is not None else None
 
     def _resolve_parent(self, attrs):
-        """Fold the compat ``project_id`` into ``parent``; returns the target
-        parent or ``_UNSET`` when the parent is not being changed."""
-        compat = attrs.pop('compat_project', self._UNSET)
-        if 'parent' in attrs:
-            return attrs['parent']
-        if compat is self._UNSET:
-            return self._UNSET
-        instance = self.instance
-        if instance is not None and compat is not None:
-            ancestors = TreeIndex.load().ancestor_ids(instance.id)
-            if compat.id in ancestors:
-                return self._UNSET  # already inside that project: keep the position
-        attrs['parent'] = compat
-        return compat
+        """The target parent, or ``_UNSET`` when the parent is not changed."""
+        return attrs['parent'] if 'parent' in attrs else self._UNSET
 
     def validate(self, attrs):
         instance = self.instance
@@ -218,7 +199,7 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'header', 'description', 'start_date', 'duration',
             'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'hex_color', 'is_fixed',
-            'is_appointment', 'completed_at', 'is_done', 'active_tracking_start', 'project_id',
+            'is_appointment', 'completed_at', 'is_done', 'active_tracking_start',
             'parent_id', 'order', 'estimate_reason',
             'completion_estimate', 'completion_first_estimate', 'completion_time_spent',
             'completion_subtree_time_spent', 'completion_dropped_rest',
@@ -228,37 +209,6 @@ class TaskSerializer(serializers.ModelSerializer):
             'completion_subtree_time_spent', 'completion_dropped_rest',
         ]
 
-
-class ProjectSerializer(serializers.ModelSerializer):
-    """Compatibility view (until UI-8): a project is a top-level task, shown
-    in the shape of the old Project model."""
-    name = serializers.CharField(source='header', max_length=1024)
-    tags = TagSerializer(many=True, read_only=True)
-    tag_ids = serializers.PrimaryKeyRelatedField(
-        queryset=Tag.objects.all(), source='tags', many=True,
-        write_only=True, required=False,
-    )
-    hex_color = serializers.CharField(read_only=True)
-    task_ids = serializers.SerializerMethodField()
-
-    def get_task_ids(self, task):
-        if '_tree_index' not in self.context:
-            self.context['_tree_index'] = TreeIndex.load()
-        tree = self.context['_tree_index']
-        if task.id not in tree.nodes:
-            self.context['_tree_index'] = tree = TreeIndex.load()
-        return tree.descendant_ids(task.id)
-
-    @transaction.atomic
-    def create(self, validated_data):
-        validated_data.setdefault('order', next_sibling_order(None))
-        task = super().create(validated_data)
-        record_estimate_change(task, None, task.duration, 'created')
-        return task
-
-    class Meta:
-        model = Task
-        fields = ['id', 'name', 'description', 'tags', 'tag_ids', 'priority', 'order', 'task_ids', 'hex_color']
 
 class SplitRowSerializer(serializers.Serializer):
     """One row of the split editor; ``children`` splits the row itself."""

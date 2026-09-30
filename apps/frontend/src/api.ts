@@ -5,8 +5,6 @@ import type {
     CompleteResponse,
     Dependency,
     PlanResponse,
-    Project,
-    ProjectWrite,
     RecurrencePreview,
     ReopenResponse,
     SettingsWrite,
@@ -110,8 +108,6 @@ export const deleteDependency = (dependencyId: string) =>
 export const fetchTags = () =>
     api.get<Tag[]>('tags/').then(r => r.data);
 
-export const fetchProjects = () =>
-    api.get<Project[]>('projects/').then(r => r.data);
 
 export const fetchBucketTypes = () =>
     api.get<TimeBucketType[]>('buckettypes/').then(r => r.data);
@@ -125,11 +121,6 @@ export const createTag = (tag: TagWrite) =>
 export const updateTag = (tagId: string, patch: Partial<TagWrite>) =>
     api.patch<Tag>(`tags/${tagId}/`, patch).then(r => r.data);
 
-export const createProject = (project: ProjectWrite) =>
-    api.post<Project>('projects/', project).then(r => r.data);
-
-export const updateProject = (projectId: string, patch: Partial<ProjectWrite>) =>
-    api.patch<Project>(`projects/${projectId}/`, patch).then(r => r.data);
 
 export const createBucketType = (bucketType: BucketTypeWrite) =>
     api.post('buckettypes/', bucketType).then(r => r.data);

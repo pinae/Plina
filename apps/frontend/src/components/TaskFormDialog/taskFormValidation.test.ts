@@ -9,10 +9,10 @@ const NOW = new Date('2026-07-08T12:00:00');
 const valid: TaskFormValues = {
     header: 'Write report', description: '', hours: '1.5',
     deadline: '', deadlineIncomplete: false,
-    priority: 5, tagIds: [], projectId: '',
+    priority: 5, tagIds: [], parentId: '',
     isAppointment: false, start: '', startIncomplete: false,
 };
-const ctx: ValidationContext = { now: NOW, knownTagIds: ['t1'], knownProjectIds: ['p1'] };
+const ctx: ValidationContext = { now: NOW, knownTagIds: ['t1'], knownParentIds: ['p1'] };
 
 const errorsFor = (over: Partial<TaskFormValues>, context: Partial<ValidationContext> = {}) =>
     validateTaskForm({ ...valid, ...over }, { ...ctx, ...context });
@@ -64,14 +64,18 @@ describe('validateTaskForm', () => {
     });
 
     describe('duration', () => {
-        it('distinguishes empty, malformatted, negative, zero and too large', () => {
-            const empty = errorsFor({ hours: '' }).hours!;
+        it('is optional: empty means the default duration (UI-8)', () => {
+            expect(errorsFor({ hours: '' }).hours).toBeUndefined();
+            expect(errorsFor({ hours: '   ' }).hours).toBeUndefined();
+        });
+        it('distinguishes an appointment without duration, malformatted, negative, zero and too large', () => {
+            const empty = errorsFor({ hours: '', isAppointment: true, start: '2026-07-09T10:00' }).hours!;
             const malformed = errorsFor({ hours: 'abc' }).hours!;
             const negative = errorsFor({ hours: '-1' }).hours!;
             const zero = errorsFor({ hours: '0' }).hours!;
             const huge = errorsFor({ hours: '5000' }).hours!;
 
-            expect(empty).toMatch(/duration is empty/i);
+            expect(empty).toMatch(/appointment needs a duration/i);
             expect(malformed).toMatch(/“abc” is not a valid duration/);
             expect(negative).toMatch(/can't be negative/i);
             expect(zero).toMatch(/at least 1 minute/i);
@@ -125,22 +129,33 @@ describe('validateTaskForm', () => {
         });
     });
 
-    describe('priority, tags and project', () => {
+    describe('priority, tags and parent', () => {
         it('rejects a priority outside 0–10', () => {
             expect(errorsFor({ priority: 11 }).priority).toMatch(/between 0 and 10/i);
         });
         it('flags a selected tag that no longer exists', () => {
             expect(errorsFor({ tagIds: ['t1', 'gone'] }).tags).toMatch(/no longer exists/i);
         });
-        it('flags a selected project that no longer exists', () => {
-            expect(errorsFor({ projectId: 'gone' }).project).toMatch(/no longer exists/i);
+        it('flags a selected parent that no longer exists', () => {
+            expect(errorsFor({ parentId: 'gone' }).parent).toMatch(/no longer exists/i);
         });
-        it('skips reference checks until tags/projects are loaded', () => {
+        it('skips reference checks until tags/tasks are loaded', () => {
             const errors = errorsFor(
-                { tagIds: ['x'], projectId: 'y' }, { knownTagIds: null, knownProjectIds: null },
+                { tagIds: ['x'], parentId: 'y' }, { knownTagIds: null, knownParentIds: null },
             );
             expect(errors.tags).toBeUndefined();
-            expect(errors.project).toBeUndefined();
+            expect(errors.parent).toBeUndefined();
+        });
+    });
+
+    describe('deadline and the parents (UI-8)', () => {
+        const limit = { header: 'T250', date: new Date('2026-10-31T23:59:00') };
+        it('rejects a deadline later than a parent’s, naming it', () => {
+            const message = errorsFor({ deadline: '2026-11-05T12:00' }, { parentDeadline: limit }).deadline!;
+            expect(message).toBe('The deadline is later than the deadline of “T250” (31.10.). Choose a date on or before it.');
+        });
+        it('accepts a deadline on or before it', () => {
+            expect(errorsFor({ deadline: '2026-10-31T20:00' }, { parentDeadline: limit }).deadline).toBeUndefined();
         });
     });
 });
