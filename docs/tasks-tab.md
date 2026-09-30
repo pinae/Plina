@@ -1,6 +1,6 @@
 # The Tasks tab — one tree for navigating, editing and ordering
 
-Status: plan (2026-09-30). Replaces the old flat "Tasks" tab and renames the
+Status: plan, decisions confirmed (2026-09-30). Replaces the old flat "Tasks" tab and renames the
 outline ("Projects") to **Tasks**. Builds on docs/task-entry-ui.md (task tree,
 outline §5, sorting session §5.1).
 
@@ -58,9 +58,9 @@ without leaving it.
   (or deletes) anything. Only *completing* the last open subtask completes the
   parent (UI-2, unchanged).
 
-## 3. Decisions (proposed defaults — confirm or change)
+## 3. Decisions (confirmed 2026-09-30)
 
-| # | Question | Proposal |
+| # | Question | Decision |
 |---|---|---|
 | 1 | What does a click on a row do? | Opens the edit dialog (like the old Tasks tab). Selection follows the click; ↑/↓ + Enter do the same from the keyboard. Inline header editing is dropped in favour of the dialog. |
 | 2 | Completed tasks? | Hidden by default; "Show completed" shows them greyed and struck through in their place in the tree (not draggable, ✓ can reopen). |
