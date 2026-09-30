@@ -112,8 +112,12 @@ const outline = () => screen.getByRole('tree', { name: /outline/i });
 const rowNames = () => within(outline()).queryAllByRole('treeitem').map(r => r.getAttribute('aria-label'));
 const row = (name: string) => within(outline()).getByRole('treeitem', { name });
 const press = (key: string, extra: Record<string, unknown> = {}) => fireEvent.keyDown(outline(), { key, ...extra });
+/** Select a row from the keyboard (a click opens the edit dialog, T-4). */
 const select = async (name: string) => {
-    fireEvent.click(await within(outline()).findByRole('treeitem', { name }));
+    await within(outline()).findByRole('treeitem', { name });
+    act(() => outline().focus());
+    const index = rowNames().indexOf(name);
+    for (let i = 0; i <= index; i++) press('ArrowDown');
     expect(row(name)).toHaveAttribute('aria-selected', 'true');
 };
 
@@ -232,6 +236,54 @@ describe('one tree (T-3)', () => {
     });
 });
 
+describe('the edit dialog in the tree (T-4)', () => {
+    it('a click on a row opens its edit dialog and selects it', async () => {
+        renderOutline();
+        fireEvent.click(await within(outline()).findByRole('treeitem', { name: 'CAD' }));
+        expect(await screen.findByRole('dialog')).toHaveTextContent('Edit “CAD”');
+        // The tree behind the modal is hidden from assistive tech meanwhile.
+        expect(screen.getByRole('treeitem', { name: 'CAD', hidden: true })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('Enter opens the selected row; closing returns to it, so ↓ Enter opens the next', async () => {
+        renderOutline();
+        await select('CAD');
+        press('Enter');
+        const dialog = await screen.findByRole('dialog');
+        fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(outline()).toHaveFocus();
+        expect(row('CAD')).toHaveAttribute('aria-selected', 'true');
+        press('ArrowDown');
+        press('Enter');
+        expect(await screen.findByRole('dialog')).toHaveTextContent('Edit “test prints”');
+    });
+
+    it('↑/↓ in the dialog walk the tree, skipping Rest rows; the selection follows', async () => {
+        renderOutline();
+        fireEvent.click(await within(outline()).findByRole('treeitem', { name: 'test prints' }));
+        const dialog = await screen.findByRole('dialog');
+        fireEvent.click(within(dialog).getByRole('button', { name: /next task/i }));
+        // "Rest of Hardware Design" comes next in the tree but is not a task.
+        await waitFor(() => expect(dialog).toHaveTextContent('Edit “Firmware”'));
+        fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(row('Firmware')).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('the first task has no previous one', async () => {
+        renderOutline();
+        fireEvent.click(await within(outline()).findByRole('treeitem', { name: 'T250' }));
+        expect(within(await screen.findByRole('dialog')).getByRole('button', { name: /previous task/i })).toBeDisabled();
+    });
+
+    it('a Rest row opens the split editor', async () => {
+        renderOutline();
+        fireEvent.click(await within(outline()).findByRole('treeitem', { name: 'Rest of Hardware Design' }));
+        expect(await screen.findByText('Split “Hardware Design”')).toBeInTheDocument();
+    });
+});
+
 describe('re-parenting', () => {
     it('Tab makes the previous sibling the parent, whose Σ/Rest then updates', async () => {
         renderOutline();
@@ -280,31 +332,16 @@ describe('editing rows', () => {
         await waitFor(() => expect(log).toContain('PATCH cad {"priority":8}'));
     });
 
-    it('Enter edits the header inline; tokens set estimate and tags', async () => {
+    it('# edits the header inline; tokens set estimate and tags', async () => {
         renderOutline();
         await select('test prints');
-        press('Enter');
+        press('#');
         const input = await screen.findByRole('textbox', { name: /edit header/i });
         fireEvent.change(input, { target: { value: 'Test prints 2:30 #maker' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         await waitFor(() => expect(log.some(l => l.startsWith('PATCH prints'))).toBe(true));
         const patch = JSON.parse(log.find(l => l.startsWith('PATCH prints'))!.slice('PATCH prints '.length));
         expect(patch).toMatchObject({ header: 'Test prints', duration: '02:30:00', tag_ids: ['tag-maker'] });
-    });
-
-    it('Enter on the last row of a level adds a new sibling', async () => {
-        renderOutline();
-        await select('test prints');
-        press('Enter');
-        fireEvent.keyDown(await screen.findByRole('textbox', { name: /edit header/i }), { key: 'Enter' });
-        const draft = await screen.findByRole('textbox', { name: /new task/i });
-        fireEvent.change(draft, { target: { value: 'assembly 2h' } });
-        fireEvent.keyDown(draft, { key: 'Enter' });
-        await waitFor(() => expect(log.some(l => l.startsWith('POST'))).toBe(true));
-        expect(JSON.parse(log.find(l => l.startsWith('POST'))!.slice(5))).toMatchObject({
-            header: 'assembly', parent_id: 'hw', duration: '02:00:00',
-            tag_ids: ['tag-maker'], // inherited from Hardware Design, like quick add
-        });
     });
 
     it('▶ and Space start tracking; a Rest row tracks its parent', async () => {

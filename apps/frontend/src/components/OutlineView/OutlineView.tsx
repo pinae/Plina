@@ -1,10 +1,11 @@
 /**
  * UI-7: the outline — since T-2 the Tasks tab (docs/task-entry-ui.md §5,
- * docs/tasks-tab.md). "+ New task" and a double-click open the full dialog.
+ * docs/tasks-tab.md). "+ New task" opens the full dialog for a new task.
  *
  * The tree of open tasks, edited in place (every change is saved at once).
- * Keyboard: ↑/↓ select · →/← expand/collapse · Enter edit (Enter on the last
- * row of a level adds a sibling) · Tab / Shift+Tab re-parent · Alt+↑/↓
+ * Keyboard: ↑/↓ select · →/← expand/collapse · Enter (or a click) opens the
+ * edit dialog (T-4; ↑/↓ inside walk to the neighbouring tasks, like Todoist)
+ * · Tab / Shift+Tab re-parent · Alt+↑/↓
  * reorder · 0–9 priority · E estimate · M move · # tag · S split ·
  * Space track · Del delete (with undo).
  *
@@ -14,7 +15,7 @@
  * completes the task (Undo in the toast, like Todoist/Wunderlist); "+ Add
  * task" at the end of every expanded project and of the tree.
  * "Sort" switches to the sorting session: the inbox of unestimated tasks
- * from all projects, where Enter opens the full dialog.
+ * from all projects.
  *
  * Touch screens (UI-9): the selected row gets buttons for what lives on keys
  * — outdent, indent, move, details (no double-click on a phone), split.
@@ -100,7 +101,8 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const [pendingDeletes, setPendingDeletes] = useState<Map<string, string>>(() => new Map());
     const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
     const [splitTask, setSplitTask] = useState<Task | null>(null);
-    const [dialogTask, setDialogTask] = useState<Task | null>(null);
+    // The task in the edit dialog, by id: after a save it shows the fresh data.
+    const [dialogTaskId, setDialogTaskId] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
     const [move, setMove] = useState<{ task: Task; anchor: HTMLElement } | null>(null);
     const [message, setMessage] = useState<string | null>(null);
@@ -287,12 +289,6 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         return { write, header: row.header.trim() };
     };
 
-    const isLastOfLevel = (index: number) => {
-        const item = items[index];
-        const next = items[index + 1];
-        return !next || next.depth < item.depth || next.kind === 'rest';
-    };
-
     const commitEdit = async () => {
         if (!editing) return;
         const item = items.find(i => i.key === editing.key);
@@ -316,13 +312,8 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         const body: TaskWrite = { ...result.write };
         if (result.header !== task.header) body.header = result.header;
         if (body.tag_ids) body.tag_ids = [...new Set([...task.tags.map(t => t.id), ...body.tag_ids])];
-        const index = items.indexOf(item);
         setEditing(null);
-        if (isLastOfLevel(index)) {
-            setDraft({ parentId: task.parent_id ?? null, depth: item.depth, afterKey: item.key, text: '' });
-        } else {
-            refocus();
-        }
+        refocus();
         if (Object.keys(body).length) await patch(task, body).catch(() => undefined);
     };
 
@@ -362,8 +353,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         if (key === 'Enter') {
             event.preventDefault();
             if (!isTask) setSplitTask(task);
-            else if (sortMode) setDialogTask(task);
-            else beginEdit(selected, 'header');
+            else setDialogTaskId(task.id); // T-4: Enter opens the full dialog
         } else if (key === ' ') {
             event.preventDefault();
             startTracking.mutate(task.id, { onError: error => setMessage(serverMessage(error)) });
@@ -431,6 +421,19 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     );
 
     const lastPending = [...pendingDeletes.entries()].pop();
+
+    // T-4: the dialog walks the task rows in tree order (Rest rows are not
+    // tasks); the selection follows so closing lands on the last one shown.
+    const dialogTask = dialogTaskId ? allTasks.find(t => t.id === dialogTaskId) ?? null : null;
+    const taskItems = items.filter(i => i.kind === 'task');
+    const dialogPosition = taskItems.findIndex(i => i.task.id === dialogTaskId);
+    const openNeighbour = (direction: -1 | 1) => {
+        const target = taskItems[dialogPosition + direction];
+        if (!target) return;
+        setDialogTaskId(target.task.id);
+        setSelection({ key: target.key, index: items.indexOf(target) });
+        rowElements.current.get(target.key)?.scrollIntoView?.({ block: 'nearest' });
+    };
     const openIds = new Set(allTasks.filter(t => !t.is_done).map(t => t.id));
 
     /** "+ Add task" after the last row of an expanded project (Todoist). */
@@ -467,7 +470,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 {!rowButtons && (
                     <Tooltip title={sortMode
                         ? '↑/↓ select · E estimate · M move · # tag · 0–9 priority · S split · Space track · Del delete · Enter details'
-                        : '↑/↓ select · Enter edit · Tab / Shift+Tab indent · Alt+↑/↓ move · E estimate · M move to · # tag · 0–9 priority · S split · Space track · Del delete'}>
+                        : '↑/↓ select · Enter / click details (Alt+↑/↓ inside: previous/next) · Tab / Shift+Tab indent · Alt+↑/↓ move · E estimate · M move to · # tag · 0–9 priority · S split · Space track · Del delete'}>
                         <IconButton size="small" aria-label="keyboard shortcuts"><HelpOutlineIcon fontSize="small" /></IconButton>
                     </Tooltip>
                 )}
@@ -499,7 +502,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         defaultDuration={defaultDuration}
                         editing={editing?.key === item.key ? editing : null}
                         onSelect={() => { setSelection({ key: item.key, index }); refocus(); }}
-                        onOpen={() => (item.kind === 'task' ? setDialogTask(item.task) : setSplitTask(item.task))}
+                        onOpen={() => (item.kind === 'task' ? setDialogTaskId(item.task.id) : setSplitTask(item.task))}
                         onToggle={() => toggleCollapsed(item.task.id)}
                         onToggleDone={() => toggleDone(item.task)}
                         canComplete={item.task.is_done || !(item.task.children_ids ?? []).some(id => openIds.has(id))}
@@ -524,7 +527,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                             onOutdent={() => reparent(item.task, outdentParent(item.task, visibleTasks))}
                             onIndent={() => reparent(item.task, indentParent(item.task, visibleTasks) ?? undefined)}
                             onMove={direction => reorder(item.task, direction)}
-                            onDetails={() => setDialogTask(item.task)}
+                            onDetails={() => setDialogTaskId(item.task.id)}
                             onSplit={() => setSplitTask(item.task)}
                         />
                     ) : null,
@@ -546,7 +549,12 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 placeholder={move ? `Move “${move.task.header}” to…` : undefined}
             />
             {splitTask && <SplitEditor open task={splitTask} onClose={() => { setSplitTask(null); refocus(); }} />}
-            {dialogTask && <TaskFormDialog open task={dialogTask} onClose={() => { setDialogTask(null); refocus(); }} />}
+            {dialogTask && (
+                <TaskFormDialog open task={dialogTask}
+                    canNavigate={{ previous: dialogPosition > 0, next: dialogPosition >= 0 && dialogPosition < taskItems.length - 1 }}
+                    onNavigate={openNeighbour}
+                    onClose={() => { setDialogTaskId(null); refocus(); }} />
+            )}
             {creating && <TaskFormDialog open onClose={() => { setCreating(false); refocus(); }} />}
             <Dialog open={confirmDelete !== null} onClose={() => setConfirmDelete(null)}>
                 <DialogTitle>Delete “{confirmDelete?.header}”?</DialogTitle>
@@ -643,8 +651,7 @@ function OutlineItemRow({
             data-active={item.kind === 'task' && item.active ? 'true' : undefined}
             data-done={done ? 'true' : undefined}
             ref={onElement}
-            onClick={onSelect}
-            onDoubleClick={onOpen}
+            onClick={() => { onSelect(); onOpen(); }}
             sx={{
                 display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, pr: 1,
                 pl: 0.5 + item.depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',

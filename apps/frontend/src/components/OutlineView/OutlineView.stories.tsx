@@ -28,6 +28,7 @@ const meta: Meta<typeof Outline> = {
 export default meta;
 type Story = StoryObj<typeof Outline>;
 
-/** Click a row, then use the keys shown above the outline. */
+/** The active project on top; click a row for its dialog (↑/↓ inside walk
+ *  the tree), the "?" lists the keys. */
 export const ActiveProject: Story = {};
-export const AllProjects: Story = { args: { activeId: null } };
+export const NoActiveProject: Story = { args: { activeId: null } };

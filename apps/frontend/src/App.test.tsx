@@ -69,9 +69,9 @@ describe('Tabs (T-2)', () => {
         expect(posted[0]).toMatchObject({ header: 'Order filament', parent_id: 'hw' });
     });
 
-    it('a double-click on a task opens the edit dialog', async () => {
+    it('a click on a task opens the edit dialog', async () => {
         renderApp();
-        fireEvent.doubleClick(await screen.findByRole('treeitem', { name: 'CAD' }));
+        fireEvent.click(await screen.findByRole('treeitem', { name: 'CAD' }));
         expect(await screen.findByRole('dialog')).toHaveTextContent('Edit “CAD”');
     });
 

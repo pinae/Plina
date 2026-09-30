@@ -175,6 +175,25 @@ Each package is testable on its own and leaves the app working.
   after saving, the row shows the changes; the sorting session keeps its keys.
 - *Accept:* click → dialog → save → row updated and still selected; ↓ Enter
   opens the next task.
+- *Delivered (2026-09-30, TDD):* 9 new frontend tests (503 total): 4 in
+  `TaskFormDialog` (walk without changes, save first, invalid form refuses,
+  Alt+↑/↓), 5 in the outline (click and Enter open, closing returns to the
+  row, ↑/↓ skip Rest rows with the selection following, first task has no
+  previous, Rest row → split editor). A click on a row (or Enter) opens the
+  edit dialog; a Rest row opens the split editor. `TaskFormDialog` is now a
+  shell keeping the `Dialog` open and a form remounted per task (`key`), so
+  switching tasks does not close and reopen it; with `onNavigate` /
+  `canNavigate` it shows ↑/↓ buttons in the title (and Alt+↑/↓ from any
+  field). Unsaved changes are saved before switching; an invalid form
+  refuses and shows its errors. The outline keeps the dialog's task by id,
+  so returning to an edited task shows the saved values, and moves the
+  selection along; closing refocuses the tree on that row. Inline renaming
+  on Enter is gone (decision 1) and with it "Enter on the last row adds a
+  sibling" — the "+ Add task" rows (T-3) do that now; `#` still edits the
+  tags inline, E the estimate. Verified live with the demo data: click →
+  rename → ↓ saves and shows the next task, Alt+↓, Cancel lands on the last
+  shown row, ↓ Enter opens the next; on a phone a tap opens the full-screen
+  dialog with the arrows.
 
 **T-5 · Priority slider — S**
 - `PrioritySlider` (own component): compact MUI slider 0–10, value label

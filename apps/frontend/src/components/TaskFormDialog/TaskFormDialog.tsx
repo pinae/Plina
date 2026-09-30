@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { AxiosError } from 'axios';
 import {
     Alert, Autocomplete, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent,
-    DialogTitle, FormControl, FormControlLabel, FormHelperText, InputLabel, MenuItem,
-    Select, Slider, TextField, Typography,
+    DialogTitle, FormControl, FormControlLabel, FormHelperText, IconButton, InputLabel, MenuItem,
+    Select, Slider, TextField, Tooltip, Typography,
 } from '@mui/material';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 
 import { useCreateTask, useSettings, useTags, useTasks, useUpdateTask } from '../../queries.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
@@ -25,7 +27,14 @@ interface TaskFormDialogProps {
     initialStart?: Date;
     initialDurationMinutes?: number;
     defaultAppointment?: boolean;
+    /** T-4: walk to the previous (-1) / next (1) task without closing — the
+     *  caller swaps ``task``. Unsaved changes are saved first; an invalid
+     *  form refuses. Without it there are no arrows. */
+    onNavigate?: (direction: -1 | 1) => void;
+    canNavigate?: { previous: boolean; next: boolean };
 }
+
+type TaskFormProps = Omit<TaskFormDialogProps, 'open'> & { onSplit: () => void };
 
 const toLocalInput = (iso: string | null): string => {
     if (!iso) return '';
@@ -63,13 +72,28 @@ const invalidSx = (attempt: number) => {
     };
 };
 
-/** WP-12: the full task form, replacing the minimal WP-9 dialog. */
-export function TaskFormDialog({
-    open, onClose, task, initialStart, initialDurationMinutes, defaultAppointment,
-}: TaskFormDialogProps) {
+/** WP-12: the full task form, replacing the minimal WP-9 dialog. The dialog
+ *  stays open while the form inside is swapped per task (T-4 navigation). */
+export function TaskFormDialog({ open, ...props }: TaskFormDialogProps) {
     const fullScreen = useIsMobile(); // phones (UI-9)
-    const editing = task !== undefined;
     const [splitting, setSplitting] = useState(false);
+
+    // Splitting replaces this dialog; closing the split editor closes both.
+    if (splitting && props.task) {
+        return <SplitEditor open={open} task={props.task} onClose={props.onClose} />;
+    }
+    return (
+        <Dialog open={open} onClose={props.onClose} fullWidth maxWidth="sm" fullScreen={fullScreen}>
+            {/* A fresh form per task: its fields start from that task. */}
+            <TaskForm key={props.task?.id ?? 'new'} {...props} onSplit={() => setSplitting(true)} />
+        </Dialog>
+    );
+}
+
+function TaskForm({
+    onClose, task, initialStart, initialDurationMinutes, defaultAppointment, onNavigate, canNavigate, onSplit,
+}: TaskFormProps) {
+    const editing = task !== undefined;
     const tags = useTags();
     const tasks = useTasks();
     const settings = useSettings();
@@ -95,6 +119,11 @@ export function TaskFormDialog({
         toLocalInput(task?.start_date ?? (initialStart ? initialStart.toISOString() : null)),
     );
     const [startIncomplete, setStartIncomplete] = useState(false);
+    // Unsaved changes = the editable values differ from when the form opened.
+    const snapshot = JSON.stringify([header, description, hours, estimateReason, deadline, priority,
+        tagIds, chosenParentId, isAppointment, start]);
+    const [initialSnapshot] = useState(snapshot);
+    const dirty = snapshot !== initialSnapshot;
 
     // Validation state: errors show for a field once it was left (touched) or
     // after the first save attempt, and then update live as the user types.
@@ -175,7 +204,8 @@ export function TaskFormDialog({
 
     const pending = create.isPending || update.isPending;
 
-    const submit = () => {
+    /** Save, then ``after`` (close by default, or switch to another task). */
+    const submit = (after: () => void = onClose) => {
         setAttempts(n => n + 1);
         setGeneralError(null);
         const duration = parseDurationInput(hours);
@@ -194,7 +224,7 @@ export function TaskFormDialog({
         };
         if (editing && estimateReason) payload.estimate_reason = estimateReason;
         const options = {
-            onSuccess: onClose,
+            onSuccess: after,
             onError: (error: Error) => {
                 const { fields, general } = mapServerErrors((error as AxiosError).response?.data);
                 setServerErrors(fields);
@@ -218,14 +248,43 @@ export function TaskFormDialog({
     const estimateMinutes = parseDurationMinutes(task?.duration ?? null) ?? defaultDuration;
     const priorityFeedback = shown('priority');
 
-    // Splitting replaces this dialog; closing the split editor closes both.
-    if (splitting && task) {
-        return <SplitEditor open={open} task={task} onClose={onClose} />;
-    }
+    const navigate = (direction: -1 | 1) => {
+        if (!onNavigate || !(direction === -1 ? canNavigate?.previous : canNavigate?.next)) return;
+        if (dirty) submit(() => onNavigate(direction));
+        else onNavigate(direction);
+    };
 
     return (
-        <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" fullScreen={fullScreen}>
-            <DialogTitle>{editing ? `Edit “${task.header}”` : 'New task'}</DialogTitle>
+        // display: contents — only here to catch Alt+↑/↓ from any field.
+        <Box sx={{ display: 'contents' }} onKeyDown={event => {
+            if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && onNavigate) {
+                event.preventDefault();
+                navigate(event.key === 'ArrowUp' ? -1 : 1);
+            }
+        }}>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box component="span" sx={{ flex: 1, minWidth: 0 }}>{editing ? `Edit “${task.header}”` : 'New task'}</Box>
+                {editing && onNavigate && (
+                    <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                        <Tooltip title="Previous task (Alt+↑)">
+                            <span>
+                                <IconButton size="small" aria-label="previous task" disabled={!canNavigate?.previous || pending}
+                                    onClick={() => navigate(-1)}>
+                                    <KeyboardArrowUpIcon />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="Next task (Alt+↓)">
+                            <span>
+                                <IconButton size="small" aria-label="next task" disabled={!canNavigate?.next || pending}
+                                    onClick={() => navigate(1)}>
+                                    <KeyboardArrowDownIcon />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                    </Box>
+                )}
+            </DialogTitle>
             <DialogContent ref={contentRef} sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
                 <TextField
                     label="Header" value={header} autoFocus margin="dense" required
@@ -356,15 +415,15 @@ export function TaskFormDialog({
             </DialogContent>
             <DialogActions>
                 {editing && (
-                    <Button onClick={() => setSplitting(true)} sx={{ mr: 'auto' }}>
+                    <Button onClick={onSplit} sx={{ mr: 'auto' }}>
                         {task.children_ids?.length ? `Edit parts (${task.children_ids.length})` : 'Split into subtasks'}
                     </Button>
                 )}
                 <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" onClick={submit} disabled={pending}>
+                <Button variant="contained" onClick={() => submit()} disabled={pending}>
                     {editing ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
-        </Dialog>
+        </Box>
     );
 }

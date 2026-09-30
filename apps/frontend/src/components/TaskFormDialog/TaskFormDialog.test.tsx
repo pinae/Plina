@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { TaskFormDialog } from './TaskFormDialog.tsx';
 import { treeDefaults } from '../../testing/treeFixtures.ts';
@@ -284,6 +284,89 @@ describe('TaskFormDialog on a phone (UI-9)', () => {
         } finally {
             restore();
         }
+    });
+});
+
+describe('TaskFormDialog — walking through tasks (T-4, like Todoist)', () => {
+    const task = (id: string, header: string) => ({
+        id, header, description: '', start_date: null, duration: '01:00:00',
+        latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null,
+        is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
+        active_tracking_start: null, ...treeDefaults,
+    });
+    const list = [task('cad', 'CAD'), task('blog', 'Company Blog'), task('milk', 'Buy milk')];
+    const patches: { id: string; body: Record<string, unknown> }[] = [];
+    const useServer = () => server.use(
+        http.get(`${API}/tasks/`, () => HttpResponse.json(list)),
+        http.patch(`${API}/tasks/:id/`, async ({ params, request }) => {
+            const body = await request.json() as Record<string, unknown>;
+            patches.push({ id: String(params.id), body });
+            return HttpResponse.json({ ...list.find(t => t.id === params.id), ...body });
+        }),
+    );
+    afterEach(() => { patches.length = 0; });
+
+    /** The outline's role: keep the dialog open and swap the task. */
+    function Walker({ onNavigate }: { onNavigate?: (direction: -1 | 1) => void }) {
+        const [index, setIndex] = useState(0);
+        return (
+            <TaskFormDialog open onClose={() => {}} task={list[index]}
+                canNavigate={{ previous: index > 0, next: index < list.length - 1 }}
+                onNavigate={direction => { onNavigate?.(direction); setIndex(i => i + direction); }} />
+        );
+    }
+    const next = () => fireEvent.click(screen.getByRole('button', { name: /next task/i }));
+
+    it('switches to the next task in the same dialog when nothing changed', async () => {
+        useServer();
+        const onNavigate = vi.fn();
+        render(<Walker onNavigate={onNavigate} />, { wrapper });
+        const dialog = screen.getByRole('dialog');
+        expect(screen.getByRole('button', { name: /previous task/i })).toBeDisabled();
+        next();
+        await waitFor(() => expect(headerInput()).toHaveValue('Company Blog'));
+        expect(onNavigate).toHaveBeenCalledWith(1);
+        expect(patches).toEqual([]);
+        expect(screen.getByRole('dialog')).toBe(dialog); // not closed and reopened
+        expect(dialog).toHaveTextContent('Edit “Company Blog”');
+        expect(headerInput()).toHaveFocus();
+    });
+
+    it('saves unsaved changes first', async () => {
+        useServer();
+        render(<Walker />, { wrapper });
+        fireEvent.change(headerInput(), { target: { value: 'CAD v2' } });
+        next();
+        await waitFor(() => expect(headerInput()).toHaveValue('Company Blog'));
+        expect(patches).toHaveLength(1);
+        expect(patches[0]).toMatchObject({ id: 'cad', body: { header: 'CAD v2' } });
+    });
+
+    it('refuses to switch while the form is invalid', async () => {
+        useServer();
+        const onNavigate = vi.fn();
+        render(<Walker onNavigate={onNavigate} />, { wrapper });
+        fireEvent.change(headerInput(), { target: { value: '' } });
+        next();
+        await waitFor(() => expect(headerInput()).toHaveAttribute('aria-invalid', 'true'));
+        expect(onNavigate).not.toHaveBeenCalled();
+        expect(patches).toEqual([]);
+    });
+
+    it('Alt+↓ / Alt+↑ switch from the keyboard', async () => {
+        useServer();
+        const onNavigate = vi.fn();
+        render(<Walker onNavigate={onNavigate} />, { wrapper });
+        fireEvent.keyDown(headerInput(), { key: 'ArrowDown', altKey: true });
+        await waitFor(() => expect(headerInput()).toHaveValue('Company Blog'));
+        fireEvent.keyDown(headerInput(), { key: 'ArrowUp', altKey: true });
+        await waitFor(() => expect(headerInput()).toHaveValue('CAD'));
+        expect(onNavigate.mock.calls).toEqual([[1], [-1]]);
+    });
+
+    it('has no arrows without a list to walk (e.g. from the Week view)', () => {
+        render(<TaskFormDialog open onClose={() => {}} task={list[0]} />, { wrapper });
+        expect(screen.queryByRole('button', { name: /next task/i })).toBeNull();
     });
 });
 
