@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react';
 import Layout from './components/Layout/Layout.tsx';
 import { Box, Tabs, Tab } from '@mui/material';
 import { OutlineView } from './components/OutlineView/OutlineView.tsx';
-import { storeOutlineFilter } from './utils/outlineFilter.ts';
 import TagList from './components/TagList/TagList.tsx';
 import BucketTypeList from './components/BucketTypeList/BucketTypeList.tsx';
 import Calendar from './components/Calendar/Calendar.tsx';
@@ -38,7 +37,6 @@ function App() {
   // the "Plan my week" button then triggers planning once dragging settles.
   const [planDirty, setPlanDirty] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [outlineKey, setOutlineKey] = useState(0);
   const compact = useIsMobile();
   // Recurring buckets ("every day at 14:00") follow the device's time zone.
   useTimeZoneSync();
@@ -58,9 +56,7 @@ function App() {
       {/* Engage bar (UI-5): active project, tracker, quick add. */}
       <AppHeader
         onShowAllProjects={() => {
-          // The Tasks tab showing every project (§3.1).
-          storeOutlineFilter('all');
-          setOutlineKey(key => key + 1);
+          // The Tasks tab: every project in one tree (§3.1, T-3).
           setTab('tasks');
         }}
         actions={
@@ -93,7 +89,7 @@ function App() {
         // Phones: room to scroll the last rows clear of the ⊕ button.
         pb: compact ? 11 : undefined }}>
         <ErrorBoundary key={tab}>
-          {tab === 'tasks' && <OutlineView key={outlineKey} />}
+          {tab === 'tasks' && <OutlineView />}
           {tab === 'week' && (
             <PlannedWeekView
               onDraggingChange={setDragging}

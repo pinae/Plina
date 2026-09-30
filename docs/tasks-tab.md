@@ -144,6 +144,31 @@ Each package is testable on its own and leaves the app working.
 - *Accept:* order with an active sub-project; switching the active project
   (header) re-sorts; collapsed state survives a reload; completed rows only
   with the toggle.
+- *Delivered (2026-09-30, TDD):* 21 new frontend tests (494 total):
+  `outlineTree` (order, active mark, completed rows, expander without open
+  subtasks), `taskTreePrefs`, and 12 outline tests. `outlineItems(tasks,
+  {activeId, collapsed, showCompleted})` replaces the filter: the active
+  project's top-level task first, the other projects in their **own
+  (manual) order** — not by priority as sketched in §2, so reordering by drag
+  and drop (T-6) is what the user sees; the active node carries an "active"
+  label. The filter, its toggle, the `A` key and `utils/outlineFilter.ts`
+  are gone. Collapsed rows and "Show completed" live per browser
+  (`utils/taskTreePrefs.ts`); when the active project changes, its path is
+  opened once (the user may collapse it again). Rows: a circle completes the
+  task (toast "Completed “CAD” — Undo", naming a parent that completed
+  along; Undo reopens it and those parents), disabled with a tooltip on
+  parents with open subtasks; completed rows (with the switch) are greyed,
+  struck through, and their circle reopens them. "+ Add task" sits at the
+  end of every expanded **top-level** project (like Todoist's per-project
+  add) and at the end of the tree, opening the inline input with the
+  quick-add tokens and the parent's tags/priority. Compact 32 px rows with
+  right-aligned muted columns (estimate, tags, deadline, priority, ▶); tags
+  and deadline hide on phone widths; overdue deadlines are red and bold.
+  The keyboard help moved into a "?" tooltip (not on touch). Verified live
+  with the demo data (desktop and 390 px): order with the active project,
+  complete + Undo, add a task to a project with tokens, "Show completed",
+  collapse surviving a reload. The row still selects on click — the dialog
+  on click follows in T-4.
 
 **T-4 · Edit dialog in the tree — S**
 - Click / Enter opens `TaskFormDialog`; focus returns to the row on close;

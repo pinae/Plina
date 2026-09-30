@@ -20,20 +20,46 @@ const labels = (items: ReturnType<typeof outlineItems>) =>
     items.map(i => `${'-'.repeat(i.depth)}${i.kind === 'rest' ? `Rest of ${i.task.header}` : i.task.header}`);
 
 describe('outlineItems', () => {
+    const opts = (over: Partial<Parameters<typeof outlineItems>[1]> = {}) =>
+        ({ activeId: null, collapsed: new Set<string>(), showCompleted: false, ...over });
+
     it('lists all open projects as a tree with Rest rows after the children', () => {
-        expect(labels(outlineItems(tasks(), { rootIds: null, collapsed: new Set() }))).toEqual([
+        expect(labels(outlineItems(tasks(), opts()))).toEqual([
             'T250', '-Hardware Design', '--CAD', '--test prints', '-Firmware', '-Rest of T250', 'Blog', 'Buy milk',
         ]);
     });
 
-    it('shows only the given subtree (active project)', () => {
-        expect(labels(outlineItems(tasks(), { rootIds: ['hw'], collapsed: new Set() })))
-            .toEqual(['Hardware Design', '-CAD', '-test prints']);
+    it('puts the active project\'s top-level task first, the others in their own order (T-3)', () => {
+        expect(labels(outlineItems(tasks(), opts({ activeId: 'milk' })))).toEqual([
+            'Buy milk', 'T250', '-Hardware Design', '--CAD', '--test prints', '-Firmware', '-Rest of T250', 'Blog',
+        ]);
+        // An active sub-project brings its whole top-level project to the top.
+        const items = outlineItems(tasks(), opts({ activeId: 'hw' }));
+        expect(labels(items)[0]).toBe('T250');
+    });
+
+    it('marks the active node', () => {
+        const items = outlineItems(tasks(), opts({ activeId: 'hw' }));
+        const active = items.filter(i => i.kind === 'task' && i.active).map(i => i.task.id);
+        expect(active).toEqual(['hw']);
     });
 
     it('hides the children and the Rest of collapsed rows', () => {
-        expect(labels(outlineItems(tasks(), { rootIds: null, collapsed: new Set(['t250']) })))
+        expect(labels(outlineItems(tasks(), opts({ collapsed: new Set(['t250']) }))))
             .toEqual(['T250', 'Blog', 'Buy milk']);
+    });
+
+    it('shows completed tasks in their place only when asked', () => {
+        expect(labels(outlineItems(tasks(), opts()))).not.toContain('Old');
+        expect(labels(outlineItems(tasks(), opts({ showCompleted: true }))).slice(-1)).toEqual(['Old']);
+    });
+
+    it('a parent whose subtasks are all completed has no expander unless completed ones are shown', () => {
+        const list = tasks().map(t => (t.id === 'cad' || t.id === 'prints'
+            ? { ...t, is_done: true, completed_at: '2026-01-01T00:00:00Z' } : t));
+        const hw = (items: ReturnType<typeof outlineItems>) => items.find(i => i.task.id === 'hw' && i.kind === 'task');
+        expect(hw(outlineItems(list, opts()))).toMatchObject({ hasChildren: false });
+        expect(hw(outlineItems(list, opts({ showCompleted: true })))).toMatchObject({ hasChildren: true });
     });
 });
 

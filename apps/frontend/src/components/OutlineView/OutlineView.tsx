@@ -6,7 +6,13 @@
  * Keyboard: ↑/↓ select · →/← expand/collapse · Enter edit (Enter on the last
  * row of a level adds a sibling) · Tab / Shift+Tab re-parent · Alt+↑/↓
  * reorder · 0–9 priority · E estimate · M move · # tag · S split ·
- * Space track · Del delete (with undo) · A active project / all projects.
+ * Space track · Del delete (with undo).
+ *
+ * T-3 (docs/tasks-tab.md): one tree of every project — the active project's
+ * top-level task first, its path opened, the active node marked; collapsed
+ * rows and "Show completed" remembered per browser; a circle per row
+ * completes the task (Undo in the toast, like Todoist/Wunderlist); "+ Add
+ * task" at the end of every expanded project and of the tree.
  * "Sort" switches to the sorting session: the inbox of unestimated tasks
  * from all projects, where Enter opens the full dialog.
  *
@@ -15,9 +21,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
-    Snackbar, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+    Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
+    IconButton, Snackbar, Switch, TextField, Tooltip, Typography,
 } from '@mui/material';
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -36,21 +45,21 @@ import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { createTag, deleteTask as deleteTaskRequest } from '../../api.ts';
 import {
-    useCreateTask, useDeleteTask, useSettings, useStartTracking, useTags, useTasks, useUpdateTask,
+    useCompleteTask, useCreateTask, useDeleteTask, useReopenTask, useSettings, useStartTracking, useTags, useTasks,
+    useUpdateTask,
 } from '../../queries.tsx';
 import { commitRowTokens, newRow } from '../../utils/outline.ts';
 import {
     inboxItems, indentParent, outdentParent, outlineItems, reorderPatches, type OutlineItem,
 } from '../../utils/outlineTree.ts';
 import { projectOptions } from '../../utils/projects.ts';
-import { readOutlineFilter, storeOutlineFilter, type OutlineFilter } from '../../utils/outlineFilter.ts';
+import { readCollapsed, readShowCompleted, storeCollapsed, storeShowCompleted } from '../../utils/taskTreePrefs.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
 import type { Task, TaskWrite } from '../../types.ts';
 import { useIsMobile, useIsTouch } from '../../hooks/useResponsive.ts';
 
-type Filter = OutlineFilter;
-
 const human = (duration: string | null) => formatDuration(duration);
+const END_OF_TREE = 'add:top';
 const itemName = (item: OutlineItem) => (item.kind === 'rest' ? `Rest of ${item.task.header}` : item.task.header);
 
 type Editing = { key: string; field: 'header' | 'estimate'; text: string; error?: string };
@@ -76,10 +85,15 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const createTask = useCreateTask();
     const deleteTask = useDeleteTask();
     const startTracking = useStartTracking();
+    const completeTask = useCompleteTask();
+    const reopenTask = useReopenTask();
 
-    const [filter, setFilter] = useState<Filter>(readOutlineFilter);
     const [sortMode, setSortMode] = useState(false);
-    const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+    const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
+    const [showCompleted, setShowCompleted] = useState(readShowCompleted);
+    const [completedToast, setCompletedToast] = useState<{ id: string; text: string } | null>(null);
+    // The active project whose path was last opened (see below).
+    const [openedFor, setOpenedFor] = useState<string | null>(null);
     const [selection, setSelection] = useState<{ key: string; index: number } | null>(null);
     const [editing, setEditing] = useState<Editing | null>(null);
     const [draft, setDraft] = useState<Draft | null>(null);
@@ -109,11 +123,22 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const allTasks = useMemo(() => tasks.data ?? [], [tasks.data]);
     const visibleTasks = useMemo(() => allTasks.filter(t => !pendingDeletes.has(t.id)), [allTasks, pendingDeletes]);
     const activeId = settings.data?.active_task_id ?? null;
-    const effectiveFilter: Filter = activeId ? filter : 'all';
+
+    // When the active project changes, open the path down to it (once — the
+    // user may collapse it again). Adjusting state while rendering, as React
+    // recommends for state derived from a changed value.
+    if (activeId !== openedFor && tasks.data) {
+        setOpenedFor(activeId);
+        const path = allTasks.find(t => t.id === activeId)?.ancestor_ids ?? [];
+        if (path.some(id => collapsed.has(id))) {
+            setCollapsed(prev => new Set([...prev].filter(id => !path.includes(id))));
+        }
+    }
+
     const items = useMemo(() => (sortMode
         ? inboxItems(visibleTasks)
-        : outlineItems(visibleTasks, { rootIds: effectiveFilter === 'active' && activeId ? [activeId] : null, collapsed })),
-    [sortMode, visibleTasks, effectiveFilter, activeId, collapsed]);
+        : outlineItems(visibleTasks, { activeId, collapsed, showCompleted })),
+    [sortMode, visibleTasks, activeId, collapsed, showCompleted]);
     const inboxCount = useMemo(() => inboxItems(visibleTasks).length, [visibleTasks]);
     const defaultDuration = settings.data?.default_duration ?? '01:00:00';
     const context = useMemo(() => ({ now: new Date(), tags: tags.data ?? [], projects: [] }), [tags.data]);
@@ -145,10 +170,45 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
             throw error;
         });
 
-    const toggleFilter = (next?: Filter) => {
-        const value = next ?? (effectiveFilter === 'active' ? 'all' : 'active');
-        setFilter(value);
-        storeOutlineFilter(value);
+    /** Changes to the collapsed rows are remembered per browser. */
+    const updateCollapsed = (change: (next: Set<string>) => void) => setCollapsed(prev => {
+        const next = new Set(prev);
+        change(next);
+        storeCollapsed(next);
+        return next;
+    });
+    const toggleCollapsed = (id: string) => updateCollapsed(next => {
+        if (next.has(id)) next.delete(id); else next.add(id);
+    });
+
+    const toggleShowCompleted = (show: boolean) => {
+        setShowCompleted(show);
+        storeShowCompleted(show);
+    };
+
+    /** The circle: complete (Undo in the toast) or, for a completed row, reopen. */
+    const toggleDone = (task: Task) => {
+        if (task.is_done) {
+            reopenTask.mutate(task.id, { onError: error => setMessage(serverMessage(error)) });
+            return;
+        }
+        completeTask.mutate(task.id, {
+            onSuccess: data => {
+                const topmost = data.auto_completed?.[data.auto_completed.length - 1];
+                setCompletedToast({
+                    id: task.id,
+                    text: `Completed “${task.header}”${topmost ? ` — “${topmost.header}” completed too` : ''}`,
+                });
+            },
+            onError: error => setMessage(serverMessage(error)),
+        });
+    };
+
+    const undoComplete = () => {
+        if (!completedToast) return;
+        // Reopening the task reopens the parents that completed along (UI-2).
+        reopenTask.mutate(completedToast.id, { onError: error => setMessage(serverMessage(error)) });
+        setCompletedToast(null);
     };
 
     const startSort = () => {
@@ -165,7 +225,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const reparent = (task: Task, parentId: string | null | undefined) => {
         if (parentId === undefined || parentId === task.parent_id) return;
         patch(task, { parent_id: parentId }).then(() => {
-            if (parentId) setCollapsed(prev => { const next = new Set(prev); next.delete(parentId); return next; });
+            if (parentId) updateCollapsed(next => { next.delete(parentId); });
         }).catch(() => undefined);
     };
 
@@ -295,7 +355,6 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         const key = event.key;
         if (key === 'ArrowDown' && !event.altKey) { event.preventDefault(); select(selectedIndex + 1); return; }
         if (key === 'ArrowUp' && !event.altKey) { event.preventDefault(); select(Math.max(0, selectedIndex - 1)); return; }
-        if (!sortMode && (key === 'a' || key === 'A') && !event.ctrlKey && !event.metaKey) { event.preventDefault(); toggleFilter(); return; }
         if (!selected) return;
         const task = selected.task;
         const isTask = selected.kind === 'task';
@@ -315,10 +374,10 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
             return;
         } else if (key === 'ArrowRight' && selected.kind === 'task' && selected.hasChildren) {
             event.preventDefault();
-            setCollapsed(prev => { const next = new Set(prev); next.delete(task.id); return next; });
+            updateCollapsed(next => { next.delete(task.id); });
         } else if (key === 'ArrowLeft' && selected.kind === 'task') {
             event.preventDefault();
-            if (selected.hasChildren && selected.expanded) setCollapsed(prev => new Set(prev).add(task.id));
+            if (selected.hasChildren && selected.expanded) updateCollapsed(next => { next.add(task.id); });
             else if (task.parent_id) select(items.findIndex(i => i.key === task.parent_id));
         } else if (key === 'Tab' && !sortMode) {
             event.preventDefault();
@@ -372,6 +431,24 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     );
 
     const lastPending = [...pendingDeletes.entries()].pop();
+    const openIds = new Set(allTasks.filter(t => !t.is_done).map(t => t.id));
+
+    /** "+ Add task" after the last row of an expanded project (Todoist). */
+    const addRowAfter = (index: number) => {
+        if (sortMode) return null;
+        const next = items[index + 1];
+        if (next && next.depth > 0) return null; // the project continues
+        let start = index;
+        while (start > 0 && items[start].depth > 0) start--;
+        const root = items[start];
+        if (root.kind !== 'task' || !root.hasChildren || !root.expanded || root.task.is_done) return null;
+        const key = `add:${root.task.id}`;
+        if (draft?.afterKey === key) return renderDraft();
+        return (
+            <AddTaskRow key={key} depth={1} label={`add task to ${root.task.header}`}
+                onClick={() => setDraft({ parentId: root.task.id, depth: 1, afterKey: key, text: '' })} />
+        );
+    };
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0 }}>
@@ -382,26 +459,24 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         New task
                     </Button>
                 )}
-                {!sortMode && (
-                    <Tooltip title="A">
-                        <ToggleButtonGroup size="small" exclusive value={effectiveFilter}
-                            onChange={(_event, value: Filter | null) => { if (value) toggleFilter(value); }}>
-                            <ToggleButton value="active" disabled={!activeId}>Active project</ToggleButton>
-                            <ToggleButton value="all">All projects</ToggleButton>
-                        </ToggleButtonGroup>
-                    </Tooltip>
-                )}
                 <Chip label={`Inbox (${inboxCount})`} size="small" variant={sortMode ? 'filled' : 'outlined'} />
                 <Button size="small" variant={sortMode ? 'contained' : 'outlined'}
                     onClick={() => (sortMode ? (setSortMode(false), refocus()) : startSort())}>
                     {sortMode ? 'Done sorting' : 'Sort ▶'}
                 </Button>
+                {!rowButtons && (
+                    <Tooltip title={sortMode
+                        ? '↑/↓ select · E estimate · M move · # tag · 0–9 priority · S split · Space track · Del delete · Enter details'
+                        : '↑/↓ select · Enter edit · Tab / Shift+Tab indent · Alt+↑/↓ move · E estimate · M move to · # tag · 0–9 priority · S split · Space track · Del delete'}>
+                        <IconButton size="small" aria-label="keyboard shortcuts"><HelpOutlineIcon fontSize="small" /></IconButton>
+                    </Tooltip>
+                )}
+                {!sortMode && (
+                    <FormControlLabel sx={{ ml: 'auto' }}
+                        control={<Switch size="small" checked={showCompleted} onChange={event => toggleShowCompleted(event.target.checked)} />}
+                        label={<Typography variant="body2">Show completed</Typography>} />
+                )}
             </Box>
-            {!rowButtons && <Typography variant="caption" color="text.secondary">
-                {sortMode
-                    ? '↑/↓ select · E estimate · M move · # tag · 0–9 priority · S split · Space track · Del delete · Enter details'
-                    : '↑/↓ select · Enter edit · Tab / Shift+Tab indent · Alt+↑/↓ move · E estimate · M move to · # tag · 0–9 priority · S split · Space track · Del delete · A all projects'}
-            </Typography>}
             <Box
                 ref={container}
                 role="tree"
@@ -425,11 +500,9 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         editing={editing?.key === item.key ? editing : null}
                         onSelect={() => { setSelection({ key: item.key, index }); refocus(); }}
                         onOpen={() => (item.kind === 'task' ? setDialogTask(item.task) : setSplitTask(item.task))}
-                        onToggle={() => setCollapsed(prev => {
-                            const next = new Set(prev);
-                            if (next.has(item.task.id)) next.delete(item.task.id); else next.add(item.task.id);
-                            return next;
-                        })}
+                        onToggle={() => toggleCollapsed(item.task.id)}
+                        onToggleDone={() => toggleDone(item.task)}
+                        canComplete={item.task.is_done || !(item.task.children_ids ?? []).some(id => openIds.has(id))}
                         onTrack={() => startTracking.mutate(item.task.id, { onError: error => setMessage(serverMessage(error)) })}
                         onEditChange={text => editing && setEditing({ ...editing, text, error: undefined })}
                         onEditKeyDown={onEditKeyDown}
@@ -456,7 +529,12 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         />
                     ) : null,
                     draft?.afterKey === item.key ? renderDraft() : null,
+                    addRowAfter(index),
                 ])}
+                {!sortMode && (draft?.afterKey === END_OF_TREE ? renderDraft() : (
+                    <AddTaskRow key="add-top" depth={0} label="add task at the top level"
+                        onClick={() => setDraft({ parentId: null, depth: 0, afterKey: END_OF_TREE, text: '' })} />
+                ))}
             </Box>
 
             <ProjectPicker
@@ -487,6 +565,13 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                     Deleted “{lastPending?.[1]}”
                 </Alert>
             </Snackbar>
+            <Snackbar open={completedToast !== null} autoHideDuration={6000} onClose={() => setCompletedToast(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+                <Alert severity="success" variant="filled" onClose={() => setCompletedToast(null)}
+                    action={<Button color="inherit" size="small" onClick={undoComplete}>Undo</Button>}>
+                    {completedToast?.text}
+                </Alert>
+            </Snackbar>
             <Snackbar open={message !== null} autoHideDuration={6000} onClose={() => setMessage(null)}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
                 <Alert severity="error" variant="filled" onClose={() => setMessage(null)}>{message}</Alert>
@@ -504,6 +589,9 @@ interface OutlineItemRowProps {
     onSelect: () => void;
     onOpen: () => void;
     onToggle: () => void;
+    onToggleDone: () => void;
+    /** False for parents with open subtasks (they complete with the last one). */
+    canComplete: boolean;
     onTrack: () => void;
     onEditChange: (text: string) => void;
     onEditKeyDown: (event: React.KeyboardEvent) => void;
@@ -512,11 +600,13 @@ interface OutlineItemRowProps {
 }
 
 function OutlineItemRow({
-    item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onTrack,
+    item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, canComplete, onTrack,
     onEditChange, onEditKeyDown, onEditBlur, onElement,
 }: OutlineItemRowProps) {
     const task = item.task;
-    const trackable = item.kind === 'rest' || !(task.children_ids?.length);
+    const done = item.kind === 'task' && task.is_done;
+    const trackable = !done && (item.kind === 'rest' || !(task.children_ids?.length));
+    const overdue = !done && task.latest_finish_date !== null && new Date(task.latest_finish_date) < new Date();
 
     const estimate = (() => {
         if (item.kind === 'rest') return <Typography variant="body2">{human(task.rest ?? null)}</Typography>;
@@ -531,13 +621,13 @@ function OutlineItemRow({
         }
         if (task.parts_total) {
             return (
-                <Typography data-testid="estimate" variant="body2" color={task.over_budget ? 'warning.main' : 'text.primary'}>
+                <Typography data-testid="estimate" variant="body2" color={task.over_budget ? 'warning.main' : 'text.secondary'}>
                     Σ {human(task.parts_total)} / {human(task.duration ?? defaultDuration)}
                 </Typography>
             );
         }
         return task.duration
-            ? <Typography data-testid="estimate" variant="body2">{human(task.duration)}</Typography>
+            ? <Typography data-testid="estimate" variant="body2" color="text.secondary">{human(task.duration)}</Typography>
             : <Typography data-testid="estimate" variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
                 {human(defaultDuration)} (default)
             </Typography>;
@@ -550,13 +640,16 @@ function OutlineItemRow({
             aria-level={item.depth + 1}
             aria-selected={selected}
             aria-expanded={item.kind === 'task' && item.hasChildren ? item.expanded : undefined}
+            data-active={item.kind === 'task' && item.active ? 'true' : undefined}
+            data-done={done ? 'true' : undefined}
             ref={onElement}
             onClick={onSelect}
             onDoubleClick={onOpen}
             sx={{
-                display: 'flex', alignItems: 'center', gap: 1, minHeight: 36, pr: 1,
-                pl: 1 + item.depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',
+                display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, pr: 1,
+                pl: 0.5 + item.depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',
                 bgcolor: selected ? 'action.selected' : undefined,
+                opacity: done ? 0.55 : 1,
                 '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
             }}
         >
@@ -568,10 +661,25 @@ function OutlineItemRow({
                     </IconButton>
                 )}
             </Box>
+            <Box sx={{ width: 28, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                {item.kind === 'task' && (
+                    <Tooltip title={canComplete ? '' : 'Completes by itself with its last open subtask'}>
+                        <span>
+                            <Checkbox size="small" checked={done} disabled={!canComplete}
+                                icon={<RadioButtonUncheckedIcon fontSize="small" />}
+                                checkedIcon={<CheckCircleIcon fontSize="small" />}
+                                slotProps={{ input: { 'aria-label': `${done ? 'reopen' : 'complete'} ${task.header}` } }}
+                                onClick={event => event.stopPropagation()}
+                                onChange={onToggleDone}
+                                sx={{ p: 0.25 }} />
+                        </span>
+                    </Tooltip>
+                )}
+            </Box>
             {item.kind === 'task' && item.depth === 0 && !sortMode && (
                 <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: task.hex_color ?? 'text.disabled', flexShrink: 0 }} />
             )}
-            <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                 {editing?.field === 'header' ? (
                     <TextField size="small" fullWidth autoFocus value={editing.text} error={Boolean(editing.error)}
                         helperText={editing.error}
@@ -579,32 +687,48 @@ function OutlineItemRow({
                         onKeyDown={onEditKeyDown}
                         slotProps={{ htmlInput: { 'aria-label': `Edit header of ${task.header}` } }} />
                 ) : (
-                    <>
+                    <Box sx={{ minWidth: 0 }}>
                         <Typography variant="body2" noWrap sx={{
                             fontWeight: item.kind === 'task' && item.hasChildren ? 'bold' : undefined,
                             fontStyle: item.kind === 'rest' ? 'italic' : undefined,
                             color: item.kind === 'rest' ? 'text.secondary' : undefined,
+                            textDecoration: done ? 'line-through' : undefined,
                         }}>
                             {itemName(item)}
                         </Typography>
                         {sortMode && item.kind === 'task' && item.path && (
                             <Typography variant="caption" color="text.secondary" noWrap component="div">{item.path}</Typography>
                         )}
-                    </>
+                    </Box>
+                )}
+                {item.kind === 'task' && item.active && !editing && (
+                    <Chip size="small" color="primary" variant="outlined" label="active"
+                        sx={{ height: 18, fontSize: '0.7rem', flexShrink: 0 }} />
                 )}
             </Box>
-            {estimate}
-            {item.kind === 'task' && task.tags.map(tag => (
-                <Chip key={tag.id} size="small" variant="outlined" label={`#${tag.name}`} />
-            ))}
-            {item.kind === 'task' && task.latest_finish_date && (
-                <Typography variant="caption" color="text.secondary">
-                    ⏰ {new Date(task.latest_finish_date).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' })}
-                </Typography>
-            )}
-            {item.kind === 'task' && (
-                <Typography variant="caption" color="text.secondary" sx={{ width: 28, textAlign: 'right' }}>!{task.priority}</Typography>
-            )}
+            {/* Aligned, muted details (Todoist/Wunderlist density). Tags and
+                the deadline give way on phone widths. */}
+            <Box sx={{ width: { xs: 'auto', sm: 130 }, textAlign: 'right', flexShrink: 0, color: 'text.secondary' }}>
+                {estimate}
+            </Box>
+            <Box sx={{ width: 170, flexShrink: 0, display: { xs: 'none', sm: 'flex' }, justifyContent: 'flex-end', gap: 0.5, overflow: 'hidden' }}>
+                {item.kind === 'task' && task.tags.map(tag => (
+                    <Chip key={tag.id} size="small" variant="outlined" label={`#${tag.name}`} sx={{ height: 20 }} />
+                ))}
+            </Box>
+            <Box sx={{ width: 64, flexShrink: 0, display: { xs: 'none', sm: 'block' }, textAlign: 'right' }}>
+                {item.kind === 'task' && task.latest_finish_date && (
+                    <Typography data-testid="deadline" data-overdue={overdue ? 'true' : undefined} variant="caption"
+                        color={overdue ? 'error.main' : 'text.secondary'} sx={{ fontWeight: overdue ? 'bold' : undefined }}>
+                        ⏰ {new Date(task.latest_finish_date).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' })}
+                    </Typography>
+                )}
+            </Box>
+            <Box sx={{ width: 28, flexShrink: 0, textAlign: 'right' }}>
+                {item.kind === 'task' && (
+                    <Typography variant="caption" color="text.secondary">!{task.priority}</Typography>
+                )}
+            </Box>
             <Box sx={{ width: 32, flexShrink: 0 }}>
                 {trackable && (
                     <IconButton size="small" aria-label={`start tracking ${task.header}`}
@@ -613,6 +737,18 @@ function OutlineItemRow({
                     </IconButton>
                 )}
             </Box>
+        </Box>
+    );
+}
+
+/** Todoist's inline "+ Add task" at the end of a project / of the tree. */
+function AddTaskRow({ depth, label, onClick }: { depth: number; label: string; onClick: () => void }) {
+    return (
+        <Box sx={{ pl: 0.5 + depth * 3 + 7, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
+            <Button size="small" startIcon={<AddIcon fontSize="small" />} aria-label={label} onClick={onClick}
+                sx={{ textTransform: 'none', color: 'text.secondary', '&:hover': { color: 'primary.main' } }}>
+                Add task
+            </Button>
         </Box>
     );
 }

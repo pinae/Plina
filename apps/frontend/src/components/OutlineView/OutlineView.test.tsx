@@ -17,6 +17,7 @@ import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 let tasks: Task[] = [];
 let activeId: string | null = 'hw';
 let log: string[] = [];
+let autoCompleted: { id: string; header: string }[] = [];
 
 /** Derive the tree fields like the backend does. */
 function withTree(list: Task[]): Task[] {
@@ -75,6 +76,16 @@ const server = setupServer(
         log.push(`start ${params.id}`);
         return HttpResponse.json({ task: tasks.find(t => t.id === params.id), stopped_task_id: null });
     }),
+    http.post(`${API}/tasks/:id/complete/`, ({ params }) => {
+        log.push(`complete ${params.id}`);
+        tasks = tasks.map(t => (t.id === params.id ? { ...t, is_done: true, completed_at: new Date().toISOString() } : t));
+        return HttpResponse.json({ task: tasks.find(t => t.id === params.id), alternatives: [], auto_completed: autoCompleted });
+    }),
+    http.post(`${API}/tasks/:id/reopen/`, ({ params }) => {
+        log.push(`reopen ${params.id}`);
+        tasks = tasks.map(t => (t.id === params.id ? { ...t, is_done: false, completed_at: null } : t));
+        return HttpResponse.json({ task: tasks.find(t => t.id === params.id), reopened: [params.id] });
+    }),
     http.delete(`${API}/tasks/:id/`, ({ params }) => {
         log.push(`DELETE ${params.id}`);
         tasks = tasks.filter(t => t.id !== params.id);
@@ -86,6 +97,7 @@ beforeEach(() => {
     tasks = initialTasks();
     activeId = 'hw';
     log = [];
+    autoCompleted = [];
     localStorage.clear();
 });
 afterEach(() => { cleanup(); server.resetHandlers(); });
@@ -105,31 +117,123 @@ const select = async (name: string) => {
     expect(row(name)).toHaveAttribute('aria-selected', 'true');
 };
 
-describe('filter', () => {
-    it('shows the active project by default; A or the toggle shows all projects', async () => {
+describe('one tree (T-3)', () => {
+    it('shows every project, the active project\'s top-level task first, the active node marked', async () => {
+        activeId = 'article';
         renderOutline();
-        await waitFor(() => expect(rowNames()).toEqual(['Hardware Design', 'CAD', 'test prints', 'Rest of Hardware Design']));
-
-        act(() => outline().focus());
-        press('a');
-        await waitFor(() => expect(rowNames()).toContain('Company Blog'));
-        expect(rowNames()).toContain('Buy milk');
-        expect(localStorage.getItem('plina.outlineFilter')).toBe('all');
-
-        fireEvent.click(screen.getByRole('button', { name: /active project/i }));
-        await waitFor(() => expect(rowNames()).not.toContain('Company Blog'));
+        await waitFor(() => expect(rowNames()).toEqual([
+            'Company Blog', 'Write article', 'Rest of Company Blog',
+            'T250', 'Hardware Design', 'CAD', 'test prints', 'Rest of Hardware Design', 'Firmware', 'Rest of T250',
+            'Buy milk',
+        ]));
+        expect(row('Write article')).toHaveAttribute('data-active', 'true');
+        expect(row('Hardware Design')).not.toHaveAttribute('data-active');
     });
 
-    it('shows everything when there is no active project', async () => {
-        activeId = null;
+    it('has no project filter any more', async () => {
         renderOutline();
-        await waitFor(() => expect(rowNames()).toContain('Company Blog'));
+        await within(outline()).findByRole('treeitem', { name: 'Buy milk' });
+        expect(screen.queryByRole('button', { name: /all projects/i })).toBeNull();
+    });
+
+    it('remembers collapsed rows per browser', async () => {
+        renderOutline();
+        fireEvent.click(await within(outline()).findByRole('button', { name: 'collapse Company Blog' }));
+        await waitFor(() => expect(rowNames()).not.toContain('Write article'));
+        cleanup();
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Company Blog' });
+        expect(rowNames()).not.toContain('Write article');
+    });
+
+    it('opens the path to the active project even if it was collapsed', async () => {
+        localStorage.setItem('plina.collapsedTasks', JSON.stringify(['t250', 'blog']));
+        renderOutline();
+        expect(await within(outline()).findByRole('treeitem', { name: 'Hardware Design' })).toHaveAttribute('data-active', 'true');
+        expect(rowNames()).not.toContain('Write article'); // other collapsed rows stay collapsed
+    });
+
+    it('"Show completed" lists completed tasks greyed in their place; remembered', async () => {
+        tasks = [...tasks, makeTask('parts', { header: 'Order parts', parent_id: 'hw', order: 2,
+            is_done: true, completed_at: '2026-09-29T10:00:00Z' })];
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(rowNames()).not.toContain('Order parts');
+        fireEvent.click(screen.getByRole('switch', { name: /show completed/i }));
+        expect(row('Order parts')).toHaveAttribute('data-done', 'true');
+        expect(localStorage.getItem('plina.showCompleted')).toBe('true');
+        // Its circle reopens it.
+        fireEvent.click(within(row('Order parts')).getByRole('checkbox', { name: 'reopen Order parts' }));
+        await waitFor(() => expect(log).toContain('reopen parts'));
+    });
+
+    it('the circle completes a task, with Undo (Todoist/Wunderlist)', async () => {
+        renderOutline();
+        fireEvent.click(within(await within(outline()).findByRole('treeitem', { name: 'CAD' }))
+            .getByRole('checkbox', { name: 'complete CAD' }));
+        await waitFor(() => expect(log).toContain('complete cad'));
+        expect(await screen.findByText('Completed “CAD”')).toBeInTheDocument();
+        await waitFor(() => expect(rowNames()).not.toContain('CAD'));
+        fireEvent.click(screen.getByRole('button', { name: /undo/i }));
+        await waitFor(() => expect(log).toContain('reopen cad'));
+        await waitFor(() => expect(rowNames()).toContain('CAD'));
+    });
+
+    it('names parents that completed along', async () => {
+        autoCompleted = [{ id: 'blog', header: 'Company Blog' }];
+        renderOutline();
+        fireEvent.click(within(await within(outline()).findByRole('treeitem', { name: 'Write article' }))
+            .getByRole('checkbox', { name: 'complete Write article' }));
+        expect(await screen.findByText('Completed “Write article” — “Company Blog” completed too')).toBeInTheDocument();
+    });
+
+    it('a parent with open subtasks cannot be ticked — it completes with its last one', async () => {
+        renderOutline();
+        const box = within(await within(outline()).findByRole('treeitem', { name: 'Hardware Design' }))
+            .getByRole('checkbox', { name: 'complete Hardware Design' });
+        expect(box).toBeDisabled();
+    });
+
+    it('"+ Add task" at the end of a project adds to that project (Todoist)', async () => {
+        renderOutline();
+        fireEvent.click(await screen.findByRole('button', { name: 'add task to T250' }));
+        const input = await screen.findByRole('textbox', { name: /new task/i });
+        fireEvent.change(input, { target: { value: 'Order screws 30m' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(log.some(l => l.startsWith('POST'))).toBe(true));
+        expect(JSON.parse(log.find(l => l.startsWith('POST'))!.slice(5))).toMatchObject({
+            header: 'Order screws', parent_id: 't250', duration: '00:30:00',
+        });
+    });
+
+    it('"+ Add task" at the end of the tree adds a new project', async () => {
+        renderOutline();
+        fireEvent.click(await screen.findByRole('button', { name: 'add task at the top level' }));
+        const input = await screen.findByRole('textbox', { name: /new task/i });
+        fireEvent.change(input, { target: { value: 'Garden shed' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(log.some(l => l.startsWith('POST'))).toBe(true));
+        expect(JSON.parse(log.find(l => l.startsWith('POST'))!.slice(5))).toMatchObject({ header: 'Garden shed', parent_id: null });
+    });
+
+    it('marks overdue deadlines', async () => {
+        tasks = tasks.map(t => (t.id === 'cad' ? { ...t, latest_finish_date: '2020-01-01T12:00:00Z' }
+            : t.id === 'fw' ? { ...t, latest_finish_date: '2099-01-01T12:00:00Z' } : t));
+        renderOutline();
+        const cad = await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(within(cad).getByTestId('deadline')).toHaveAttribute('data-overdue', 'true');
+        expect(within(row('Firmware')).getByTestId('deadline')).not.toHaveAttribute('data-overdue');
+    });
+
+    it('keeps the keyboard help in a "?" tooltip', async () => {
+        renderOutline();
+        expect(await screen.findByRole('button', { name: /keyboard shortcuts/i })).toBeInTheDocument();
+        expect(screen.queryByText(/Tab \/ Shift\+Tab indent/)).toBeNull();
     });
 });
 
 describe('re-parenting', () => {
     it('Tab makes the previous sibling the parent, whose Σ/Rest then updates', async () => {
-        localStorage.setItem('plina.outlineFilter', 'all');
         renderOutline();
         await select('Firmware');
         expect(within(row('Hardware Design')).getByTestId('estimate')).toHaveTextContent('Σ 5h / 12h');
@@ -309,10 +413,10 @@ describe('touch screens (UI-9)', () => {
         expect(await screen.findByRole('dialog')).toHaveTextContent('Edit “CAD”');
     });
 
-    it('hides the keyboard help line', async () => {
+    it('has no keyboard help', async () => {
         renderOutline();
         await within(outline()).findByRole('treeitem', { name: 'CAD' });
-        expect(screen.queryByText(/Tab \/ Shift\+Tab indent/)).toBeNull();
+        expect(screen.queryByRole('button', { name: /keyboard shortcuts/i })).toBeNull();
     });
 });
 
