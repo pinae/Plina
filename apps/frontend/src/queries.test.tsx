@@ -195,7 +195,7 @@ describe('useStartTracking', () => {
         server.use(
             http.get(`${API}/settings/`, () => {
                 settingsFetches += 1;
-                return HttpResponse.json({ default_duration: '01:00:00', active_task_id: null, active_task_path: [] });
+                return HttpResponse.json({ default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '' });
             }),
             http.post(`${API}/tasks/task-3/track/start/`, () => HttpResponse.json({
                 task: { id: 'task-3' }, stopped_task_id: 'task-1',

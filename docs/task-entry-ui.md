@@ -347,6 +347,7 @@ all projects) and selects the first row. The user walks the list with
 | Setting | Default | Effect |
 |---|---|---|
 | Default duration | 1h | used for unestimated tasks in planning, Σ parts and ghosts |
+| Time zone | the device's | recurring bucket rules ("every day at 14:00") and times in messages mean this zone's wall-clock time; set automatically by the browser (added 2026-09-30 — before, the server's UTC shifted the buckets) |
 
 Stored in the server-side `UserSettings` together with the active project.
 More settings can be added later.

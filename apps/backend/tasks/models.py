@@ -183,6 +183,12 @@ class TimeBucketType(models.Model):
         start = start.replace(second=0, microsecond=0)
         if not self.start_times.strip():
             return []  # manual-only type: buckets are placed by hand
+        # Rules speak wall-clock time ("at 14:00") in the user's zone (the
+        # active one, see UserTimeZoneMiddleware) — whatever zone ``start``
+        # comes in. Each occurrence gets its own offset, so 14:00 stays 14:00
+        # across a daylight-saving change.
+        zone = timezone.get_current_timezone()
+        local_start = timezone.make_naive(start, zone)
         consts = pdtConstants(localeID='de_DE', usePyICU=False)
         consts.use24 = True
         r = RecurringEvent(now_date=start, parse_constants=consts)
@@ -190,12 +196,10 @@ class TimeBucketType(models.Model):
         rfc_rule = r.get_RFC_rrule()
         if rfc_rule is None:
             return []  # not a recognizable recurrence rule
-        rr = rrule.rrulestr(rfc_rule, dtstart=timezone.make_naive(start))
+        rr = rrule.rrulestr(rfc_rule, dtstart=local_start)
         buckets = []
-        for start_date in rr.between(timezone.make_naive(start),
-                                     timezone.make_naive(start) + generation_range,
-                                     inc=True):
-            buckets.append(TimeBucket(start_date=timezone.make_aware(start_date, timezone=start.tzinfo),
+        for start_date in rr.between(local_start, local_start + generation_range, inc=True):
+            buckets.append(TimeBucket(start_date=timezone.make_aware(start_date, timezone=zone),
                                       duration=self.duration, type=self))
         return buckets
 
@@ -307,6 +311,9 @@ class UserSettings(models.Model):
     #: preselected as parent of new tasks and synced to all devices.
     active_task = models.ForeignKey(to=Task, related_name="+", null=True, blank=True,
                                     default=None, on_delete=models.SET_NULL)
+    #: IANA name (e.g. "Europe/Berlin"), sent by the browser; recurrence
+    #: rules ("every day at 14:00") and messages use it. Empty = server zone.
+    time_zone = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:
         verbose_name_plural = "user settings"

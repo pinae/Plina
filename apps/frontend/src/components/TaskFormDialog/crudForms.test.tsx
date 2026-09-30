@@ -31,7 +31,7 @@ const server = setupServer(
     http.get(`${API}/tags/`, () => HttpResponse.json(tags)),
     http.get(`${API}/buckettypes/`, () => HttpResponse.json([])),
     http.get(`${API}/settings/`, () => HttpResponse.json({
-        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
     })),
     http.post(`${API}/tags/`, async ({ request }) => {
         const body = (await request.json()) as { name: string; hex_color: string };

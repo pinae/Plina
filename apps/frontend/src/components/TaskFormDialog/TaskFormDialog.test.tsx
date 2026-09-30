@@ -21,7 +21,7 @@ const server = setupServer(
     http.get(`${API}/tags/`, () => HttpResponse.json([])),
     http.get(`${API}/tasks/`, () => HttpResponse.json([])),
     http.get(`${API}/settings/`, () => HttpResponse.json({
-        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
     })),
     http.post(`${API}/tasks/`, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
@@ -163,7 +163,7 @@ describe('TaskFormDialog — splitting (UI-6)', () => {
         server.use(
             http.get(`${API}/tasks/`, () => HttpResponse.json([existing])),
             http.get(`${API}/settings/`, () => HttpResponse.json({
-                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
             })),
         );
         const onClose = vi.fn();
@@ -205,7 +205,7 @@ describe('TaskFormDialog — the task tree (UI-8)', () => {
     const useTree = (activeId: string | null) => server.use(
         http.get(`${API}/tasks/`, () => HttpResponse.json(tree)),
         http.get(`${API}/settings/`, () => HttpResponse.json({
-            default_duration: '00:30:00', active_task_id: activeId, active_task_path: [],
+            default_duration: '00:30:00', active_task_id: activeId, active_task_path: [], time_zone: '',
         })),
         http.patch(`${API}/tasks/:id/`, async ({ request }) => {
             patches.push(await request.json() as Record<string, unknown>);

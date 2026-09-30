@@ -237,11 +237,15 @@ export interface UserSettings {
     active_task_id: string | null;
     /** Breadcrumb of the active project, root first. */
     active_task_path: { id: string; header: string }[];
+    /** IANA zone of the user's device ("Europe/Berlin"); recurring buckets
+     *  ("every day at 14:00") follow it. Empty = the server's zone. */
+    time_zone: string;
 }
 
 export interface SettingsWrite {
     default_duration?: string;
     active_task_id?: string | null;
+    time_zone?: string;
 }
 
 // ----------------------------------------------------------------- split

@@ -164,14 +164,16 @@ class SettingsView(APIView):
 
     def patch(self, request):
         from .serializers import UserSettingsSerializer
-        from .services.settings import get_settings
+        from .services.settings import get_settings, user_time_zone
         settings = get_settings()
-        old_default = settings.default_duration
+        old_default, old_zone = settings.default_duration, settings.time_zone
         serializer = UserSettingsSerializer(settings, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        if settings.default_duration != old_default:
-            recalculate_accepted_plan()  # unestimated tasks change size (A7)
+        if settings.default_duration != old_default or settings.time_zone != old_zone:
+            # Unestimated tasks change size / recurring buckets move (A7).
+            with timezone.override(user_time_zone() or timezone.get_default_timezone()):
+                recalculate_accepted_plan()
         return Response(serializer.data)
 
 

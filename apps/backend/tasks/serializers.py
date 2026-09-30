@@ -275,6 +275,16 @@ class UserSettingsSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('The default duration can be at most 1000 hours.')
         return value
 
+    def validate_time_zone(self, value):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        if value:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError):
+                raise serializers.ValidationError(
+                    f'“{value}” is not a known time zone. Use a name like “Europe/Berlin”.')
+        return value
+
     def validate_active_task_id(self, task):
         from .services.settings import is_project
         if task is None:
@@ -290,7 +300,7 @@ class UserSettingsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserSettings
-        fields = ['default_duration', 'active_task_id', 'active_task_path']
+        fields = ['default_duration', 'active_task_id', 'active_task_path', 'time_zone']
 
 
 class TimeBucketTypeSerializer(serializers.ModelSerializer):

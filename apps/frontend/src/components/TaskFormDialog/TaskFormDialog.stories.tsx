@@ -20,7 +20,7 @@ const webshop: Task = {
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
 queryClient.setQueryData(['tags'], tags);
 queryClient.setQueryData(['tasks'], [webshop]);
-queryClient.setQueryData(['settings'], { default_duration: '01:00:00', active_task_id: 'proj-1', active_task_path: [] });
+queryClient.setQueryData(['settings'], { default_duration: '01:00:00', active_task_id: 'proj-1', active_task_path: [], time_zone: '' });
 
 const meta: Meta<typeof TaskFormDialog> = {
     title: 'Forms/TaskFormDialog',

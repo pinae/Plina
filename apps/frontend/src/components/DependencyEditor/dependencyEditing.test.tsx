@@ -46,7 +46,7 @@ const server = setupServer(
     http.get(`${API}/tags/`, () => HttpResponse.json([])),
     http.get(`${API}/tasks/`, () => HttpResponse.json([])),
     http.get(`${API}/settings/`, () => HttpResponse.json({
-        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
     })),
     http.post(`${API}/tasks/`, async ({ request }) => {
         const body = await request.json();

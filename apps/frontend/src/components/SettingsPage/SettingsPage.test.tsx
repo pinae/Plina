@@ -10,12 +10,12 @@ import { API } from '../../testing/treeFixtures.ts';
 let patches: unknown[] = [];
 const server = setupServer(
     http.get(`${API}/settings/`, () => HttpResponse.json({
-        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
     })),
     http.patch(`${API}/settings/`, async ({ request }) => {
         const body = await request.json() as { default_duration: string };
         patches.push(body);
-        return HttpResponse.json({ default_duration: body.default_duration, active_task_id: null, active_task_path: [] });
+        return HttpResponse.json({ default_duration: body.default_duration, active_task_id: null, active_task_path: [], time_zone: '' });
     }),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));

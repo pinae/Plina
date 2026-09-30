@@ -122,7 +122,7 @@ const API = 'http://localhost:8000/api';
 const server = setupServer(
     http.get(`${API}/plan/`, () => HttpResponse.json(planPayload)),
     http.get(`${API}/settings/`, () => HttpResponse.json({
-        default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
     })),
     http.get(`${API}/tasks/`, () => HttpResponse.json([] as Task[])),
 );
@@ -290,7 +290,7 @@ describe('tracked time over the estimate (UI-8)', () => {
                     active_tracking_start: null },
             ])),
             http.get(`${API}/settings/`, () => HttpResponse.json({
-                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
             })),
         );
         render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
@@ -313,7 +313,7 @@ describe('completion cascade (UI-8 acceptance)', () => {
                 return HttpResponse.json({ task: { id: 'hw' }, reopened: ['hw'] });
             }),
             http.get(`${API}/settings/`, () => HttpResponse.json({
-                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
             })),
         );
         render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
@@ -351,7 +351,7 @@ describe('Rest placeholder (UI-6)', () => {
             http.get(`${API}/tasks/`, () => HttpResponse.json([parent, child])),
             http.get(`${API}/tags/`, () => HttpResponse.json([])),
             http.get(`${API}/settings/`, () => HttpResponse.json({
-                default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
             })),
         );
         render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });

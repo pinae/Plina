@@ -2,8 +2,9 @@
 server-synced active project (docs/task-entry-ui.md §2, §3.1, §6.1)."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, tzinfo
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from tasks.models import Task, UserSettings
 
@@ -19,6 +20,17 @@ def default_duration() -> timedelta:
     """The user's default, without creating the row as a side effect."""
     value = UserSettings.objects.filter(pk=1).values_list("default_duration", flat=True).first()
     return value or FALLBACK_DEFAULT_DURATION
+
+
+def user_time_zone() -> Optional[tzinfo]:
+    """The user's zone, or None to keep the server's (unset or unknown)."""
+    name = UserSettings.objects.filter(pk=1).values_list("time_zone", flat=True).first()
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
 
 
 def is_project(task: Task) -> bool:
