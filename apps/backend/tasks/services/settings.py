@@ -56,6 +56,14 @@ def activate(project: Optional[Task]) -> UserSettings:
     return settings
 
 
+def ensure_active_is_project() -> None:
+    """After moves: an active sub-project that lost all its subtasks is a
+    single step now — the nearest project above it becomes active."""
+    settings = get_settings()
+    if settings.active_task is not None and not is_project(settings.active_task):
+        activate(project_for_tracking(settings.active_task))
+
+
 def ensure_active_project_open() -> None:
     """After completions: a completed active project hands over to its
     nearest open ancestor (or none)."""

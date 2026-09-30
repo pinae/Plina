@@ -7,8 +7,7 @@ from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, UserS
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
                                  write_completion_snapshot)
 from .services.tree import (TreeIndex, dependency_cycle, earliest_ancestor_deadline,
-                            move_creates_dependency_cycle, next_sibling_order, related_in_tree,
-                            reparent_cycle)
+                            next_sibling_order, parent_change_error, related_in_tree)
 
 HEX_COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
 
@@ -100,25 +99,9 @@ class TaskSerializer(serializers.ModelSerializer):
         instance = self.instance
         new_parent = self._resolve_parent(attrs)
         if instance is not None and new_parent is not self._UNSET:
-            path = reparent_cycle(instance.id, new_parent.id if new_parent else None)
-            if path is not None:
-                if len(path) == 1:
-                    message = 'A task cannot be its own parent.'
-                else:
-                    message = (f'“{instance.header}” cannot be moved into “{new_parent.header}” '
-                               f'because “{new_parent.header}” is part of “{instance.header}”.')
-                raise serializers.ValidationError({
-                    'parent_id': [message], 'path': [str(node) for node in path],
-                })
-            cycle = move_creates_dependency_cycle(instance.id, new_parent.id if new_parent else None)
-            if cycle is not None:
-                target = f'“{new_parent.header}”' if new_parent else 'the top level'
-                raise serializers.ValidationError({
-                    'parent_id': [f'Moving “{instance.header}” into {target} would create a '
-                                  'dependency cycle, because a parent’s dependencies apply to '
-                                  'all of its subtasks.'],
-                    'cycle': [str(node) for node in cycle],
-                })
+            error = parent_change_error(instance, new_parent)
+            if error is not None:
+                raise serializers.ValidationError(error)
         if instance is not None and attrs.get('completed_at') is not None and not instance.is_done:
             from .services.completion import CompletionError, ensure_completable
             try:
@@ -301,6 +284,13 @@ class UserSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserSettings
         fields = ['default_duration', 'active_task_id', 'active_task_path', 'time_zone']
+
+
+class MoveSerializer(serializers.Serializer):
+    """Body of POST tasks/{id}/move/ (T-1): the new parent (null = top level)
+    and the position among its subtasks."""
+    parent_id = serializers.PrimaryKeyRelatedField(queryset=Task.objects.all(), allow_null=True)
+    index = serializers.IntegerField(min_value=0)
 
 
 class TimeBucketTypeSerializer(serializers.ModelSerializer):

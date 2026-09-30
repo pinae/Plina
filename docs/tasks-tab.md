@@ -68,6 +68,23 @@ without leaving it.
 | 4 | Drag what? | Only the handle ⠿ — keeps clicks (dialog), the slider and text selection free, and works with long-press on touch. |
 | 5 | Keyboard `A` | Freed (no filter). Tab/Shift+Tab/Alt+↑↓ stay and use the new move endpoint. |
 
+### 3.1 Usability guides: Todoist and Wunderlist (2026-09-30)
+
+The tab follows the conventions users know from Todoist and Wunderlist
+where they fit Plina:
+
+| Convention (source) | In the Tasks tab | WP |
+|---|---|---|
+| Round checkbox at the start of every row completes the task; a toast offers Undo (both) | ○ before the name; completing shows "Completed “CAD” — Undo" (parents still complete by themselves with their last subtask) | T-3 |
+| Drag handle appears on hover, left of the row (Todoist) | ⠿ fades in on row hover/selection; always visible on touch | T-3, T-6 |
+| Dragging sideways changes the indentation; an indented drop line shows the level (Todoist) | as planned in T-6 | T-6 |
+| Moves can be undone from a toast (Todoist) | "Moved “CAD” into “Firmware” — Undo" — Undo moves it back to its old parent and position | T-6 |
+| Click opens the task detail; ↑/↓ in the detail walk to the previous/next task without closing it (Todoist) | the edit dialog gets ‹ › buttons and Alt+↑/↓ to switch to the neighbouring row; unsaved changes are saved first (or the switch is refused while the form is invalid) | T-4 |
+| "Add task" inline at the end of a list/section (Todoist) | "+ Add task" row at the end of every expanded parent and at the end of the tree; opens an inline input with the quick-add tokens | T-3 |
+| Completed to-dos behind "Show completed" (Wunderlist) | the toggle (decision 2) | T-3 |
+| Dense rows, secondary info right-aligned and muted (both) | compact rows; estimate, tags, deadline muted; overdue deadlines red | T-3 |
+| Priority is visible at a glance (Todoist's coloured flags) | the slider's track is coloured by priority band (0–3 grey, 4–6 blue, 7–8 orange, 9–10 red) | T-5 |
+
 ## 4. Work packages
 
 Each package is testable on its own and leaves the app working.
@@ -85,6 +102,20 @@ Each package is testable on its own and leaves the app working.
 - *Accept:* tests for reorder within a level, move to another level at a
   given index, move to top level, all refusals, sibling orders contiguous
   afterwards, parent that lost its last subtask is open and plannable.
+- *Delivered (2026-09-30, TDD):* 15 new backend tests (`test_move.py`), 309
+  backend tests green. `services/tree.py`: `move_task(task, new_parent,
+  index)` — `index` counts the new siblings without the task itself and is
+  clamped to the end; old and new sibling lists are renumbered 0, 1, 2 … in
+  one transaction; `parent_change_error()` now holds the own-subtree and
+  dependency-cycle checks shared with PATCH `parent_id` (same messages,
+  `path`/`cycle` in the payload). `POST /api/tasks/{id}/move/` with
+  `{parent_id, index}` returns `{task}` and recalculates the plan once.
+  Refused: a completed task ("Reopen it first to move it"), a completed
+  target, own subtree, dependency cycle, negative index, unknown parent.
+  Verified over HTTP on the demo data (reorder, move into another project,
+  cycle refused). Beyond the plan: an active sub-project that loses all its
+  subtasks is no longer a project, so the nearest project above it becomes
+  active (`ensure_active_is_project`).
 
 **T-2 · Tabs: Tasks first, old list removed — S**
 - Tab order *Tasks · Week · Calendar · Tags · Time Buckets · Dependencies*;

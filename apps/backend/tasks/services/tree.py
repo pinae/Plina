@@ -322,3 +322,70 @@ def current_dependency_cycle() -> Optional[List[UUID]]:
     """A cycle in the tree + dependencies as they are stored right now (used
     after bulk changes inside a transaction, which then rolls back)."""
     return _cycle_in(_parent_map())
+
+
+# Moving (T-1, docs/tasks-tab.md) ---------------------------------------------
+
+def parent_change_error(task: Task, new_parent: Optional[Task]) -> Optional[dict]:
+    """Why ``task`` cannot go under ``new_parent`` (a 400 payload), or None.
+    Shared by PATCH ``parent_id`` and the move endpoint."""
+    path = reparent_cycle(task.id, new_parent.id if new_parent else None)
+    if path is not None:
+        if len(path) == 1:
+            message = "A task cannot be its own parent."
+        else:
+            message = (f"“{task.header}” cannot be moved into “{new_parent.header}” "
+                       f"because “{new_parent.header}” is part of “{task.header}”.")
+        return {"parent_id": [message], "path": [str(node) for node in path]}
+    cycle = move_creates_dependency_cycle(task.id, new_parent.id if new_parent else None)
+    if cycle is not None:
+        target = f"“{new_parent.header}”" if new_parent else "the top level"
+        return {
+            "parent_id": [f"Moving “{task.header}” into {target} would create a dependency "
+                          "cycle, because a parent’s dependencies apply to all of its subtasks."],
+            "cycle": [str(node) for node in cycle],
+        }
+    return None
+
+
+class MoveError(Exception):
+    def __init__(self, payload: dict):
+        super().__init__(payload)
+        self.payload = payload
+
+
+def _renumber(parent_id: Optional[UUID], ordered: List[Task]) -> None:
+    for order, sibling in enumerate(ordered):
+        if sibling.order != order or sibling.parent_id != parent_id:
+            Task.objects.filter(id=sibling.id).update(parent_id=parent_id, order=order)
+
+
+@transaction.atomic
+def move_task(task: Task, new_parent: Optional[Task], index: int) -> Task:
+    """Put ``task`` (with its subtree) under ``new_parent`` at ``index`` among
+    the new siblings — counted without the task itself, clamped to the end.
+    Old and new sibling lists are renumbered 0, 1, 2 … Moving never
+    completes anything: a parent that loses its last subtask stays open and
+    becomes an ordinary task again."""
+    if task.is_done:
+        raise MoveError({"detail": f"“{task.header}” is completed. Reopen it first to move it."})
+    if new_parent is not None and new_parent.is_done:
+        raise MoveError({"parent_id": [
+            f"“{new_parent.header}” is completed. Reopen it first or choose an open task."]})
+    error = parent_change_error(task, new_parent)
+    if error is not None:
+        raise MoveError(error)
+
+    old_parent_id = task.parent_id
+    new_parent_id = new_parent.id if new_parent else None
+    siblings = list(Task.objects.select_for_update()
+                    .filter(parent_id=new_parent_id).exclude(id=task.id)
+                    .order_by("order", "header"))
+    position = max(0, min(index, len(siblings)))
+    _renumber(new_parent_id, siblings[:position] + [task] + siblings[position:])
+    if old_parent_id != new_parent_id:
+        _renumber(old_parent_id, list(Task.objects.filter(parent_id=old_parent_id)
+                                      .order_by("order", "header")))
+    task.refresh_from_db()
+    return task
+

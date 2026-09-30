@@ -116,6 +116,23 @@ class TaskViewSet(RecalculatingModelViewSet):
         })
 
     @action(detail=True, methods=["post"])
+    def move(self, request, pk=None):
+        """Drag and drop in the Tasks tab (T-1): new parent + position."""
+        from tasks.serializers import MoveSerializer
+        from tasks.services.settings import ensure_active_is_project
+        from tasks.services.tree import MoveError, move_task
+        task = self.get_object()
+        body = MoveSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            task = move_task(task, body.validated_data["parent_id"], body.validated_data["index"])
+        except MoveError as error:
+            return Response(error.payload, status=400)
+        ensure_active_is_project()
+        recalculate_accepted_plan()
+        return Response({"task": TaskSerializer(task, context=self.get_serializer_context()).data})
+
+    @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
         """Undo a completion (also of auto-completed parents, §4.5)."""
         from tasks.services.completion import CompletionError, reopen
