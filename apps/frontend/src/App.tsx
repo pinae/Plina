@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import Layout from './components/Layout/Layout.tsx';
 import { Box, Tabs, Tab } from '@mui/material';
-import TaskList from './components/TaskList/TaskList.tsx';
 import { OutlineView } from './components/OutlineView/OutlineView.tsx';
 import { storeOutlineFilter } from './utils/outlineFilter.ts';
 import TagList from './components/TagList/TagList.tsx';
@@ -16,19 +15,24 @@ import { AppHeader } from './components/AppHeader/AppHeader.tsx';
 import { useIsMobile } from './hooks/useResponsive.ts';
 import { useTimeZoneSync } from './hooks/useTimeZoneSync.ts';
 
-// [desktop, phone] labels — short ones keep more tabs in view on a phone.
-const TABS: [string, string][] = [
-  ['Week Overview', 'Week'],
-  ['Calendar Plan', 'Calendar'],
-  ['Tasks', 'Tasks'],
-  ['Projects', 'Projects'],
-  ['Tags', 'Tags'],
-  ['Time Buckets', 'Buckets'],
-  ['Dependencies', 'Deps'],
+type TabKey = 'tasks' | 'week' | 'calendar' | 'tags' | 'buckets' | 'dependencies';
+
+// Tasks (the task tree) first, the Week next (docs/tasks-tab.md, T-2).
+// [key, desktop label, phone label] — short labels keep more tabs in view.
+const TABS: [TabKey, string, string][] = [
+  ['tasks', 'Tasks', 'Tasks'],
+  ['week', 'Week Overview', 'Week'],
+  ['calendar', 'Calendar Plan', 'Calendar'],
+  ['tags', 'Tags', 'Tags'],
+  ['buckets', 'Time Buckets', 'Buckets'],
+  ['dependencies', 'Dependencies', 'Deps'],
 ];
 
+// Panes that draw edge to edge (their own scrolling and padding).
+const FULL_BLEED: TabKey[] = ['week', 'dependencies'];
+
 function App() {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState<TabKey>('tasks');
   const [chooserOpen, setChooserOpen] = useState(false);
   // Re-plan coordination: a manual edit marks the plan dirty; a countdown on
   // the "Plan my week" button then triggers planning once dragging settles.
@@ -39,7 +43,7 @@ function App() {
   // Recurring buckets ("every day at 14:00") follow the device's time zone.
   useTimeZoneSync();
 
-  const handleChange = (_event: React.SyntheticEvent, newValue: number) => {
+  const handleChange = (_event: React.SyntheticEvent, newValue: TabKey) => {
     setTab(newValue);
   };
 
@@ -54,10 +58,10 @@ function App() {
       {/* Engage bar (UI-5): active project, tracker, quick add. */}
       <AppHeader
         onShowAllProjects={() => {
-          // Projects tab with the "All projects" filter (§3.1).
+          // The Tasks tab showing every project (§3.1).
           storeOutlineFilter('all');
           setOutlineKey(key => key + 1);
-          setTab(3);
+          setTab('tasks');
         }}
         actions={
           <PlanMyWeekButton
@@ -74,33 +78,32 @@ function App() {
         display: 'flex', alignItems: 'center', bgcolor: 'background.paper', px: 1,
       }}>
         <Tabs value={tab} onChange={handleChange} aria-label="plina tabs" variant="scrollable" scrollButtons="auto" sx={{ flexGrow: 1 }}>
-          {TABS.map(([long, short]) => (
-            <Tab key={long} label={compact ? short : long} aria-label={long} sx={compact ? { minWidth: 0, px: 1.5 } : undefined} />
+          {TABS.map(([key, long, short]) => (
+            <Tab key={key} value={key} label={compact ? short : long} aria-label={long} sx={compact ? { minWidth: 0, px: 1.5 } : undefined} />
           ))}
         </Tabs>
       </Box>
       <PlanChooserDialog
         open={chooserOpen}
         onClose={() => setChooserOpen(false)}
-        onAccepted={() => setTab(0)}
+        onAccepted={() => setTab('week')}
       />
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', p: tab === 0 || tab === 6 ? 0 : compact ? 1 : 2,
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', p: FULL_BLEED.includes(tab) ? 0 : compact ? 1 : 2,
         // Phones: room to scroll the last rows clear of the ⊕ button.
         pb: compact ? 11 : undefined }}>
         <ErrorBoundary key={tab}>
-          {tab === 0 && (
+          {tab === 'tasks' && <OutlineView key={outlineKey} />}
+          {tab === 'week' && (
             <PlannedWeekView
               onDraggingChange={setDragging}
               onPlanDirty={() => setPlanDirty(true)}
             />
           )}
-          {tab === 1 && <Calendar />}
-          {tab === 2 && <TaskList />}
-          {tab === 3 && <OutlineView key={outlineKey} />}
-          {tab === 4 && <TagList />}
-          {tab === 5 && <BucketTypeList />}
-          {tab === 6 && <DependencyEditor />}
+          {tab === 'calendar' && <Calendar />}
+          {tab === 'tags' && <TagList />}
+          {tab === 'buckets' && <BucketTypeList />}
+          {tab === 'dependencies' && <DependencyEditor />}
         </ErrorBoundary>
       </Box>
     </Layout>

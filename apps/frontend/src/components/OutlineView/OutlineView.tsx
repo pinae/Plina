@@ -1,5 +1,6 @@
 /**
- * UI-7: the outline — the Projects tab (docs/task-entry-ui.md §5).
+ * UI-7: the outline — since T-2 the Tasks tab (docs/task-entry-ui.md §5,
+ * docs/tasks-tab.md). "+ New task" and a double-click open the full dialog.
  *
  * The tree of open tasks, edited in place (every change is saved at once).
  * Keyboard: ↑/↓ select · →/← expand/collapse · Enter edit (Enter on the last
@@ -26,6 +27,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import EditIcon from '@mui/icons-material/Edit';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
+import AddIcon from '@mui/icons-material/Add';
 import type { AxiosError } from 'axios';
 
 import { ProjectPicker, type ProjectPick } from '../ProjectPicker/ProjectPicker.tsx';
@@ -85,6 +87,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
     const [splitTask, setSplitTask] = useState<Task | null>(null);
     const [dialogTask, setDialogTask] = useState<Task | null>(null);
+    const [creating, setCreating] = useState(false);
     const [move, setMove] = useState<{ task: Task; anchor: HTMLElement } | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
@@ -373,7 +376,12 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                <Typography variant="h5" sx={{ mr: 1 }}>{sortMode ? 'Sorting session' : 'Projects'}</Typography>
+                <Typography variant="h5" component="h1" sx={{ mr: 1 }}>{sortMode ? 'Sorting session' : 'Tasks'}</Typography>
+                {!sortMode && (
+                    <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setCreating(true)}>
+                        New task
+                    </Button>
+                )}
                 {!sortMode && (
                     <Tooltip title="A">
                         <ToggleButtonGroup size="small" exclusive value={effectiveFilter}
@@ -416,7 +424,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         defaultDuration={defaultDuration}
                         editing={editing?.key === item.key ? editing : null}
                         onSelect={() => { setSelection({ key: item.key, index }); refocus(); }}
-                        onOpen={() => (item.kind === 'task' ? beginEdit(item, 'header') : setSplitTask(item.task))}
+                        onOpen={() => (item.kind === 'task' ? setDialogTask(item.task) : setSplitTask(item.task))}
                         onToggle={() => setCollapsed(prev => {
                             const next = new Set(prev);
                             if (next.has(item.task.id)) next.delete(item.task.id); else next.add(item.task.id);
@@ -461,6 +469,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
             />
             {splitTask && <SplitEditor open task={splitTask} onClose={() => { setSplitTask(null); refocus(); }} />}
             {dialogTask && <TaskFormDialog open task={dialogTask} onClose={() => { setDialogTask(null); refocus(); }} />}
+            {creating && <TaskFormDialog open onClose={() => { setCreating(false); refocus(); }} />}
             <Dialog open={confirmDelete !== null} onClose={() => setConfirmDelete(null)}>
                 <DialogTitle>Delete “{confirmDelete?.header}”?</DialogTitle>
                 <DialogContent>

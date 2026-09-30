@@ -68,7 +68,7 @@ export function ActiveProjectSwitcher({ open, onOpenChange, onShowAllProjects, c
             placeholder="Find or create a project…"
             footer={onShowAllProjects && (
                 <Button size="small" fullWidth onClick={() => { close(); onShowAllProjects(); }}>
-                    Show all projects
+                    Show all tasks
                 </Button>
             )}
         />

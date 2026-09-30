@@ -106,11 +106,11 @@ describe('ActiveProjectSwitcher', () => {
         await waitFor(() => expect(patches).toEqual([{ active_task_id: 'new-1' }]));
     });
 
-    it('links to the list of all projects', async () => {
+    it('links to the Tasks tab', async () => {
         const onShowAll = vi.fn();
         render(<Harness onShowAll={onShowAll} />);
         await openPicker();
-        fireEvent.click(screen.getByRole('button', { name: /show all projects/i }));
+        fireEvent.click(screen.getByRole('button', { name: /show all tasks/i }));
         expect(onShowAll).toHaveBeenCalled();
     });
 

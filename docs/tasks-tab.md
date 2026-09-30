@@ -125,6 +125,17 @@ Each package is testable on its own and leaves the app working.
   (UI-9) adapted.
 - *Accept:* tab order and default tab; every former way to add/edit a task
   still exists in the Tasks tab (tests migrated from `TaskList`).
+- *Delivered (2026-09-30, TDD):* 5 new frontend tests (`App.test.tsx`: tab
+  order, default tab, no Projects tab, "+ New task", double-click → dialog,
+  "Show all tasks"); the CRUD happy-path test now adds its task via "+ New
+  task" in the Tasks tab. Tabs are keyed (`'tasks' | 'week' | …`) instead of
+  numbered; the app opens on Tasks; accepting a plan in "Plan my week"
+  still switches to the Week. `TaskList` and its floating add button are
+  removed (on phones the ⊕ quick-add sheet covers quick capture). The
+  outline's heading reads "Tasks" and carries "+ New task" (full dialog,
+  parent preselected with the active project); a double-click on a row opens
+  the edit dialog instead of inline renaming (decision 1 — single click and
+  Enter follow in T-4). The switcher's footer reads "Show all tasks".
 
 **T-3 · One tree, active project on top, compact rows — M**
 - Remove the filter; build the tree with the active project's root first,

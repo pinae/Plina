@@ -13,7 +13,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
 
-import TaskList from '../TaskList/TaskList.tsx';
+import { OutlineView } from '../OutlineView/OutlineView.tsx';
 import TagList from '../TagList/TagList.tsx';
 import BucketTypeList from '../BucketTypeList/BucketTypeList.tsx';
 import { TaskFormDialog } from './TaskFormDialog.tsx';
@@ -106,9 +106,9 @@ describe('CRUD happy path: tag -> task -> bucket type', () => {
         expect(created.tags[0]).toMatchObject({ name: 'deep-work' });
         tagPane.unmount();
 
-        // 2. Task using the fresh tag — from the Tasks pane
-        const taskPane = render(<TaskList />, { wrapper });
-        fireEvent.click(await screen.findByRole('button', { name: /add task/i }));
+        // 2. Task using the fresh tag — "+ New task" in the Tasks tab (T-2)
+        const taskPane = render(<OutlineView />, { wrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /new task/i }));
         const taskDialog = await screen.findByRole('dialog');
         fireEvent.change(within(taskDialog).getByLabelText(/header/i), {
             target: { value: 'Design Schema' },

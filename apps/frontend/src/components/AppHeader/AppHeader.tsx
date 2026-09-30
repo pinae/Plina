@@ -25,7 +25,7 @@ import { useTasks } from '../../queries.tsx';
 import type { PlanAlternative } from '../../types.ts';
 
 export interface AppHeaderProps {
-    /** "Show all projects" in the project picker. */
+    /** "Show all tasks" in the project picker: opens the Tasks tab. */
     onShowAllProjects?: () => void;
     /** Right-hand actions (e.g. "Plan my week"). */
     actions?: ReactNode;

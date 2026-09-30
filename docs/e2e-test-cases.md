@@ -9,7 +9,7 @@ The planned week of Alice starts with "Notify Dennis" on monday morning at 9:00.
 
 ## Pina
 
-Pina authenticates and navigates to "Projects". "Projects" is a page displaying all tasks that have subtasks. She then creates the project/task "T250" with the tag "maker" and starts to enter subtasks:
+Pina authenticates and lands on "Tasks", the first tab: all open tasks as one tree, the current project on top. She then creates the project/task "T250" with the tag "maker" and starts to enter subtasks:
 - "print bed frame" (duration 15min)
 - "route wires" (duration 2h)
 - "flash mainboard" (duration 1h)
