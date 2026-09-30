@@ -22,13 +22,13 @@ without leaving it.
 ├────────────────────────────────────────────────────────────────────────────┤
 │ ⠿ ▾ ● T250                         Σ 18h / 20h  #maker  ⏰ 31.10. ━━●━━ 9 ▶│ ← active project on top,
 │ ⠿   ▾ Hardware Design  (active)    Σ 10h / 12h  #maker  ⏰ 10.10. ━━●━  7  │   its path expanded,
-│ ⠿       CAD                          3h          #maker          ━━●━  7 ▶│   the active node marked
-│ ⠿       test prints                  2h          #maker          ━━●━  7 ▶│
-│         Rest of Hardware Design      2h                                  ▶│
-│ ⠿   ▸ Firmware                       4h                          ━●━━  5 ▶│
-│ ⠿ ▾ ● Company Blog                 Σ 9h                          ━●━━  6   │ ← then all other projects,
-│ ⠿       Write CMS comparison         3h (default)                ━●━━  6 ▶│   by priority
-│ ⠿   ● Buy milk                       1h (default)                ●━━━  2 ▶│
+│ ⠿       CAD                          3h         #maker            ━━●━  7 ▶│   the active node marked
+│ ⠿       test prints                  2h         #maker            ━━●━  7 ▶│
+│         Rest of Hardware Design      2h                                   ▶│
+│ ⠿   ▸ Firmware                       4h                           ━●━━  5 ▶│
+│ ⠿ ▾ ● Company Blog                 Σ 9h                           ━●━━  6  │ ← then all other projects,
+│ ⠿       Write CMS comparison         3h (default)                 ━●━━  6 ▶│   by priority
+│ ⠿   ● Buy milk                       1h (default)                 ●━━━  2 ▶│
 └────────────────────────────────────────────────────────────────────────────┘
  ⠿ drag handle · ━━●━━ priority slider (0–10) · ▶ track
 ```
