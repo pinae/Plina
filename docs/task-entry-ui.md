@@ -294,6 +294,13 @@ The split editor's row editing is the same component as a full-page
 **outline**: the tree of all open tasks, one row per task. It replaces the
 current Projects list.
 
+> **Since 2026-10-01 (docs/tasks-tab.md, T-1 … T-7):** the outline is the
+> **Tasks** tab, the first tab. The *Active project / All projects* filter
+> and the `A` key are gone — every project is shown, the active one on top;
+> a click or Enter opens the edit dialog (no inline renaming); rows are
+> reordered and re-nested by drag and drop; a circle completes, a slider
+> sets the priority. The rest of this section still applies.
+
 ```
 [ Active project │ All projects ]   A toggles        Inbox (3)   Sort ▶
 ▾ ● T250                               Σ 18h / 20h   #maker          ⏰ 31.10.   !7
@@ -391,7 +398,7 @@ Global shortcuts are ignored while focus is in an input.
 | N | anywhere | focus quick add |
 | P | anywhere | open active project switcher |
 | T | anywhere | toggle tracking of the current / next task |
-| A | outline | toggle *Active project / All projects* |
+| ~~A~~ | outline | ~~toggle *Active project / All projects*~~ — removed with the filter (docs/tasks-tab.md) |
 | S | outline row, Week-view card | split |
 | 0–9 | outline row | priority |
 | / | anywhere | search tasks |

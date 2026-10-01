@@ -56,6 +56,33 @@ Try it: `uv run python manage.py populate_demo_data` sets up the full demo
 (two projects, a dependency diamond, tagged recurring buckets, one fixed
 appointment), then use "Plan my week" in the frontend.
 
+### Working with tasks
+
+The app opens on the **Tasks** tab: every open task as one tree, the active
+project on top (docs/tasks-tab.md). It follows the conventions of Todoist
+and Wunderlist:
+
+* A click (or Enter) opens the edit dialog; ↑/↓ in the dialog (Alt+↑/↓)
+  walk to the neighbouring tasks without closing it, saving changes first.
+* Drag a row by its ⠿ handle: up/down reorders, sideways changes the level
+  (a subtask of the row above, or one level up). Every move — also Tab,
+  Shift+Tab and Alt+↑/↓ — can be undone from the toast. A parent that loses
+  its last subtask stays open.
+* The circle completes a task (Undo in the toast); parents complete by
+  themselves with their last subtask. "Show completed" brings completed
+  tasks back into the tree.
+* The priority slider (0–10, coloured by urgency) is set with one click or
+  drag; digit keys work too.
+* "+ Add task" at the end of every project and quick add in the header
+  understand tokens: `Order filament 30m #maker !7 >fri +Blog`.
+* "Sort ▶" walks the inbox of tasks without an estimate.
+
+The header shows the active project, the time tracker (▶ next planned task)
+and the quick add; the split editor breaks a task into parts with ghost
+estimates that add up. On phones the header is compact, quick add opens as a
+bottom sheet from ⊕, rows are dragged after a long-press and the selected
+row offers indent/outdent buttons (docs/task-entry-ui.md §7).
+
 
 ### Core Data Structures (Domain Model)
 
@@ -64,18 +91,21 @@ represent the scheduling domain:
 
 * Task: The fundamental unit of work.
   * Key Algorithmic Fields: 
-    * duration (estimated time required)
+    * duration (estimated time required; empty = the default duration)
     * time_spent (actual time logged)
     * latest_finish_date (hard deadline constraint)
     * priority (soft importance constraint)
     * tags (used for affinity).
+  * Tasks form a tree (`parent` + sibling `order`): every top-level task is a
+    project, and any task can be split into subtasks. A parent's estimate is
+    a budget; what its subtasks do not cover is planned as its "Rest". The
+    deadline of a parent applies to all its subtasks.
 
-* Project: A structured collection of Tasks.
-  * Tasks within a project maintain a specific order (via the ProjectTaskItem 
-    through-model). Projects themselves have priorities and tags, which can 
-    be inherited by their constituent tasks.
+* UserSettings: the default duration for unestimated tasks, the active
+  project (synced to all devices) and the user's time zone, in which
+  recurrence rules are read.
 
-* Tag: A label (with an optional color) used to categorize Tasks, Projects, 
+* Tag: A label (with an optional color) used to categorize Tasks 
   and TimeBucketTypes. Tags are the primary mechanism for establishing 
    Affinity (e.g., mapping a #deep-work task to a #deep-work time bucket).
 

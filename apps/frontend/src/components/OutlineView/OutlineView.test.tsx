@@ -490,6 +490,14 @@ describe('touch screens (UI-9)', () => {
         expect(await screen.findByRole('dialog')).toHaveTextContent('Edit “CAD”');
     });
 
+    it('marks the active project by its name, without the "active" label that crowds it out (T-7)', async () => {
+        renderOutline();
+        const hw = await within(outline()).findByRole('treeitem', { name: 'Hardware Design' });
+        expect(hw).toHaveAttribute('data-active', 'true');
+        expect(within(hw).queryByText('active')).toBeNull();
+        expect(within(hw).getByText('Hardware Design')).toHaveAttribute('data-active-name', 'true');
+    });
+
     it('has no keyboard help', async () => {
         renderOutline();
         await within(outline()).findByRole('treeitem', { name: 'CAD' });

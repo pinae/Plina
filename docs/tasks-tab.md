@@ -1,6 +1,6 @@
 # The Tasks tab — one tree for navigating, editing and ordering
 
-Status: plan, decisions confirmed (2026-09-30). Replaces the old flat "Tasks" tab and renames the
+Status: delivered (T-1 … T-7, 2026-10-01); decisions confirmed 2026-09-30. Replaces the old flat "Tasks" tab and renames the
 outline ("Projects") to **Tasks**. Builds on docs/task-entry-ui.md (task tree,
 outline §5, sorting session §5.1).
 
@@ -271,6 +271,23 @@ Each package is testable on its own and leaves the app working.
 - Touch: long-press on the handle drags; row buttons (UI-9) keep working;
   slider popover. Update README/spec, Storybook stories for new pieces, live
   check with demo data (desktop + 390 px).
+- *Delivered (2026-10-01):* 1 new frontend test (546 total; backend 309).
+  The phone review found one bug: on the active project's own row the
+  "active" label and a long Σ estimate squeezed the name to nothing. On
+  phones the active project is now marked by its name in bold primary
+  colour (no label), rows use tighter gaps and the Σ text is smaller. The
+  README describes the Tasks tab and the task tree (the old `Project` model
+  section is gone; `UserSettings` added); docs/task-entry-ui.md §5 and the
+  keyboard map point to this document where the Tasks tab supersedes them.
+  Stories for every new piece exist (PrioritySlider, QuickAddSheet,
+  QuickAddSuggestions, the outline). End-to-end check against the demo data,
+  13/13 passing: opens on Tasks, active project first, the dialog walks to
+  the next task, a slider click sets the priority, dragging one indent
+  right nests a task and Undo puts it back, the circle completes and Undo
+  reopens, "+ Add task" with tokens; on a 390 px phone: no horizontal
+  scroll, a long-press drag nests a task, the priority chip's popover, the
+  indent row button. (Two moves in the first run were correctly refused:
+  they would have created dependency cycles with the demo data's chains.)
 
 Order: T-1 → T-2 → T-3 → T-4 → T-5 → T-6 → T-7 (T-4/T-5 are independent of
 T-3 and can swap).

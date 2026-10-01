@@ -601,7 +601,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         onToggle={() => toggleCollapsed(item.task.id)}
                         onToggleDone={() => toggleDone(item.task)}
                         onPriority={priority => setPriority(item.task, priority)}
-                        compactPriority={mobile}
+                        compact={mobile}
                         canComplete={item.task.is_done || !(item.task.children_ids ?? []).some(id => openIds.has(id))}
                         onTrack={() => startTracking.mutate(item.task.id, { onError: error => setMessage(serverMessage(error)) })}
                         onEditChange={text => editing && setEditing({ ...editing, text, error: undefined })}
@@ -748,8 +748,9 @@ interface OutlineItemRowProps {
     onToggle: () => void;
     onToggleDone: () => void;
     onPriority: (priority: number) => void;
-    /** Phones: a chip opening the slider instead of the slider itself. */
-    compactPriority: boolean;
+    /** Phones: a chip opening the slider instead of the slider itself, tighter
+     *  gaps, and the active project marked by its name (no label). */
+    compact: boolean;
     /** False for parents with open subtasks (they complete with the last one). */
     canComplete: boolean;
     onTrack: () => void;
@@ -760,7 +761,7 @@ interface OutlineItemRowProps {
 }
 
 function OutlineItemRow({
-    item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compactPriority,
+    item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compact,
     canComplete, onTrack,
     onEditChange, onEditKeyDown, onEditBlur, onElement, drag,
 }: OutlineItemRowProps) {
@@ -809,7 +810,7 @@ function OutlineItemRow({
             style={drag?.style}
             data-dragging={drag?.dragging ? 'true' : undefined}
             sx={{
-                display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, pr: 1,
+                display: 'flex', alignItems: 'center', gap: compact ? 0.5 : 1, minHeight: 32, pr: compact ? 0.5 : 1,
                 pl: 0.5 + depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',
                 bgcolor: drag?.dragging ? 'background.paper' : selected ? 'action.selected' : undefined,
                 opacity: done ? 0.55 : 1,
@@ -864,10 +865,13 @@ function OutlineItemRow({
                         slotProps={{ htmlInput: { 'aria-label': `Edit header of ${task.header}` } }} />
                 ) : (
                     <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" noWrap sx={{
-                            fontWeight: item.kind === 'task' && item.hasChildren ? 'bold' : undefined,
+                        <Typography variant="body2" noWrap
+                            data-active-name={compact && item.kind === 'task' && item.active ? 'true' : undefined}
+                            sx={{
+                            fontWeight: item.kind === 'task' && (item.hasChildren || (compact && item.active)) ? 'bold' : undefined,
                             fontStyle: item.kind === 'rest' ? 'italic' : undefined,
-                            color: item.kind === 'rest' ? 'text.secondary' : undefined,
+                            color: item.kind === 'rest' ? 'text.secondary'
+                                : compact && item.kind === 'task' && item.active ? 'primary.main' : undefined,
                             textDecoration: done ? 'line-through' : undefined,
                         }}>
                             {itemName(item)}
@@ -877,14 +881,17 @@ function OutlineItemRow({
                         )}
                     </Box>
                 )}
-                {item.kind === 'task' && item.active && !editing && (
+                {item.kind === 'task' && item.active && !editing && !compact && (
                     <Chip size="small" color="primary" variant="outlined" label="active"
                         sx={{ height: 18, fontSize: '0.7rem', flexShrink: 0 }} />
                 )}
             </Box>
             {/* Aligned, muted details (Todoist/Wunderlist density). Tags and
                 the deadline give way on phone widths. */}
-            <Box sx={{ width: { xs: 'auto', sm: 130 }, textAlign: 'right', flexShrink: 0, color: 'text.secondary' }}>
+            <Box sx={{
+                width: { xs: 'auto', sm: 130 }, textAlign: 'right', flexShrink: 0, color: 'text.secondary',
+                ...(compact ? { '& .MuiTypography-root': { fontSize: '0.75rem' } } : {}),
+            }}>
                 {estimate}
             </Box>
             <Box sx={{ width: 170, flexShrink: 0, display: { xs: 'none', sm: 'flex' }, justifyContent: 'flex-end', gap: 0.5, overflow: 'hidden' }}>
@@ -900,9 +907,9 @@ function OutlineItemRow({
                     </Typography>
                 )}
             </Box>
-            <Box sx={{ width: compactPriority ? 36 : 104, flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
+            <Box sx={{ width: compact ? 36 : 104, flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
                 {item.kind === 'task' && !done && (
-                    <PrioritySlider value={task.priority} label={task.header} onCommit={onPriority} compact={compactPriority} />
+                    <PrioritySlider value={task.priority} label={task.header} onCommit={onPriority} compact={compact} />
                 )}
                 {done && <Typography variant="caption" color="text.secondary">!{task.priority}</Typography>}
             </Box>
