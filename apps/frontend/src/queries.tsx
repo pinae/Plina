@@ -15,6 +15,7 @@ import type { AxiosError } from 'axios';
 import {
     acceptPlan,
     completeTask,
+    moveTask,
     computeAlternatives,
     createBucketType,
     createDependency,
@@ -41,6 +42,7 @@ import type {
     BucketTypeWrite, Dependency, DependencyCycleError, SettingsWrite, SplitRequest,
     TagWrite, Task, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
+import { applyMove } from './utils/treeDnd.ts';
 
 export const queryKeys = {
     plan: ['plan'] as const,
@@ -199,6 +201,28 @@ export const useSetPriority = () => {
             if (context?.previous) client.setQueryData(queryKeys.tasks, context.previous);
         },
         onSettled: () => invalidate(queryKeys.tasks, queryKeys.plan),
+    });
+};
+
+/** T-6: move a task (drag and drop, Tab, Alt+↑/↓) — the tree changes at
+ *  once (optimistic) and is rolled back if the server refuses. */
+export const useMoveTask = () => {
+    const client = useQueryClient();
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ taskId, parentId, index }: { taskId: string; parentId: string | null; index: number }) =>
+            moveTask(taskId, parentId, index),
+        onMutate: ({ taskId, parentId, index }) => {
+            void client.cancelQueries({ queryKey: queryKeys.tasks });
+            const previous = client.getQueryData<Task[]>(queryKeys.tasks);
+            if (previous) client.setQueryData<Task[]>(queryKeys.tasks, applyMove(previous, taskId, parentId, index));
+            return { previous };
+        },
+        onError: (_error, _variables, context) => {
+            if (context?.previous) client.setQueryData(queryKeys.tasks, context.previous);
+        },
+        // The active project may hand over (T-1).
+        onSettled: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
     });
 };
 

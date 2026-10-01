@@ -17,6 +17,10 @@
  * "Sort" switches to the sorting session: the inbox of unestimated tasks
  * from all projects.
  *
+ * T-6: drag a row by its ⠿ handle — up/down to reorder, sideways to change
+ * the level (dnd-kit; long-press on touch); every move, also by keys, goes
+ * through the move endpoint with an Undo toast.
+ *
  * Touch screens (UI-9): the selected row gets buttons for what lives on keys
  * — outdent, indent, move, details (no double-click on a phone), split.
  */
@@ -39,6 +43,13 @@ import EditIcon from '@mui/icons-material/Edit';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import AddIcon from '@mui/icons-material/Add';
 import type { AxiosError } from 'axios';
+import {
+    closestCenter, DndContext, KeyboardSensor, MeasuringStrategy, PointerSensor, TouchSensor, useSensor, useSensors,
+    type DragEndEvent, type DragMoveEvent, type DragOverEvent, type DragStartEvent,
+} from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
 import { ProjectPicker, type ProjectPick } from '../ProjectPicker/ProjectPicker.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
@@ -46,14 +57,17 @@ import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { createTag, deleteTask as deleteTaskRequest } from '../../api.ts';
 import {
-    useCompleteTask, useCreateTask, useDeleteTask, useReopenTask, useSetPriority, useSettings, useStartTracking,
+    useCompleteTask, useCreateTask, useDeleteTask, useMoveTask, useReopenTask, useSetPriority, useSettings, useStartTracking,
     useTags, useTasks, useUpdateTask,
 } from '../../queries.tsx';
 import { PrioritySlider } from '../PrioritySlider/PrioritySlider.tsx';
 import { commitRowTokens, newRow } from '../../utils/outline.ts';
 import {
-    inboxItems, indentParent, outdentParent, outlineItems, reorderPatches, type OutlineItem,
+    inboxItems, outlineItems, type OutlineItem,
 } from '../../utils/outlineTree.ts';
+import {
+    appendTarget, currentPosition, indentMove, neighbourMove, outdentMove, projectDrop, type MoveTarget,
+} from '../../utils/treeDnd.ts';
 import { projectOptions } from '../../utils/projects.ts';
 import { readCollapsed, readShowCompleted, storeCollapsed, storeShowCompleted } from '../../utils/taskTreePrefs.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
@@ -62,6 +76,10 @@ import { useIsMobile, useIsTouch } from '../../hooks/useResponsive.ts';
 
 const human = (duration: string | null) => formatDuration(duration);
 const END_OF_TREE = 'add:top';
+/** One indentation level in px (rows indent by theme spacing 3). */
+const INDENT_PX = 24;
+/** Hovering a collapsed parent this long while dragging opens it. */
+const EXPAND_ON_HOVER_MS = 700;
 const itemName = (item: OutlineItem) => (item.kind === 'rest' ? `Rest of ${item.task.header}` : item.task.header);
 
 type Editing = { key: string; field: 'header' | 'estimate'; text: string; error?: string };
@@ -90,13 +108,19 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const completeTask = useCompleteTask();
     const reopenTask = useReopenTask();
     const setPriorityMutation = useSetPriority();
+    const moveMutation = useMoveTask();
 
     const [sortMode, setSortMode] = useState(false);
     const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
     const [showCompleted, setShowCompleted] = useState(readShowCompleted);
-    const [completedToast, setCompletedToast] = useState<{ id: string; text: string } | null>(null);
+    // One Undo toast for completions and moves (Todoist).
+    const [undoToast, setUndoToast] = useState<{ text: string; undo: () => void } | null>(null);
     // The active project whose path was last opened (see below).
     const [openedFor, setOpenedFor] = useState<string | null>(null);
+    // T-6: the running drag — the row, the row under the pointer, the
+    // sideways offset that decides the new depth.
+    const [drag, setDrag] = useState<{ activeKey: string; overKey: string; offsetX: number } | null>(null);
+    const expandTimer = useRef<{ key: string; timer: number } | null>(null);
     const [selection, setSelection] = useState<{ key: string; index: number } | null>(null);
     const [editing, setEditing] = useState<Editing | null>(null);
     const [draft, setDraft] = useState<Draft | null>(null);
@@ -204,21 +228,16 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         completeTask.mutate(task.id, {
             onSuccess: data => {
                 const topmost = data.auto_completed?.[data.auto_completed.length - 1];
-                setCompletedToast({
-                    id: task.id,
+                setUndoToast({
                     text: `Completed “${task.header}”${topmost ? ` — “${topmost.header}” completed too` : ''}`,
+                    // Reopening the task reopens the parents that completed along (UI-2).
+                    undo: () => reopenTask.mutate(task.id, { onError: error => setMessage(serverMessage(error)) }),
                 });
             },
             onError: error => setMessage(serverMessage(error)),
         });
     };
 
-    const undoComplete = () => {
-        if (!completedToast) return;
-        // Reopening the task reopens the parents that completed along (UI-2).
-        reopenTask.mutate(completedToast.id, { onError: error => setMessage(serverMessage(error)) });
-        setCompletedToast(null);
-    };
 
     const startSort = () => {
         setSortMode(true);
@@ -231,19 +250,65 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
 
     // ---------------------------------------------------------- actions
 
-    const reparent = (task: Task, parentId: string | null | undefined) => {
-        if (parentId === undefined || parentId === task.parent_id) return;
-        patch(task, { parent_id: parentId }).then(() => {
-            if (parentId) updateCollapsed(next => { next.delete(parentId); });
-        }).catch(() => undefined);
-    };
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+        // Touch: long-press the handle, so scrolling still works.
+        useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    );
 
-    const reorder = (task: Task, direction: -1 | 1) => {
-        const changes = reorderPatches(task, visibleTasks, direction);
-        changes.reduce<Promise<unknown>>((chain, change) => chain.then(() => {
-            const target = visibleTasks.find(t => t.id === change.id)!;
-            return patch(target, { order: change.order });
-        }), Promise.resolve()).catch(() => undefined);
+    const clearExpandTimer = () => {
+        if (expandTimer.current) window.clearTimeout(expandTimer.current.timer);
+        expandTimer.current = null;
+    };
+    const onDragStart = ({ active }: DragStartEvent) =>
+        setDrag({ activeKey: String(active.id), overKey: String(active.id), offsetX: 0 });
+    const onDragMove = ({ delta }: DragMoveEvent) =>
+        setDrag(current => (current && current.offsetX !== delta.x ? { ...current, offsetX: delta.x } : current));
+    const onDragOver = ({ over }: DragOverEvent) => {
+        if (!over) return;
+        const overKey = String(over.id);
+        setDrag(current => (current ? { ...current, overKey } : current));
+        // A collapsed parent under the pointer opens after a moment (Todoist).
+        const target = items.find(i => i.key === overKey);
+        if (expandTimer.current?.key === overKey) return;
+        clearExpandTimer();
+        if (target?.kind === 'task' && target.hasChildren && !target.expanded) {
+            expandTimer.current = {
+                key: overKey,
+                timer: window.setTimeout(() => updateCollapsed(next => { next.delete(target.task.id); }), EXPAND_ON_HOVER_MS),
+            };
+        }
+    };
+    const onDragEnd = ({ active, over, delta }: DragEndEvent) => {
+        clearExpandTimer();
+        setDrag(null);
+        if (!over) return;
+        const projection = projectDrop(items, allTasks, String(active.id), String(over.id), delta.x, INDENT_PX);
+        const task = allTasks.find(t => t.id === active.id);
+        if (projection?.changed && task) moveTo(task, { parentId: projection.parentId, index: projection.index });
+    };
+    const onDragCancel = () => { clearExpandTimer(); setDrag(null); };
+
+    /** Every move (drag and drop, Tab, Alt+↑/↓, M, row buttons) goes through
+     *  the move endpoint — optimistic, with Undo in the toast (T-6). */
+    const moveTo = (task: Task, target: MoveTarget | null) => {
+        if (!target) return;
+        const from = currentPosition(allTasks, task.id);
+        if (from && from.parentId === target.parentId && from.index === target.index) return;
+        if (target.parentId) updateCollapsed(next => { next.delete(target.parentId!); }); // keep it in view
+        moveMutation.mutateAsync({ taskId: task.id, ...target }).then(() => {
+            if (!from) return;
+            const parent = allTasks.find(t => t.id === target.parentId);
+            const where = target.parentId === from.parentId ? ''
+                : parent ? ` into “${parent.header}”` : ' to the top level';
+            setUndoToast({
+                text: `Moved “${task.header}”${where}`,
+                // Straight back (not through moveTo: its task list predates the move).
+                undo: () => moveMutation.mutate({ taskId: task.id, ...from },
+                    { onError: error => setMessage(serverMessage(error)) }),
+            });
+        }).catch(error => setMessage(serverMessage(error)));
     };
 
     const requestDelete = (task: Task) => {
@@ -276,8 +341,8 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
 
     const pickMove = (pick: ProjectPick) => {
         if (!move) return;
-        if (pick.kind === 'project') reparent(move.task, pick.id);
-        else if (pick.kind === 'none') reparent(move.task, null);
+        if (pick.kind === 'project') moveTo(move.task, appendTarget(allTasks, move.task.id, pick.id));
+        else if (pick.kind === 'none') moveTo(move.task, appendTarget(allTasks, move.task.id, null));
         setMove(null);
         refocus();
     };
@@ -378,10 +443,10 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
             else if (task.parent_id) select(items.findIndex(i => i.key === task.parent_id));
         } else if (key === 'Tab' && !sortMode) {
             event.preventDefault();
-            reparent(task, event.shiftKey ? outdentParent(task, visibleTasks) : indentParent(task, visibleTasks) ?? undefined);
+            moveTo(task, event.shiftKey ? outdentMove(allTasks, task.id) : indentMove(allTasks, task.id));
         } else if (event.altKey && (key === 'ArrowUp' || key === 'ArrowDown') && !sortMode) {
             event.preventDefault();
-            reorder(task, key === 'ArrowUp' ? -1 : 1);
+            moveTo(task, neighbourMove(allTasks, task.id, key === 'ArrowUp' ? -1 : 1));
         } else if (/^[0-9]$/.test(key)) {
             event.preventDefault();
             setPriority(task, Number(key));
@@ -416,7 +481,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     };
 
     const renderDraft = () => draft && (
-        <Box key="draft" sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 1 + draft.depth * 3 + 4.5, pr: 1, py: 0.5 }}>
+        <Box key="draft" sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 1 + draft.depth * 3 + 7.5, pr: 1, py: 0.5 }}>
             <TextField size="small" fullWidth autoFocus value={draft.text} error={Boolean(draft.error)}
                 helperText={draft.error ?? 'Enter adds the task (e.g. “assembly 2h #maker”), Esc stops'}
                 placeholder="New task…"
@@ -428,6 +493,20 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     );
 
     const lastPending = [...pendingDeletes.entries()].pop();
+
+    // While dragging, the dragged row's subtree is hidden (it travels along)
+    // and the row shows the depth it would land at.
+    const draggedSubtree = new Set<string>();
+    if (drag) {
+        const start = items.findIndex(i => i.key === drag.activeKey);
+        for (let i = start + 1; start >= 0 && i < items.length && items[i].depth > items[start].depth; i++) {
+            draggedSubtree.add(items[i].key);
+        }
+    }
+    const projection = drag ? projectDrop(items, allTasks, drag.activeKey, drag.overKey, drag.offsetX, INDENT_PX) : null;
+    const sortableKeys = sortMode ? [] : items
+        .filter(i => i.kind === 'task' && !i.task.is_done && !draggedSubtree.has(i.key))
+        .map(i => i.key);
 
     // T-4: the dialog walks the task rows in tree order (Rest rows are not
     // tasks); the selection follows so closing lands on the last one shown.
@@ -477,7 +556,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 {!rowButtons && (
                     <Tooltip title={sortMode
                         ? '↑/↓ select · E estimate · M move · # tag · 0–9 priority · S split · Space track · Del delete · Enter details'
-                        : '↑/↓ select · Enter / click details (Alt+↑/↓ inside: previous/next) · Tab / Shift+Tab indent · Alt+↑/↓ move · E estimate · M move to · # tag · 0–9 priority · S split · Space track · Del delete'}>
+                        : '⠿ drag to move (sideways: indent) · ↑/↓ select · Enter / click details (Alt+↑/↓ inside: previous/next) · Tab / Shift+Tab indent · Alt+↑/↓ move · E estimate · M move to · # tag · 0–9 priority · S split · Space track · Del delete'}>
                         <IconButton size="small" aria-label="keyboard shortcuts"><HelpOutlineIcon fontSize="small" /></IconButton>
                     </Tooltip>
                 )}
@@ -500,9 +579,18 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         {sortMode ? 'The inbox is empty — every task has an estimate.' : 'No open tasks here yet. Use the quick add (N) above.'}
                     </Typography>
                 )}
-                {items.map((item, index) => [
-                    <OutlineItemRow
+                <DndContext sensors={sensors} collisionDetection={closestCenter}
+                    // The dragged subtree collapses: measure the rows again.
+                    measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+                    onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={onDragOver}
+                    onDragEnd={onDragEnd} onDragCancel={onDragCancel}>
+                <SortableContext items={sortableKeys} strategy={verticalListSortingStrategy}>
+                {items.map((item, index) => draggedSubtree.has(item.key) ? null : [
+                    <SortableRow
                         key={item.key}
+                        sortable={sortableKeys.includes(item.key)}
+                        dragDepth={drag?.activeKey === item.key ? projection?.depth : undefined}
+                        handleVisible={rowButtons}
                         item={item}
                         selected={index === selectedIndex}
                         sortMode={sortMode}
@@ -529,20 +617,24 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                             key={`${item.key}-tools`}
                             item={item}
                             sortMode={sortMode}
-                            canOutdent={outdentParent(item.task, visibleTasks) !== undefined}
-                            canIndent={indentParent(item.task, visibleTasks) !== null}
-                            canMoveUp={reorderPatches(item.task, visibleTasks, -1).length > 0}
-                            canMoveDown={reorderPatches(item.task, visibleTasks, 1).length > 0}
-                            onOutdent={() => reparent(item.task, outdentParent(item.task, visibleTasks))}
-                            onIndent={() => reparent(item.task, indentParent(item.task, visibleTasks) ?? undefined)}
-                            onMove={direction => reorder(item.task, direction)}
+                            canOutdent={outdentMove(allTasks, item.task.id) !== null}
+                            canIndent={indentMove(allTasks, item.task.id) !== null}
+                            canMoveUp={neighbourMove(allTasks, item.task.id, -1) !== null}
+                            canMoveDown={neighbourMove(allTasks, item.task.id, 1) !== null}
+                            onOutdent={() => moveTo(item.task, outdentMove(allTasks, item.task.id))}
+                            onIndent={() => moveTo(item.task, indentMove(allTasks, item.task.id))}
+                            onMove={direction => moveTo(item.task, neighbourMove(allTasks, item.task.id, direction))}
                             onDetails={() => setDialogTaskId(item.task.id)}
                             onSplit={() => setSplitTask(item.task)}
                         />
                     ) : null,
                     draft?.afterKey === item.key ? renderDraft() : null,
+                    // Kept while dragging: removing rows above the dragged one
+                    // would shift it away from the pointer.
                     addRowAfter(index),
                 ])}
+                </SortableContext>
+                </DndContext>
                 {!sortMode && (draft?.afterKey === END_OF_TREE ? renderDraft() : (
                     <AddTaskRow key="add-top" depth={0} label="add task at the top level"
                         onClick={() => setDraft({ parentId: null, depth: 0, afterKey: END_OF_TREE, text: '' })} />
@@ -582,11 +674,12 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                     Deleted “{lastPending?.[1]}”
                 </Alert>
             </Snackbar>
-            <Snackbar open={completedToast !== null} autoHideDuration={6000} onClose={() => setCompletedToast(null)}
+            <Snackbar open={undoToast !== null} autoHideDuration={6000} onClose={() => setUndoToast(null)}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-                <Alert severity="success" variant="filled" onClose={() => setCompletedToast(null)}
-                    action={<Button color="inherit" size="small" onClick={undoComplete}>Undo</Button>}>
-                    {completedToast?.text}
+                <Alert severity="success" variant="filled" onClose={() => setUndoToast(null)}
+                    action={<Button color="inherit" size="small"
+                        onClick={() => { undoToast?.undo(); setUndoToast(null); }}>Undo</Button>}>
+                    {undoToast?.text}
                 </Alert>
             </Snackbar>
             <Snackbar open={message !== null} autoHideDuration={6000} onClose={() => setMessage(null)}
@@ -597,7 +690,54 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     );
 }
 
+/** What a sortable row gets from dnd-kit (T-6). */
+interface RowDrag {
+    enabled: boolean;
+    /** Callback refs (named so the compiler lint does not take ``drag`` for a ref). */
+    attachRow: (element: HTMLElement | null) => void;
+    attachHandle: (element: HTMLElement | null) => void;
+    handleProps: Record<string, unknown>;
+    style: React.CSSProperties;
+    dragging: boolean;
+    /** The depth this row would land at, while it is dragged. */
+    depth?: number;
+    /** Touch screens: the handle is always visible (no hover). */
+    handleVisible: boolean;
+}
+
+/** The ⠿ handle: the only place a row can be grabbed (clicks elsewhere open
+ *  the dialog, the slider stays usable; long-press on touch). */
+function DragHandle({ label, attach, handleProps, dragging }: {
+    label: string; attach: (element: HTMLElement | null) => void;
+    handleProps: Record<string, unknown>; dragging: boolean;
+}) {
+    return (
+        <IconButton size="small" className="drag-handle" aria-label={label} ref={attach} {...handleProps}
+            onClick={event => event.stopPropagation()}
+            sx={{ p: 0.25, cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none', color: 'text.secondary' }}>
+            <DragIndicatorIcon fontSize="small" />
+        </IconButton>
+    );
+}
+
+/** A row taking part in drag and drop: dragged by its ⠿ handle only. */
+function SortableRow({ sortable, dragDepth, handleVisible, ...props }: Omit<OutlineItemRowProps, 'drag'> & {
+    sortable: boolean; dragDepth?: number; handleVisible: boolean;
+}) {
+    const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } =
+        useSortable({ id: props.item.key, disabled: !sortable });
+    return (
+        <OutlineItemRow {...props} drag={{
+            enabled: sortable, attachRow: setNodeRef, attachHandle: setActivatorNodeRef,
+            handleProps: { ...attributes, ...listeners },
+            style: { transform: CSS.Translate.toString(transform), transition },
+            dragging: isDragging, depth: dragDepth, handleVisible,
+        }} />
+    );
+}
+
 interface OutlineItemRowProps {
+    drag?: RowDrag;
     item: OutlineItem;
     selected: boolean;
     sortMode: boolean;
@@ -622,9 +762,10 @@ interface OutlineItemRowProps {
 function OutlineItemRow({
     item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compactPriority,
     canComplete, onTrack,
-    onEditChange, onEditKeyDown, onEditBlur, onElement,
+    onEditChange, onEditKeyDown, onEditBlur, onElement, drag,
 }: OutlineItemRowProps) {
     const task = item.task;
+    const depth = drag?.depth ?? item.depth;
     const done = item.kind === 'task' && task.is_done;
     const trackable = !done && (item.kind === 'rest' || !(task.children_ids?.length));
     const overdue = !done && task.latest_finish_date !== null && new Date(task.latest_finish_date) < new Date();
@@ -663,16 +804,31 @@ function OutlineItemRow({
             aria-expanded={item.kind === 'task' && item.hasChildren ? item.expanded : undefined}
             data-active={item.kind === 'task' && item.active ? 'true' : undefined}
             data-done={done ? 'true' : undefined}
-            ref={onElement}
+            ref={(element: HTMLElement | null) => { onElement(element); drag?.attachRow(element); }}
             onClick={() => { onSelect(); onOpen(); }}
+            style={drag?.style}
+            data-dragging={drag?.dragging ? 'true' : undefined}
             sx={{
                 display: 'flex', alignItems: 'center', gap: 1, minHeight: 32, pr: 1,
-                pl: 0.5 + item.depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',
-                bgcolor: selected ? 'action.selected' : undefined,
+                pl: 0.5 + depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',
+                bgcolor: drag?.dragging ? 'background.paper' : selected ? 'action.selected' : undefined,
                 opacity: done ? 0.55 : 1,
+                position: 'relative', zIndex: drag?.dragging ? 2 : undefined,
+                boxShadow: drag?.dragging ? 6 : undefined,
+                outline: drag?.dragging ? '2px dashed' : undefined, outlineColor: 'primary.main',
+                transitionProperty: 'padding-left', transitionDuration: '120ms',
                 '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+                // The handle fades in on hover / selection (Todoist).
+                '& .drag-handle': { opacity: drag?.handleVisible || selected || drag?.dragging ? 1 : 0, transition: 'opacity 120ms' },
+                '&:hover .drag-handle, & .drag-handle:focus-visible': { opacity: 1 },
             }}
         >
+            <Box sx={{ width: 24, flexShrink: 0, ml: -0.5 }}>
+                {drag?.enabled && (
+                    <DragHandle label={`drag ${task.header}`} attach={drag.attachHandle}
+                        handleProps={drag.handleProps} dragging={drag.dragging} />
+                )}
+            </Box>
             <Box sx={{ width: 28, flexShrink: 0 }}>
                 {item.kind === 'task' && item.hasChildren && (
                     <IconButton size="small" aria-label={item.expanded ? `collapse ${task.header}` : `expand ${task.header}`}
@@ -765,7 +921,7 @@ function OutlineItemRow({
 /** Todoist's inline "+ Add task" at the end of a project / of the tree. */
 function AddTaskRow({ depth, label, onClick }: { depth: number; label: string; onClick: () => void }) {
     return (
-        <Box sx={{ pl: 0.5 + depth * 3 + 7, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ pl: 0.5 + depth * 3 + 10, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
             <Button size="small" startIcon={<AddIcon fontSize="small" />} aria-label={label} onClick={onClick}
                 sx={{ textTransform: 'none', color: 'text.secondary', '&:hover': { color: 'primary.main' } }}>
                 Add task

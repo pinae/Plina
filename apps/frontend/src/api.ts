@@ -6,6 +6,7 @@ import type {
     Dependency,
     PlanResponse,
     RecurrencePreview,
+    MoveResponse,
     ReopenResponse,
     SettingsWrite,
     SplitRequest,
@@ -69,6 +70,10 @@ export const deleteTask = (taskId: string, children?: 'lift' | 'delete') =>
 
 export const splitTask = (taskId: string, body: SplitRequest) =>
     api.post<SplitResponse>(`tasks/${taskId}/split/`, body).then(r => r.data);
+
+/** T-1: new parent (null = top level) and position among its subtasks. */
+export const moveTask = (taskId: string, parentId: string | null, index: number) =>
+    api.post<MoveResponse>(`tasks/${taskId}/move/`, { parent_id: parentId, index }).then(r => r.data);
 
 export const reopenTask = (taskId: string) =>
     api.post<ReopenResponse>(`tasks/${taskId}/reopen/`).then(r => r.data);

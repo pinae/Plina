@@ -6,13 +6,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OutlineView } from './OutlineView.tsx';
 import { API, makeTask, makerTag, settingsFor } from '../../testing/treeFixtures.ts';
 import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import type { Task, TaskWrite } from '../../types.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
+import { applyMove } from '../../utils/treeDnd.ts';
 
 let tasks: Task[] = [];
 let activeId: string | null = 'hw';
@@ -76,6 +77,12 @@ const server = setupServer(
         log.push(`start ${params.id}`);
         return HttpResponse.json({ task: tasks.find(t => t.id === params.id), stopped_task_id: null });
     }),
+    http.post(`${API}/tasks/:id/move/`, async ({ params, request }) => {
+        const { parent_id: parentId, index } = await request.json() as { parent_id: string | null; index: number };
+        log.push(`move ${params.id} ${parentId} ${index}`);
+        tasks = applyMove(tasks, String(params.id), parentId, index);
+        return HttpResponse.json({ task: withTree(tasks).find(t => t.id === params.id) });
+    }),
     http.post(`${API}/tasks/:id/complete/`, ({ params }) => {
         log.push(`complete ${params.id}`);
         tasks = tasks.map(t => (t.id === params.id ? { ...t, is_done: true, completed_at: new Date().toISOString() } : t));
@@ -116,8 +123,10 @@ const press = (key: string, extra: Record<string, unknown> = {}) => fireEvent.ke
 const select = async (name: string) => {
     await within(outline()).findByRole('treeitem', { name });
     act(() => outline().focus());
-    const index = rowNames().indexOf(name);
-    for (let i = 0; i <= index; i++) press('ArrowDown');
+    const target = rowNames().indexOf(name);
+    const current = within(outline()).queryAllByRole('treeitem').findIndex(r => r.getAttribute('aria-selected') === 'true');
+    for (let i = current; i < target; i++) press('ArrowDown');
+    for (let i = current; i > target; i--) press('ArrowUp');
     expect(row(name)).toHaveAttribute('aria-selected', 'true');
 };
 
@@ -292,7 +301,7 @@ describe('re-parenting', () => {
 
         press('Tab');
 
-        await waitFor(() => expect(log).toContain('PATCH fw {"parent_id":"hw"}'));
+        await waitFor(() => expect(log).toEqual(['move fw hw 2']));
         await waitFor(() => expect(within(row('Hardware Design')).getByTestId('estimate')).toHaveTextContent('Σ 9h / 12h'));
         expect(row('Rest of Hardware Design')).toHaveTextContent('3h');
     });
@@ -301,16 +310,14 @@ describe('re-parenting', () => {
         renderOutline();
         await select('CAD');
         press('Tab', { shiftKey: true });
-        await waitFor(() => expect(log).toContain('PATCH cad {"parent_id":"t250"}'));
+        await waitFor(() => expect(log).toEqual(['move cad t250 1'])); // right after its old parent
     });
 
     it('Alt+↓ reorders siblings', async () => {
         renderOutline();
         await select('CAD');
         press('ArrowDown', { altKey: true });
-        await waitFor(() => expect(log).toEqual([
-            'PATCH prints {"order":0}', 'PATCH cad {"order":1}',
-        ]));
+        await waitFor(() => expect(log).toEqual(['move cad hw 1'])); // one request (T-6)
     });
 
     it('M moves a row with the project picker', async () => {
@@ -320,7 +327,40 @@ describe('re-parenting', () => {
         const picker = await screen.findByRole('combobox');
         fireEvent.change(picker, { target: { value: 'Blog' } });
         fireEvent.keyDown(picker, { key: 'Enter' });
-        await waitFor(() => expect(log).toContain('PATCH cad {"parent_id":"blog"}'));
+        await waitFor(() => expect(log).toEqual(['move cad blog 1'])); // appended
+    });
+});
+
+describe('moves: Undo and refusals (T-6)', () => {
+    it('a move offers Undo, which puts the task back', async () => {
+        renderOutline();
+        await select('Firmware');
+        press('Tab');
+        expect(await screen.findByText('Moved “Firmware” into “Hardware Design”')).toBeInTheDocument();
+        await waitFor(() => expect(row('Firmware')).toHaveAttribute('aria-level', '3'));
+        fireEvent.click(screen.getByRole('button', { name: /undo/i }));
+        await waitFor(() => expect(log).toEqual(['move fw hw 2', 'move fw t250 1']));
+        await waitFor(() => expect(row('Firmware')).toHaveAttribute('aria-level', '2'));
+    });
+
+    it('names the top level and plain reorders', async () => {
+        renderOutline();
+        await select('Write article');
+        press('Tab', { shiftKey: true });
+        expect(await screen.findByText('Moved “Write article” to the top level')).toBeInTheDocument();
+        await select('CAD');
+        press('ArrowDown', { altKey: true });
+        expect(await screen.findByText('Moved “CAD”')).toBeInTheDocument();
+    });
+
+    it('shows the move at once and rolls back with the server\'s reason', async () => {
+        server.use(http.post(`${API}/tasks/:id/move/`, () => HttpResponse.json(
+            { parent_id: ['Moving “Firmware” into “Hardware Design” would create a dependency cycle.'] }, { status: 400 })));
+        renderOutline();
+        await select('Firmware');
+        press('Tab');
+        expect(await screen.findByText(/would create a dependency cycle/)).toBeInTheDocument();
+        await waitFor(() => expect(row('Firmware')).toHaveAttribute('aria-level', '2'));
     });
 });
 
@@ -421,17 +461,17 @@ describe('touch screens (UI-9)', () => {
         const bar = tools('test prints');
 
         fireEvent.click(within(bar).getByRole('button', { name: 'indent' }));
-        await waitFor(() => expect(log).toContain('PATCH prints {"parent_id":"cad"}'));
+        await waitFor(() => expect(log).toEqual(['move prints cad 0']));
     });
 
     it('outdent and move by buttons', async () => {
         renderOutline();
         await select('CAD');
         fireEvent.click(within(tools('CAD')).getByRole('button', { name: 'move down' }));
-        await waitFor(() => expect(log).toEqual(['PATCH prints {"order":0}', 'PATCH cad {"order":1}']));
+        await waitFor(() => expect(log).toEqual(['move cad hw 1']));
         log = [];
         fireEvent.click(within(tools('CAD')).getByRole('button', { name: 'outdent' }));
-        await waitFor(() => expect(log).toContain('PATCH cad {"parent_id":"t250"}'));
+        await waitFor(() => expect(log).toEqual(['move cad t250 1']));
     });
 
     it('disables what is impossible for the row', async () => {
@@ -501,6 +541,113 @@ describe('priority slider (T-5)', () => {
         } finally {
             restore();
         }
+    });
+});
+
+describe('drag and drop (T-6)', () => {
+    const ROW = 32;
+    beforeAll(() => {
+        // jsdom has no PointerEvent; dnd-kit's pointer sensor needs one.
+        if (!('PointerEvent' in window)) {
+            class PointerEventPolyfill extends MouseEvent {
+                pointerId: number;
+                isPrimary: boolean;
+                constructor(type: string, init: PointerEventInit = {}) {
+                    super(type, init);
+                    this.pointerId = init.pointerId ?? 1;
+                    this.isPrimary = init.isPrimary ?? true;
+                }
+            }
+            (window as unknown as { PointerEvent: unknown }).PointerEvent = PointerEventPolyfill;
+        }
+    });
+    beforeEach(() => {
+        // jsdom has no layout: stack the rows 32 px apart, 800 px wide.
+        vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+            const row = this.closest('[role="treeitem"]');
+            const rows = [...document.querySelectorAll('[role="treeitem"]')];
+            const top = row ? rows.indexOf(row) * ROW : 0;
+            return { top, bottom: top + ROW, left: 0, right: 800, width: 800, height: row ? ROW : 0,
+                x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+        });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    const handle = (name: string) => within(row(name)).getByRole('button', { name: `drag ${name}` });
+    const startDrag = (name: string) => {
+        const y = rowNames().indexOf(name) * ROW + ROW / 2;
+        fireEvent.pointerDown(handle(name), { clientX: 10, clientY: y, button: 0, isPrimary: true });
+        return y;
+    };
+    const moveTo = (x: number, y: number) => fireEvent.pointerMove(document, { clientX: x, clientY: y });
+    const drop = (x: number, y: number) => fireEvent.pointerUp(document, { clientX: x, clientY: y });
+    const dragBy = (name: string, dx: number, rows: number) => {
+        const y = startDrag(name);
+        moveTo(10 + dx / 2, y + (rows * ROW) / 2);
+        moveTo(10 + dx, y + rows * ROW);
+        drop(10 + dx, y + rows * ROW);
+    };
+
+    it('dragging right by one indent makes it a subtask', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Firmware' });
+        dragBy('Firmware', 24, 0);
+        await waitFor(() => expect(log).toEqual(['move fw hw 2']));
+        expect(await screen.findByText('Moved “Firmware” into “Hardware Design”')).toBeInTheDocument();
+        expect(screen.queryByRole('dialog')).toBeNull(); // grabbing the handle opens nothing
+    });
+
+    it('dragging down one row reorders', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        dragBy('CAD', 0, 1);
+        await waitFor(() => expect(log).toEqual(['move cad hw 1']));
+    });
+
+    it('a parent that loses its last subtask stays open (docs/tasks-tab.md §2)', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Write article' });
+        dragBy('Write article', -24, 0);
+        await waitFor(() => expect(log).toEqual(['move article null 2']));
+        await waitFor(() => expect(row('Write article')).toHaveAttribute('aria-level', '1'));
+        expect(row('Company Blog')).not.toHaveAttribute('data-done');
+        expect(within(row('Company Blog')).queryByRole('button', { name: /collapse/i })).toBeNull();
+        expect(log.some(l => l.startsWith('complete'))).toBe(false);
+    });
+
+    it('the subtree travels along: hidden while its parent is dragged', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Hardware Design' });
+        const y = startDrag('Hardware Design');
+        moveTo(10, y + 10);
+        await waitFor(() => expect(row('Hardware Design')).toHaveAttribute('data-dragging', 'true'));
+        expect(rowNames()).not.toContain('CAD');
+        drop(10, y + 10);
+        await waitFor(() => expect(rowNames()).toContain('CAD'));
+        expect(log).toEqual([]); // dropped where it was
+    });
+
+    it('hovering a collapsed parent while dragging opens it', async () => {
+        localStorage.setItem('plina.collapsedTasks', JSON.stringify(['hw']));
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Firmware' });
+        expect(rowNames()).not.toContain('CAD');
+        const y = startDrag('Firmware');
+        moveTo(10, y - ROW / 2); // half a row up, towards Hardware Design
+        moveTo(10, y - ROW);
+        await waitFor(() => expect(rowNames()).toContain('CAD'), { timeout: 2000 });
+        drop(10, y - ROW);
+    });
+
+    it('Rest rows and completed tasks cannot be dragged', async () => {
+        tasks = [...tasks, makeTask('parts', { header: 'Order parts', parent_id: 'hw', order: 2,
+            is_done: true, completed_at: '2026-09-29T10:00:00Z' })];
+        localStorage.setItem('plina.showCompleted', 'true');
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Order parts' });
+        expect(within(row('Rest of Hardware Design')).queryByRole('button', { name: /^drag/ })).toBeNull();
+        expect(within(row('Order parts')).queryByRole('button', { name: /^drag/ })).toBeNull();
+        expect(within(row('CAD')).getByRole('button', { name: 'drag CAD' })).toBeInTheDocument();
     });
 });
 

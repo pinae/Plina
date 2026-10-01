@@ -71,34 +71,3 @@ export function inboxItems(tasks: Task[]): OutlineItem[] {
         .map(task => ({ kind: 'task' as const, key: task.id, task, depth: 0, hasChildren: false, expanded: true, path: pathOf(task, byId) }))
         .sort((a, b) => a.path.localeCompare(b.path) || bySiblingOrder(a.task, b.task));
 }
-
-function siblings(task: Task, tasks: Task[]): Task[] {
-    return childrenMap(tasks).get(task.parent_id ?? null) ?? [];
-}
-
-/** Tab: the previous sibling becomes the parent (null when there is none). */
-export function indentParent(task: Task, tasks: Task[]): string | null {
-    const list = siblings(task, tasks);
-    const index = list.findIndex(t => t.id === task.id);
-    return index > 0 ? list[index - 1].id : null;
-}
-
-/** Shift+Tab: the grandparent (null = top level); undefined when the task
- *  is top-level already. */
-export function outdentParent(task: Task, tasks: Task[]): string | null | undefined {
-    if (!task.parent_id) return undefined;
-    return tasks.find(t => t.id === task.parent_id)?.parent_id ?? null;
-}
-
-/** Alt+↑/↓: swap with the neighbouring sibling; returns the order changes. */
-export function reorderPatches(task: Task, tasks: Task[], direction: -1 | 1): { id: string; order: number }[] {
-    const list = [...siblings(task, tasks)];
-    const index = list.findIndex(t => t.id === task.id);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= list.length) return [];
-    [list[index], list[target]] = [list[target], list[index]];
-    return list
-        .map((t, order) => ({ id: t.id, order, changed: (t.order ?? 0) !== order }))
-        .filter(p => p.changed)
-        .map(({ id, order }) => ({ id, order }));
-}

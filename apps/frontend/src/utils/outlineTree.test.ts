@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inboxItems, indentParent, outdentParent, outlineItems, reorderPatches } from './outlineTree.ts';
+import { inboxItems, outlineItems } from './outlineTree.ts';
 import { makeTask } from '../testing/treeFixtures.ts';
 import type { Task } from '../types.ts';
 
@@ -69,24 +69,5 @@ describe('inboxItems', () => {
         expect(inbox.map(i => [i.task.header, i.kind === 'task' ? i.path : ''])).toEqual([
             ['Buy milk', ''], ['test prints', 'T250 › Hardware Design'],
         ]);
-    });
-});
-
-describe('re-parenting and reordering', () => {
-    it('Tab: the previous sibling becomes the parent', () => {
-        expect(indentParent(tasks().find(t => t.id === 'fw')!, tasks())).toBe('hw');
-        expect(indentParent(tasks().find(t => t.id === 'hw')!, tasks())).toBeNull(); // first sibling
-    });
-
-    it('Shift+Tab: one level up; a top-level task stays', () => {
-        expect(outdentParent(tasks().find(t => t.id === 'cad')!, tasks())).toBe('t250');
-        expect(outdentParent(tasks().find(t => t.id === 'hw')!, tasks())).toBeNull(); // → top level
-        expect(outdentParent(tasks().find(t => t.id === 'blog')!, tasks())).toBeUndefined();
-    });
-
-    it('Alt+↑/↓ swaps with the neighbour and renumbers the siblings', () => {
-        expect(reorderPatches(tasks().find(t => t.id === 'cad')!, tasks(), 1))
-            .toEqual([{ id: 'prints', order: 0 }, { id: 'cad', order: 1 }]);
-        expect(reorderPatches(tasks().find(t => t.id === 'cad')!, tasks(), -1)).toEqual([]);
     });
 });

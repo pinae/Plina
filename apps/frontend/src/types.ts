@@ -220,6 +220,11 @@ export interface TrackingResponse {
     settings?: UserSettings;
 }
 
+/** Response of POST tasks/{id}/move/ (T-1). */
+export interface MoveResponse {
+    task: Task;
+}
+
 /** Response of POST tasks/{id}/reopen/ (UI-2). */
 export interface ReopenResponse {
     task: Task;

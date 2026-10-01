@@ -232,6 +232,40 @@ Each package is testable on its own and leaves the app working.
   dnd-kit's keyboard sensor moving a row into another parent → one move
   request with the right parent/index; the former parent without children
   stays open (visible, not completed).
+- *Delivered (2026-10-01, TDD):* 23 new frontend tests (545 total): 17
+  table tests in `utils/treeDnd.test.ts` (`projectDrop`: reorder, deeper,
+  shallower, top level, into a leaf, clamping, own subtree refused, collapsed
+  parent appends, no nesting under completed tasks, hidden completed
+  siblings counted, unchanged; `applyMove`; Tab/Shift+Tab/Alt+↑↓ targets),
+  and in the outline 6 drag tests driven by real pointer events (jsdom gets
+  a `PointerEvent` polyfill and stacked row rectangles): right by one indent
+  → `move fw hw 2`, down one row → reorder, a parent losing its last
+  subtask stays open, the subtree hides while its parent is dragged, Rest
+  and completed rows have no handle, hovering a collapsed parent opens it —
+  plus 3 for Undo and refusals. New dependency: `@dnd-kit/core` 6.3,
+  `@dnd-kit/sortable` 10, `@dnd-kit/utilities` 3. Rows are sortable by the
+  ⠿ handle (fades in on hover/selection, always shown on touch; pointer
+  sensor after 4 px, touch after a 250 ms long-press, keyboard sensor for
+  up/down); while dragging the row's subtree is hidden and the row shows
+  the projected indentation. `projectDrop` expresses the drop against the
+  stored sibling order (the move endpoint's `index`), so hidden completed
+  tasks and the pinned active project do not shift it. `useMoveTask` applies
+  the move optimistically (`applyMove`) and rolls back on refusal with the
+  server's message; Tab, Shift+Tab, Alt+↑/↓, M and the touch row buttons use
+  it too (one request each instead of several PATCHes; outdent lands right
+  after the old parent). One Undo toast serves completions and moves:
+  "Moved “X” into “Y” / to the top level — Undo". The old `indentParent` /
+  `outdentParent` / `reorderPatches` helpers are gone.
+  Verified live with a real mouse: a task nested by dragging one indent
+  right (and Undo put it back), a task dragged from Company Blog into
+  Webshop Relaunch at the pointer's position, the last subtask dragged out
+  of Company Blog (which stayed open with no subtasks), a parent with its
+  subtree dragged to the top; on a phone a long-press drag nested a task
+  without opening the dialog. A dependency-cycle refusal showed the
+  server's reason and left the row in place.
+  Bug found on the way: hiding the "+ Add task" rows during a drag shifted
+  the dragged row away from the pointer — they stay, and the rows are
+  re-measured while dragging (the subtree collapses).
 
 **T-7 · Phones, docs, live check — S**
 - Touch: long-press on the handle drags; row buttons (UI-9) keep working;
