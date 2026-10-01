@@ -6,14 +6,11 @@
  * Task/dependency mutations additionally invalidate their own lists.
  */
 import {
-    QueryClient,
-    QueryClientProvider,
     useMutation,
     useQuery,
     useQueryClient,
 } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
-import type { ReactNode } from 'react';
 
 import {
     acceptPlan,
@@ -257,26 +254,6 @@ export const useDeleteDependency = () => {
         onSuccess: () => invalidate(queryKeys.dependencies, queryKeys.plan),
     });
 };
-
-// ---------------------------------------------------------------- provider
-
-export function createAppQueryClient() {
-    return new QueryClient({
-        defaultOptions: {
-            queries: { staleTime: 10_000, refetchOnWindowFocus: false },
-        },
-    });
-}
-
-const appQueryClient = createAppQueryClient();
-
-export function AppQueryProvider({ children }: { children: ReactNode }) {
-    return (
-        <QueryClientProvider client={appQueryClient}>
-            {children}
-        </QueryClientProvider>
-    );
-}
 
 export const useCreateTag = () => {
     const invalidate = useInvalidate();
