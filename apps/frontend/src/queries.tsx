@@ -42,7 +42,7 @@ import {
 } from './api';
 import type {
     BucketTypeWrite, Dependency, DependencyCycleError, SettingsWrite, SplitRequest,
-    TagWrite, TaskWrite, TrackingBlockedError, UserSettings,
+    TagWrite, Task, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
 
 export const queryKeys = {
@@ -180,6 +180,28 @@ export const useUpdateTask = () => {
         mutationFn: ({ taskId, patch }: { taskId: string; patch: TaskWrite }) =>
             updateTask(taskId, patch),
         onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+    });
+};
+
+/** T-5: set a task's priority — shown at once (optimistic), rolled back
+ *  if the server refuses; the plan follows after the save. */
+export const useSetPriority = () => {
+    const client = useQueryClient();
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ taskId, priority }: { taskId: string; priority: number }) =>
+            updateTask(taskId, { priority }),
+        onMutate: ({ taskId, priority }) => {
+            void client.cancelQueries({ queryKey: queryKeys.tasks });
+            const previous = client.getQueryData<Task[]>(queryKeys.tasks);
+            client.setQueryData<Task[]>(queryKeys.tasks,
+                list => list?.map(t => (t.id === taskId ? { ...t, priority } : t)));
+            return { previous };
+        },
+        onError: (_error, _variables, context) => {
+            if (context?.previous) client.setQueryData(queryKeys.tasks, context.previous);
+        },
+        onSettled: () => invalidate(queryKeys.tasks, queryKeys.plan),
     });
 };
 

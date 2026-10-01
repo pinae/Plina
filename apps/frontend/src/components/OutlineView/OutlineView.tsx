@@ -46,9 +46,10 @@ import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { createTag, deleteTask as deleteTaskRequest } from '../../api.ts';
 import {
-    useCompleteTask, useCreateTask, useDeleteTask, useReopenTask, useSettings, useStartTracking, useTags, useTasks,
-    useUpdateTask,
+    useCompleteTask, useCreateTask, useDeleteTask, useReopenTask, useSetPriority, useSettings, useStartTracking,
+    useTags, useTasks, useUpdateTask,
 } from '../../queries.tsx';
+import { PrioritySlider } from '../PrioritySlider/PrioritySlider.tsx';
 import { commitRowTokens, newRow } from '../../utils/outline.ts';
 import {
     inboxItems, indentParent, outdentParent, outlineItems, reorderPatches, type OutlineItem,
@@ -88,6 +89,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const startTracking = useStartTracking();
     const completeTask = useCompleteTask();
     const reopenTask = useReopenTask();
+    const setPriorityMutation = useSetPriority();
 
     const [sortMode, setSortMode] = useState(false);
     const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
@@ -182,6 +184,11 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const toggleCollapsed = (id: string) => updateCollapsed(next => {
         if (next.has(id)) next.delete(id); else next.add(id);
     });
+
+    /** Slider and digit keys (T-5): optimistic, one request per change. */
+    const setPriority = (task: Task, priority: number) =>
+        setPriorityMutation.mutateAsync({ taskId: task.id, priority })
+            .catch(error => setMessage(serverMessage(error)));
 
     const toggleShowCompleted = (show: boolean) => {
         setShowCompleted(show);
@@ -377,7 +384,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
             reorder(task, key === 'ArrowUp' ? -1 : 1);
         } else if (/^[0-9]$/.test(key)) {
             event.preventDefault();
-            patch(task, { priority: Number(key) }).catch(() => undefined);
+            setPriority(task, Number(key));
         } else if (key === 'e' || key === 'E') {
             event.preventDefault();
             beginEdit(selected, 'estimate');
@@ -505,6 +512,8 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         onOpen={() => (item.kind === 'task' ? setDialogTaskId(item.task.id) : setSplitTask(item.task))}
                         onToggle={() => toggleCollapsed(item.task.id)}
                         onToggleDone={() => toggleDone(item.task)}
+                        onPriority={priority => setPriority(item.task, priority)}
+                        compactPriority={mobile}
                         canComplete={item.task.is_done || !(item.task.children_ids ?? []).some(id => openIds.has(id))}
                         onTrack={() => startTracking.mutate(item.task.id, { onError: error => setMessage(serverMessage(error)) })}
                         onEditChange={text => editing && setEditing({ ...editing, text, error: undefined })}
@@ -598,6 +607,9 @@ interface OutlineItemRowProps {
     onOpen: () => void;
     onToggle: () => void;
     onToggleDone: () => void;
+    onPriority: (priority: number) => void;
+    /** Phones: a chip opening the slider instead of the slider itself. */
+    compactPriority: boolean;
     /** False for parents with open subtasks (they complete with the last one). */
     canComplete: boolean;
     onTrack: () => void;
@@ -608,7 +620,8 @@ interface OutlineItemRowProps {
 }
 
 function OutlineItemRow({
-    item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, canComplete, onTrack,
+    item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compactPriority,
+    canComplete, onTrack,
     onEditChange, onEditKeyDown, onEditBlur, onElement,
 }: OutlineItemRowProps) {
     const task = item.task;
@@ -731,10 +744,11 @@ function OutlineItemRow({
                     </Typography>
                 )}
             </Box>
-            <Box sx={{ width: 28, flexShrink: 0, textAlign: 'right' }}>
-                {item.kind === 'task' && (
-                    <Typography variant="caption" color="text.secondary">!{task.priority}</Typography>
+            <Box sx={{ width: compactPriority ? 36 : 104, flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
+                {item.kind === 'task' && !done && (
+                    <PrioritySlider value={task.priority} label={task.header} onCommit={onPriority} compact={compactPriority} />
                 )}
+                {done && <Typography variant="caption" color="text.secondary">!{task.priority}</Typography>}
             </Box>
             <Box sx={{ width: 32, flexShrink: 0 }}>
                 {trackable && (

@@ -201,6 +201,22 @@ Each package is testable on its own and leaves the app working.
   phones: tapping the `!7` chip opens the slider in a popover.
 - *Accept:* drag from 5 to 8 sends exactly one PATCH `{priority: 8}`; the
   planner-relevant order updates; failure rolls back with a message.
+- *Delivered (2026-10-01, TDD):* 19 new frontend tests (522 total): band
+  helper (`utils/priority.ts`), 8 for `PrioritySlider` (drag commits once on
+  release, track click, arrows, unchanged value not sent, clicks stay out of
+  the row, holds the committed value until the save settles and follows a
+  rollback, compact chip + popover) and 3 in the outline (drag 5 → 8 → one
+  PATCH and the row shows 8 at once, refused change rolls back with the
+  server's message, phones get the chip). `useSetPriority` updates the task
+  list optimistically and restores it on error; the digit keys use it too.
+  The slider (72 px, value next to it, coloured grey/blue/orange/red by
+  band) replaces the `!7` text; completed rows keep the text. Phones show a
+  coloured `!7` chip opening the slider in a popover. Detail: an optimistic
+  update and its rollback can reach the row in one render, so the slider
+  holds the committed value until the returned save promise settles, not
+  just until its value changes. Verified live: a real mouse drag 8 → 10
+  sent exactly one PATCH and opened no dialog; on a phone the chip's
+  popover changed "Load test" by two steps with the arrow keys.
 
 **T-6 · Drag and drop — L**
 - `@dnd-kit/core` + `@dnd-kit/sortable` (touch + keyboard sensors, screen

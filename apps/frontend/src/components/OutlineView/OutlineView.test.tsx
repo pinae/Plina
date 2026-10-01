@@ -457,3 +457,50 @@ describe('touch screens (UI-9)', () => {
     });
 });
 
+describe('priority slider (T-5)', () => {
+    const sliderRoot = (name: string) => {
+        const root = within(row(name)).getByTestId('priority-slider').querySelector<HTMLElement>('.MuiSlider-root')!;
+        root.getBoundingClientRect = () => ({
+            width: 100, height: 10, left: 0, right: 100, top: 0, bottom: 10, x: 0, y: 0, toJSON: () => ({}),
+        });
+        return root;
+    };
+    const drag = (root: HTMLElement, from: number, to: number) => {
+        fireEvent.mouseDown(root, { clientX: from, buttons: 1 });
+        fireEvent.mouseMove(document, { clientX: (from + to) / 2, buttons: 1 });
+        fireEvent.mouseMove(document, { clientX: to, buttons: 1 });
+        fireEvent.mouseUp(document, { clientX: to });
+    };
+
+    it('a drag from 5 to 8 sends exactly one change and shows it at once', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        drag(sliderRoot('CAD'), 50, 80);
+        expect(within(row('CAD')).getByRole('slider')).toHaveAttribute('aria-valuenow', '8');
+        await waitFor(() => expect(log.filter(l => l.startsWith('PATCH cad'))).toEqual(['PATCH cad {"priority":8}']));
+        expect(screen.queryByRole('dialog')).toBeNull(); // the row did not open
+    });
+
+    it('rolls back with the server\'s message when the change is refused', async () => {
+        server.use(http.patch(`${API}/tasks/:id/`, () =>
+            HttpResponse.json({ priority: ['Priority must be between 0 and 10.'] }, { status: 400 })));
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        drag(sliderRoot('CAD'), 50, 90);
+        expect(await screen.findByText('Priority must be between 0 and 10.')).toBeInTheDocument();
+        await waitFor(() => expect(within(row('CAD')).getByRole('slider')).toHaveAttribute('aria-valuenow', '5'));
+    });
+
+    it('phones show a coloured chip that opens the slider', async () => {
+        const restore = fakeScreen(PHONE);
+        try {
+            renderOutline();
+            const cad = await within(outline()).findByRole('treeitem', { name: 'CAD' });
+            expect(within(cad).queryByRole('slider')).toBeNull();
+            expect(within(cad).getByRole('button', { name: 'priority of CAD: 5' })).toBeInTheDocument();
+        } finally {
+            restore();
+        }
+    });
+});
+
