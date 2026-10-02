@@ -69,12 +69,14 @@ describe('buildFlowGraph', () => {
         }
     });
 
-    it('carries header, duration label, done flag and project color into node data', () => {
-        // Projects are top-level tasks (UI-1): color and name come from the root.
+    it('carries header, duration label, done flag, the task\'s color and its project into node data', () => {
+        // Projects are top-level tasks (UI-1): the name comes from the root; the
+        // color is the one each task shows (§4.4: its own, else inherited).
         const tasks = [
-            { ...task('p1', 'Webshop'), hex_color: '#3357ff', children_ids: ['a'] },
-            { ...task('a', 'Design Schema'), parent_id: 'p1', ancestor_ids: ['p1'] },
-            task('b', 'Old One', true),
+            { ...task('p1', 'Webshop'), hex_color: '#3357ff', children_ids: ['a', 'c'] },
+            { ...task('a', 'Design Schema'), parent_id: 'p1', ancestor_ids: ['p1'], hex_color: '#3357ff' },
+            { ...task('c', 'Payments'), parent_id: 'p1', ancestor_ids: ['p1'], hex_color: '#ca5551' },
+            { ...task('b', 'Old One', true), hex_color: '#9f7100' },
         ];
 
         const { nodes } = buildFlowGraph(tasks, []);
@@ -82,16 +84,18 @@ describe('buildFlowGraph', () => {
         const byId = Object.fromEntries(nodes.map(n => [n.id, n.data]));
         expect(byId.a.header).toBe('Design Schema');
         expect(byId.a.durationLabel).toBe('1h');
-        expect(byId.a.projectColor).toBe('#3357ff');
+        expect(byId.a.color).toBe('#3357ff');
+        expect(byId.c.color).toBe('#ca5551'); // its own color, not the project's
         expect(byId.a.projectName).toBe('Webshop');
         expect(byId.p1.projectName).toBe('Webshop'); // a project is its own project
         expect(byId.a.isDone).toBe(false);
         expect(byId.b.isDone).toBe(true);
-        expect(byId.b.projectColor).toBeNull(); // a single top-level step has no project bar
+        expect(byId.b.color).toBe('#9f7100'); // a single top-level step: its automatic color
+        expect(byId.b.projectName).toBeNull();
     });
 
     it('tolerates tasks without tree fields instead of crashing', () => {
         const { nodes } = buildFlowGraph([{ ...task('a', 'A'), ancestor_ids: undefined } as unknown as Task], []);
-        expect(nodes[0].data.projectColor).toBeNull();
+        expect(nodes[0].data.color).toBeNull();
     });
 });

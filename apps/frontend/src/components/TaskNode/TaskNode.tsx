@@ -8,7 +8,8 @@ import { NODE_HEIGHT, NODE_WIDTH } from '../../utils/dependencyGraph.ts';
 export interface TaskNodeCardProps {
     header: string;
     durationLabel: string;
-    projectColor: string | null;
+    /** The color the task shows (§4.4). */
+    color: string | null;
     projectName: string | null;
     isDone: boolean;
     inCycle?: boolean;
@@ -17,7 +18,7 @@ export interface TaskNodeCardProps {
 /** Pure presentational card — rendered inside the flow node and unit-tested
  *  standalone (React Flow context not required). */
 export function TaskNodeCard({
-    header, durationLabel, projectColor, projectName, isDone, inCycle = false,
+    header, durationLabel, color, projectName, isDone, inCycle = false,
 }: TaskNodeCardProps) {
     return (
         <Box
@@ -38,11 +39,11 @@ export function TaskNodeCard({
         >
             <Tooltip title={projectName ?? 'No project'}>
                 <Box
-                    data-testid="project-color-bar"
+                    data-testid="task-color-bar"
                     sx={{
                         width: 6,
                         flexShrink: 0,
-                        backgroundColor: projectColor ?? '#b0b0b0',
+                        backgroundColor: color ?? '#b0b0b0',
                     }}
                 />
             </Tooltip>

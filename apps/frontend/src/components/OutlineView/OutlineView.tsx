@@ -853,9 +853,14 @@ function OutlineItemRow({
                     </Tooltip>
                 )}
             </Box>
-            {item.kind === 'task' && item.depth === 0 && !sortMode && (
-                <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: task.hex_color ?? 'text.disabled', flexShrink: 0 }} />
-            )}
+            {/* The color the task shows (§4.4); a Rest shows its parent's. */}
+            <Box data-testid="task-color-dot" aria-hidden
+                style={task.hex_color ? { backgroundColor: task.hex_color } : undefined}
+                sx={{
+                    width: 10, height: 10, borderRadius: '50%', flexShrink: 0, bgcolor: 'text.disabled',
+                    opacity: item.kind === 'rest' ? 0.6 : 1,
+                }} />
+
             <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                 {editing?.field === 'header' ? (
                     <TextField size="small" fullWidth autoFocus value={editing.text} error={Boolean(editing.error)}

@@ -11,6 +11,8 @@ export const treeDefaults = {
     is_estimated: true, parts_total: null, rest: null, over_budget: false,
     completion_estimate: null, completion_first_estimate: null, completion_time_spent: null,
     completion_subtree_time_spent: null, completion_dropped_rest: null,
+    // Colors (§4.4): nothing chosen, nothing inherited.
+    own_hex_color: null, inherited_hex_color: null,
 } satisfies Partial<Task>;
 
 export const makeTask = (id: string, over: Partial<Task> = {}): Task => ({

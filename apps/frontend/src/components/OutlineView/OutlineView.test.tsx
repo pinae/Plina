@@ -24,6 +24,9 @@ let autoCompleted: { id: string; header: string }[] = [];
 function withTree(list: Task[]): Task[] {
     const byId = new Map(list.map(t => [t.id, t]));
     const ancestors = (t: Task): string[] => (t.parent_id ? [...ancestors(byId.get(t.parent_id)!), t.parent_id] : []);
+    // §4.4: its own color, else the parent's; a project's hex_color is its automatic one.
+    const shown = (t: Task): string | null =>
+        t.own_hex_color ?? (t.parent_id ? shown(byId.get(t.parent_id)!) : t.hex_color);
     return list.map(t => {
         const children = list.filter(c => c.parent_id === t.id).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         const estimate = parseDurationMinutes(t.duration) ?? 60;
@@ -34,6 +37,7 @@ function withTree(list: Task[]): Task[] {
             parts_total: children.length ? minutesToDurationString(parts) : null,
             rest: children.length ? minutesToDurationString(Math.max(0, estimate - parts)) : null,
             over_budget: children.length > 0 && parts > estimate,
+            hex_color: shown(t),
         };
     });
 }
@@ -129,6 +133,22 @@ const select = async (name: string) => {
     for (let i = current; i > target; i--) press('ArrowUp');
     expect(row(name)).toHaveAttribute('aria-selected', 'true');
 };
+
+describe('task colors (§4.4)', () => {
+    const dot = (name: string) => within(row(name)).getByTestId('task-color-dot');
+
+    it('shows a dot in the color each row shows: own, else inherited from the parent', async () => {
+        tasks = tasks.map(t => (t.id === 'fw' ? { ...t, own_hex_color: '#25984d' } : t));
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(dot('T250')).toHaveStyle({ backgroundColor: '#e91e63' });
+        expect(dot('Hardware Design')).toHaveStyle({ backgroundColor: '#e91e63' });
+        expect(dot('CAD')).toHaveStyle({ backgroundColor: '#e91e63' });
+        expect(dot('Firmware')).toHaveStyle({ backgroundColor: '#25984d' });
+        // A Rest is planned as its parent and shows the parent's color.
+        expect(dot('Rest of Hardware Design')).toHaveStyle({ backgroundColor: '#e91e63' });
+    });
+});
 
 describe('one tree (T-3)', () => {
     it('shows every project, the active project\'s top-level task first, the active node marked', async () => {
