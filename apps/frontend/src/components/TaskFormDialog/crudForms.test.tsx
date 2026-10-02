@@ -190,6 +190,39 @@ describe('BucketTypeFormDialog recurrence preview', () => {
     });
 });
 
+describe('BucketTypeFormDialog colors (§4.4)', () => {
+    it('creates a bucket type with a chosen color', async () => {
+        render(<BucketTypeFormDialog open onClose={() => { }} />, { wrapper });
+        fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Mornings' } });
+        fireEvent.change(screen.getByLabelText(/recurrence/i), { target: { value: 'every weekday at 09:00' } });
+        expect(screen.getByRole('button', { name: /automatic/i })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByText(/unlike the other time buckets/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Blue' }));
+        fireEvent.click(screen.getByRole('button', { name: /create/i }));
+        await waitFor(() => expect(created.buckettypes).toHaveLength(1));
+        expect(created.buckettypes[0]).toMatchObject({ own_hex_color: '#477ed8' });
+    });
+
+    it('previews an existing type\'s automatic color and goes back to it', async () => {
+        const patches: unknown[] = [];
+        server.use(http.patch(`${API}/buckettypes/7/`, async ({ request }) => {
+            patches.push(await request.json());
+            return HttpResponse.json({ id: 7 });
+        }));
+        const mornings = {
+            id: 7, name: 'Mornings', start_times: 'every weekday at 09:00', duration: '04:00:00', tags: [],
+            hex_color: '#3357ff', own_hex_color: '#3357ff', auto_hex_color: '#299fcd',
+        };
+        render(<BucketTypeFormDialog open onClose={() => { }} bucketType={mornings} />, { wrapper });
+        expect(screen.getByTestId('custom-swatch')).toHaveStyle({ backgroundColor: '#3357ff' });
+        expect(screen.getByTestId('default-swatch')).toHaveStyle({ backgroundColor: '#299fcd' });
+        fireEvent.click(screen.getByRole('button', { name: /automatic/i }));
+        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({ own_hex_color: null });
+    });
+});
+
 describe('TaskFormDialog', () => {
     it('reveals the start field with the appointment toggle and posts it', async () => {
         render(<TaskFormDialog open onClose={() => { }} />, { wrapper });

@@ -90,6 +90,8 @@ export interface BucketTypeWrite {
     start_times: string;
     duration: string;
     tag_ids?: string[];
+    /** The chosen color; null = automatic (§4.4). */
+    own_hex_color?: string | null;
 }
 
 export interface RecurrencePreview {
@@ -102,7 +104,12 @@ export interface TimeBucketType {
     start_times: string;
     duration: string;
     tags: Tag[];
+    /** The color its buckets show: the chosen one, else the automatic one. */
     hex_color: string | null;
+    /** The chosen color; null = automatic (§4.4). */
+    own_hex_color: string | null;
+    /** Its automatic color, unlike the other bucket types'. */
+    auto_hex_color: string | null;
 }
 
 export interface TimeBucket {

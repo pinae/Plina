@@ -302,7 +302,7 @@ describe('TaskFormDialog — colors (§4.4)', () => {
     it('shows the parent\'s color for a subtask and saves a chosen one', async () => {
         useTree();
         render(<TaskFormDialog open onClose={() => { }} task={schema} />, { wrapper });
-        await waitFor(() => expect(screen.getByTestId('inherited-swatch')).toHaveStyle({ backgroundColor: '#8489da' }));
+        await waitFor(() => expect(screen.getByTestId('default-swatch')).toHaveStyle({ backgroundColor: '#8489da' }));
         expect(screen.getByRole('button', { name: /from parent/i })).toHaveAttribute('aria-pressed', 'true');
 
         fireEvent.click(screen.getByRole('button', { name: 'Green' }));
@@ -316,7 +316,7 @@ describe('TaskFormDialog — colors (§4.4)', () => {
         render(<TaskFormDialog open onClose={() => { }} task={blog} />, { wrapper });
         expect(screen.getByRole('button', { name: 'Red' })).toHaveAttribute('aria-pressed', 'true');
         // Previews the project's automatic color, not the chosen one.
-        expect(screen.getByTestId('inherited-swatch')).toHaveStyle({ backgroundColor: '#9f7100' });
+        expect(screen.getByTestId('default-swatch')).toHaveStyle({ backgroundColor: '#9f7100' });
 
         fireEvent.click(screen.getByRole('button', { name: /automatic/i }));
         save();
@@ -330,7 +330,7 @@ describe('TaskFormDialog — colors (§4.4)', () => {
         await waitFor(() => expect(screen.getByRole('combobox', { name: /parent/i })).toHaveValue('Webshop'));
         fireEvent.mouseDown(screen.getByRole('combobox', { name: /parent/i }));
         fireEvent.click(await screen.findByRole('option', { name: 'Blog' }));
-        expect(screen.getByTestId('inherited-swatch')).toHaveStyle({ backgroundColor: '#ca5551' });
+        expect(screen.getByTestId('default-swatch')).toHaveStyle({ backgroundColor: '#ca5551' });
     });
 
     it('counts a changed color as an unsaved change', async () => {

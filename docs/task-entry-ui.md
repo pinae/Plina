@@ -272,6 +272,14 @@ view's cards, as a dot on every row of the Tasks tab and on the dependency
 editor's nodes. Before, every task got the same teal by default, so nothing
 inherited; migration 0017 turned that default into "no color of its own".
 
+**Time bucket colors work the same way** (2026-10-02): a bucket type shows
+its chosen color, else an automatic one, stored once and as different as
+possible from the colors the other bucket types show (bucket colors are
+compared with each other, not with task colors: buckets have their own
+column in the Week view). Every bucket shows its type's color. The bucket
+type form has the same picker ("Automatic", swatches, "Custom…");
+migration 0018 turned the old teal default into "Automatic".
+
 ### 4.5 The parent after splitting
 
 - The parent is no longer scheduled as one block; its descendants and (if

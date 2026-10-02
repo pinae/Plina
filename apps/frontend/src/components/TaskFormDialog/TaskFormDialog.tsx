@@ -12,7 +12,7 @@ import { useCreateTask, useSettings, useTags, useTasks, useUpdateTask } from '..
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
 import { inheritedColorFor } from '../../utils/taskColors.ts';
-import { TaskColorPicker } from '../TaskColorPicker/TaskColorPicker.tsx';
+import { ColorPicker } from '../ColorPicker/ColorPicker.tsx';
 import { formatDuration, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import {
     formatHoursInput, mapServerErrors, parseDurationInput, validateTaskForm,
@@ -389,9 +389,9 @@ function TaskForm({
                             sx={parentFeedback ? invalidSx(attempts) : undefined} />
                     )}
                 />
-                <TaskColorPicker
-                    value={ownColor} topLevel={!parentId} onChange={setOwnColor}
-                    inheritedColor={inheritedColorFor(task, parentId, taskList)}
+                <ColorPicker
+                    value={ownColor} automatic={!parentId} onChange={setOwnColor}
+                    defaultColor={inheritedColorFor(task, parentId, taskList)}
                 />
                 <FormControlLabel
                     control={

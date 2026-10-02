@@ -119,6 +119,7 @@ represent the scheduling domain:
 * TimeBucketType: A recurring template for available time.
   * It defines a rule for when a bucket occurs (e.g., "Every weekday at 
     09:00"), its duration (e.g., 4 hours), and its accepted tags.
+  * Its color is chosen, or else automatic: unlike the other bucket types'.
 
 * TimeBucket: A concrete, instantiated block of time in the calendar, 
   generated from a TimeBucketType. These are the "bins" into which the 

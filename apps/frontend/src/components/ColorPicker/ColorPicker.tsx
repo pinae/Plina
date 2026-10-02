@@ -2,14 +2,19 @@ import { Box, Button, ButtonBase, FormControl, FormHelperText, FormLabel } from 
 
 import { TASK_COLOR_PALETTE } from '../../utils/taskColors.ts';
 
-interface TaskColorPickerProps {
-    /** The chosen color; null = none (inherit, or automatic for a project). */
+interface ColorPickerProps {
+    /** The chosen color; null = none (the parent's, or the automatic one). */
     value: string | null;
-    /** What the task shows without a chosen color; null = not known yet (a
-     *  new project gets its automatic color when saved). */
-    inheritedColor: string | null;
-    /** Projects (top-level tasks) get an automatic color instead of inheriting. */
-    topLevel: boolean;
+    /** What is shown without a chosen color; null = not known yet (an
+     *  automatic color is assigned when saving). */
+    defaultColor: string | null;
+    /** Without a chosen color: an automatic color (projects, time buckets)
+     *  instead of the parent's (subtasks). */
+    automatic: boolean;
+    /** Whose colors the automatic one differs from, for the hint. */
+    others?: string;
+    /** The hint while a color is chosen. */
+    chosenHint?: string;
     onChange: (color: string | null) => void;
 }
 
@@ -30,15 +35,19 @@ function Swatch({ color, testId }: { color: string | null; testId?: string }) {
 }
 
 /**
- * The task's color (§4.4): "From parent" (a project: "Automatic"), a palette
- * of swatches that keep white text readable, or any custom color.
+ * A color (§4.4): "From parent" (subtasks) or "Automatic" (projects, time
+ * buckets), a palette of swatches that keep white text readable, or any
+ * custom color.
  */
-export function TaskColorPicker({ value, inheritedColor, topLevel, onChange }: TaskColorPickerProps) {
+export function ColorPicker({
+    value, defaultColor, automatic, others = 'projects',
+    chosenHint = 'Subtasks without a color of their own show it too.', onChange,
+}: ColorPickerProps) {
     const custom = value !== null && !TASK_COLOR_PALETTE.some(swatch => swatch.hex === value);
-    const helper = value !== null ? 'Subtasks without a color of their own show it too.'
-        : !topLevel ? 'Same as its parent.'
-            : inheritedColor ? 'A color unlike the other projects’, picked automatically.'
-                : 'A color unlike the other projects’ is picked when you save.';
+    const helper = value !== null ? chosenHint
+        : !automatic ? 'Same as its parent.'
+            : defaultColor ? `A color unlike the other ${others}’, picked automatically.`
+                : `A color unlike the other ${others}’ is picked when you save.`;
     return (
         <FormControl component="fieldset">
             <FormLabel component="legend" sx={{ mb: 1 }}>Color</FormLabel>
@@ -46,10 +55,10 @@ export function TaskColorPicker({ value, inheritedColor, topLevel, onChange }: T
                 <Button
                     size="small" aria-pressed={value === null}
                     variant={value === null ? 'contained' : 'outlined'}
-                    startIcon={<Swatch color={inheritedColor} testId="inherited-swatch" />}
+                    startIcon={<Swatch color={defaultColor} testId="default-swatch" />}
                     onClick={() => onChange(null)}
                 >
-                    {topLevel ? 'Automatic' : 'From parent'}
+                    {automatic ? 'Automatic' : 'From parent'}
                 </Button>
                 {TASK_COLOR_PALETTE.map(({ name, hex }) => (
                     <ButtonBase
@@ -72,7 +81,7 @@ export function TaskColorPicker({ value, inheritedColor, topLevel, onChange }: T
                     Custom…
                     <Box
                         component="input" type="color" aria-label="Custom color"
-                        value={value ?? inheritedColor ?? '#539dad'}
+                        value={value ?? defaultColor ?? '#539dad'}
                         onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
                         sx={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', p: 0, border: 0 }}
                     />

@@ -8,11 +8,11 @@ const sampleBucketTypes: TimeBucketType[] = [
         id: 1, name: 'Morning Focus', start_times: 'every weekday at 09:00',
         duration: '04:00:00',
         tags: [{ id: 'tag-1', name: 'deep-work', hex_color: '#3f51b5' }],
-        hex_color: '#3f51b5',
+        hex_color: '#3f51b5', own_hex_color: '#3f51b5', auto_hex_color: '#299fcd',
     },
     {
         id: 2, name: 'Evening Errands', start_times: 'every day at 18:00',
-        duration: '01:30:00', tags: [], hex_color: null,
+        duration: '01:30:00', tags: [], hex_color: '#af8e2a', own_hex_color: null, auto_hex_color: '#af8e2a',
     },
 ];
 
