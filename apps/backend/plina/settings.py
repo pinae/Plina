@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 
+from plina.env import origins_from_env
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -127,9 +129,11 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOWED_ORIGINS = [
+# Pages that may call the API: the Vite dev server unless the environment
+# variable CORS_ALLOWED_ORIGINS lists others, comma-separated (README).
+CORS_ALLOWED_ORIGINS = origins_from_env("CORS_ALLOWED_ORIGINS", default=[
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-]
+])
 PLANNING_HORIZON_DAYS = 60  # planning window for generated buckets (A9); tune freely
 MAX_PLAN_ALTERNATIVES = 4  # chooser cap (A11); expected to be tuned after real-world use

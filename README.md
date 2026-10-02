@@ -246,12 +246,22 @@ bundle on `yarn build`, so restart or rebuild after changing it. The tests
 always use the default (pinned in `vite.config.ts`). A backend on another
 host must list that host in Django's `ALLOWED_HOSTS`.
 
-The frontend's port is fixed: the backend accepts browser requests only from
-`http://localhost:5173` and `http://127.0.0.1:5173` (`CORS_ALLOWED_ORIGINS`
-in `apps/backend/plina/settings.py`). If port 5173 is taken, Vite moves to
-the next free port and every API call fails with a CORS error; free the
-port, or start Vite with `yarn run dev --strictPort` to get an error
-instead.
+The backend accepts browser requests only from the origins in the
+environment variable `CORS_ALLOWED_ORIGINS` (comma-separated
+`scheme://host:port`), by default the Vite dev server:
+`http://localhost:5173,http://127.0.0.1:5173`. A list replaces the default,
+so name both spellings of the host if you open the page with both; an empty
+value allows none (enough for a frontend served from the backend's own
+origin, which needs no CORS). A typo such as a missing `http://` keeps the server from starting;
+it prints a `corsheaders` error instead. For the frontend on port 5174:
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174 \
+  uv run python manage.py runserver    # in apps/backend
+yarn run dev --port 5174               # in apps/frontend
+```
+If the frontend's port is taken, Vite moves to the next free one and every
+API call fails with a CORS error; start Vite with `--strictPort` to get an
+error instead.
 
 ## Testing
 
