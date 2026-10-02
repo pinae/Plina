@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { WeekView } from './WeekView.tsx';
 import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
@@ -109,5 +109,24 @@ describe('WeekView', () => {
         fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
         fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
         expect(height()).toBe(fit);
+    });
+
+    it('shows a time scale left of Monday whose labels get denser when zoomed in', () => {
+        render(<WeekView {...defaultProps} />);
+        const scale = screen.getByTestId('time-scale');
+        const grid = screen.getByTestId('week-grid');
+        expect(scale.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        const count = () => within(scale).getAllByTestId('time-scale-label').length;
+        const before = count();
+
+        for (let i = 0; i < 6; i++) fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100 });
+        expect(count()).toBeGreaterThan(before);
+    });
+
+    it('scrolls the day headers sideways together with the grid and the time scale', () => {
+        render(<WeekView {...defaultProps} />);
+        const scroll = screen.getByTestId('week-scroll');
+        expect(within(scroll).getByText('12')).toBeInTheDocument(); // Monday's date
+        expect(within(scroll).getByTestId('time-scale-corner')).toBeInTheDocument();
     });
 });

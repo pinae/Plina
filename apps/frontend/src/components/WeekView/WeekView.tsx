@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { DayColumn, BUCKET_COLUMN_WIDTH } from '../DayColumn/DayColumn.tsx';
+import { TimeScale, TIME_SCALE_WIDTH } from '../TimeScale/TimeScale.tsx';
 import type { ViewTask, TaskActions, ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { splitTaskAcrossDays } from '../../utils/taskSplitter.ts';
 import type { BucketZone, DayZone } from '../../utils/planToWeek.ts';
@@ -28,6 +29,11 @@ const addDays = (date: Date, days: number) => {
 const ZOOM_STEP = 1.15;
 const MAX_ZOOM = 6;
 const FALLBACK_HEIGHT = 720;
+// Below this width the week scrolls sideways.  Header and grid rows share it,
+// so their columns line up; the time scale takes its width from the days, so
+// the week needs no more room than before it had one.
+const ROW_MIN_WIDTH = 1400;
+const DAY_MIN_WIDTH = (ROW_MIN_WIDTH - TIME_SCALE_WIDTH) / 7;
 
 interface WeekViewProps {
     tasks: ViewTask[];
@@ -57,18 +63,24 @@ export const WeekView: React.FC<WeekViewProps> = ({
     const [zoom, setZoom] = useState(1);
     const zoomRef = useRef(1);
     const gridRef = useRef<HTMLDivElement>(null);
+    // The day headers stick to the top of the scroll area.
+    const headerRef = useRef<HTMLDivElement>(null);
 
     const columnHeight = Math.round(fitHeight * zoom);
 
-    // Measure the scroll viewport so the default zoom shows the full day.
+    // Measure the scroll viewport below the day headers, so the default zoom
+    // shows the full day.
     useLayoutEffect(() => {
         const measure = () => {
-            const height = scrollRef.current?.offsetHeight;
-            if (height && height > 0) setFitHeight(height);
+            const scroll = scrollRef.current;
+            if (!scroll) return;
+            const height = scroll.clientHeight - (headerRef.current?.offsetHeight ?? 0);
+            if (height > 0) setFitHeight(height);
         };
         measure();
         const observer = new ResizeObserver(measure);
         if (scrollRef.current) observer.observe(scrollRef.current);
+        if (headerRef.current) observer.observe(headerRef.current);
         return () => observer.disconnect();
     }, []);
 
@@ -86,10 +98,13 @@ export const WeekView: React.FC<WeekViewProps> = ({
             if (next === prev) return;
             zoomRef.current = next;
             setZoom(next);
-            // Keep the time under the cursor stationary while zooming.
+            // Keep the time under the cursor stationary while zooming (the
+            // grid starts below the sticky day headers).
             const rect = container.getBoundingClientRect();
             const pointerY = event.clientY - rect.top;
-            const newScrollTop = (container.scrollTop + pointerY) * (next / prev) - pointerY;
+            const headerHeight = headerRef.current?.offsetHeight ?? 0;
+            const gridY = container.scrollTop + pointerY - headerHeight;
+            const newScrollTop = gridY * (next / prev) - pointerY + headerHeight;
             if (typeof requestAnimationFrame === 'function') {
                 requestAnimationFrame(() => { container.scrollTop = newScrollTop; });
             } else {
@@ -157,86 +172,99 @@ export const WeekView: React.FC<WeekViewProps> = ({
                 <Button onClick={handleNextWeek} variant="contained" sx={{ minWidth: '40px' }}>&gt;</Button>
             </Box>
 
-            {/* Days Header Row (outside the scroll area, so it stays visible) */}
-            <Box sx={{ display: 'flex', width: '100%', borderBottom: '1px solid #333', backgroundColor: '#1e1e1e', zIndex: 10, flexShrink: 0 }}>
-                {days.map((day, index) => (
-                    <Box key={index} sx={{ flex: 1, minWidth: '200px', p: 1, textAlign: 'center', borderRight: index < 6 ? '1px solid #333' : 'none' }}>
-                        <Typography variant="subtitle2" sx={{ color: '#aaa', fontWeight: 'bold' }}>
-                            {day.toLocaleDateString('de-DE', { weekday: 'short' }).toUpperCase()}
-                        </Typography>
-                        <Typography variant="h5" sx={{ fontWeight: 'normal' }}>
-                            {day.getDate().toString().padStart(2, '0')}
-                        </Typography>
+            {/* Week (scrollable; wheel zooms) */}
+            <Box ref={scrollRef} data-testid="week-scroll" sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                {/* Days header row: sticks to the top and scrolls sideways
+                    with the grid, so the headers stay above their columns. */}
+                <Box ref={headerRef} sx={{
+                    display: 'flex', minWidth: ROW_MIN_WIDTH, position: 'sticky', top: 0, zIndex: 3,
+                    borderBottom: '1px solid #333', backgroundColor: '#1e1e1e',
+                }}>
+                    <Box data-testid="time-scale-corner" sx={{
+                        position: 'sticky', left: 0, zIndex: 1, width: TIME_SCALE_WIDTH, flexShrink: 0,
+                        backgroundColor: '#1e1e1e', borderRight: '1px solid #333',
+                    }} />
+                    {days.map((day, index) => (
+                        <Box key={index} sx={{ flex: 1, minWidth: DAY_MIN_WIDTH, p: 1, textAlign: 'center', borderRight: index < 6 ? '1px solid #333' : 'none' }}>
+                            <Typography variant="subtitle2" sx={{ color: '#aaa', fontWeight: 'bold' }}>
+                                {day.toLocaleDateString('de-DE', { weekday: 'short' }).toUpperCase()}
+                            </Typography>
+                            <Typography variant="h5" sx={{ fontWeight: 'normal' }}>
+                                {day.getDate().toString().padStart(2, '0')}
+                            </Typography>
+                        </Box>
+                    ))}
+                </Box>
+
+                <Box sx={{ display: 'flex', minWidth: ROW_MIN_WIDTH }}>
+                    <TimeScale columnHeight={columnHeight} />
+                    {/* The grid isolates its layers, so cards never paint over the
+                        sticky time scale or headers. */}
+                    <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight} sx={{ position: 'relative', display: 'flex', flex: 1, height: columnHeight, isolation: 'isolate' }}>
+                        {/* A moved appointment is rendered as a floating card (same
+                            colour + size, not a ghost) that follows the pointer to
+                            the target day + time so it can be placed precisely. */}
+                        {activeDrag && activeDrag.mode === 'move' && (() => {
+                            const index = days.findIndex(day => sameDay(day, activeDrag.start));
+                            if (index < 0) return null;
+                            const startMin = activeDrag.start.getHours() * 60 + activeDrag.start.getMinutes();
+                            return (
+                                <Box
+                                    data-testid="drag-layer"
+                                    sx={{
+                                        position: 'absolute',
+                                        // Stay inside the task column (skip the bucket column),
+                                        // like a real appointment card.
+                                        left: `calc(${(index * 100) / 7}% + ${BUCKET_COLUMN_WIDTH}px)`,
+                                        width: `calc(${100 / 7}% - ${BUCKET_COLUMN_WIDTH}px)`,
+                                        top: `${minutesToPixels(startMin, columnHeight)}px`,
+                                        height: `${minutesToPixels(activeDrag.durationMinutes, columnHeight)}px`,
+                                        backgroundColor: activeDrag.color,
+                                        border: '1px solid rgba(255, 255, 255, 0.6)',
+                                        borderRadius: '4px',
+                                        boxSizing: 'border-box',
+                                        pointerEvents: 'none',
+                                        zIndex: 40,
+                                        overflow: 'hidden',
+                                        boxShadow: 3,
+                                    }}
+                                >
+                                    <Typography variant="caption" sx={{ px: 0.5, fontWeight: 'bold' }}>
+                                        {activeDrag.title}
+                                    </Typography>
+                                </Box>
+                            );
+                        })()}
+                        {days.map((day, index) => {
+                            const dayTasks = allSegments.filter(task => {
+                                const taskDate = new Date(task.startTime);
+                                return taskDate.getDate() === day.getDate()
+                                    && taskDate.getMonth() === day.getMonth()
+                                    && taskDate.getFullYear() === day.getFullYear();
+                            });
+
+                            return (
+                                <Box key={index} sx={{ flex: 1, minWidth: DAY_MIN_WIDTH, borderRight: index < 6 ? '1px solid #333' : 'none' }}>
+                                    <DayColumn
+                                        date={day}
+                                        tasks={dayTasks}
+                                        currentTime={new Date()}
+                                        onCreateTask={(start, duration) => onCreateTask?.(start, duration)}
+                                        columnHeight={columnHeight}
+                                        zones={zonesForDay(zones, day)}
+                                        actions={actions}
+                                        onZoneClick={onZoneClick}
+                                        onZoneChange={onZoneChange}
+                                        onTaskEdit={onTaskEdit}
+                                        onTaskChange={onTaskChange}
+                                        resolveDay={resolveDay}
+                                        resolveCursorHalf={resolveCursorHalf}
+                                        onTaskDragChange={onTaskDragChange}
+                                    />
+                                </Box>
+                            );
+                        })}
                     </Box>
-                ))}
-            </Box>
-
-            {/* Week Grid (scrollable; wheel zooms) */}
-            <Box ref={scrollRef} data-testid="week-scroll" sx={{ display: 'flex', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'auto' }}>
-                <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight} sx={{ position: 'relative', display: 'flex', width: '100%', height: columnHeight, flexShrink: 0 }}>
-                    {/* A moved appointment is rendered as a floating card (same
-                        colour + size, not a ghost) that follows the pointer to
-                        the target day + time so it can be placed precisely. */}
-                    {activeDrag && activeDrag.mode === 'move' && (() => {
-                        const index = days.findIndex(day => sameDay(day, activeDrag.start));
-                        if (index < 0) return null;
-                        const startMin = activeDrag.start.getHours() * 60 + activeDrag.start.getMinutes();
-                        return (
-                            <Box
-                                data-testid="drag-layer"
-                                sx={{
-                                    position: 'absolute',
-                                    // Stay inside the task column (skip the bucket column),
-                                    // like a real appointment card.
-                                    left: `calc(${(index * 100) / 7}% + ${BUCKET_COLUMN_WIDTH}px)`,
-                                    width: `calc(${100 / 7}% - ${BUCKET_COLUMN_WIDTH}px)`,
-                                    top: `${minutesToPixels(startMin, columnHeight)}px`,
-                                    height: `${minutesToPixels(activeDrag.durationMinutes, columnHeight)}px`,
-                                    backgroundColor: activeDrag.color,
-                                    border: '1px solid rgba(255, 255, 255, 0.6)',
-                                    borderRadius: '4px',
-                                    boxSizing: 'border-box',
-                                    pointerEvents: 'none',
-                                    zIndex: 40,
-                                    overflow: 'hidden',
-                                    boxShadow: 3,
-                                }}
-                            >
-                                <Typography variant="caption" sx={{ px: 0.5, fontWeight: 'bold' }}>
-                                    {activeDrag.title}
-                                </Typography>
-                            </Box>
-                        );
-                    })()}
-                    {days.map((day, index) => {
-                        const dayTasks = allSegments.filter(task => {
-                            const taskDate = new Date(task.startTime);
-                            return taskDate.getDate() === day.getDate()
-                                && taskDate.getMonth() === day.getMonth()
-                                && taskDate.getFullYear() === day.getFullYear();
-                        });
-
-                        return (
-                            <Box key={index} sx={{ flex: 1, minWidth: '200px', borderRight: index < 6 ? '1px solid #333' : 'none' }}>
-                                <DayColumn
-                                    date={day}
-                                    tasks={dayTasks}
-                                    currentTime={new Date()}
-                                    onCreateTask={(start, duration) => onCreateTask?.(start, duration)}
-                                    columnHeight={columnHeight}
-                                    zones={zonesForDay(zones, day)}
-                                    actions={actions}
-                                    onZoneClick={onZoneClick}
-                                    onZoneChange={onZoneChange}
-                                    onTaskEdit={onTaskEdit}
-                                    onTaskChange={onTaskChange}
-                                    resolveDay={resolveDay}
-                                    resolveCursorHalf={resolveCursorHalf}
-                                    onTaskDragChange={onTaskDragChange}
-                                />
-                            </Box>
-                        );
-                    })}
                 </Box>
             </Box>
         </Box>

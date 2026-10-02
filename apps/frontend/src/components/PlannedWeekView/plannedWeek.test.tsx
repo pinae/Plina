@@ -391,20 +391,21 @@ describe('dragging a task (regression: sticky + fades overlaps)', () => {
         render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
 
         const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
-        // Column fits 1440min in 600px (offsetHeight mock) -> 1px = 2.4min.
-        // Drag the appointment down 150px = 360min: 08:00 -> 14:00, over OtherAuto.
+        // jsdom has no clientHeight, so the column gets the fallback fit height:
+        // 1440min in 720px -> 1px = 2min.
+        // Drag the appointment down 180px = 360min: 08:00 -> 14:00, over OtherAuto.
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
-        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
-        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseMove(window, { clientY: 380, clientX: 400 });
+        fireEvent.mouseUp(window, { clientY: 380, clientX: 400 });
 
         // The placement was sent...
         await waitFor(() => expect(patched).toHaveLength(1));
         expect(patched[0]).toMatchObject({ is_fixed: true });
 
-        // ...the dropped appointment stuck at 14:00 (350px), not snapped back...
+        // ...the dropped appointment stuck at 14:00 (840min = 420px), not snapped back...
         await waitFor(() => {
             const moved = screen.getByText('MoveMe').closest('[data-testid="week-view-task"]')!;
-            expect(moved).toHaveStyle({ top: '350px' });
+            expect(moved).toHaveStyle({ top: '420px' });
         });
         // ...and the overlapped auto task is invalid (faded to 30%).
         const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
@@ -443,7 +444,7 @@ describe('dragging a task (regression: live feedback before release)', () => {
         const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
         // Press and drag the appointment down onto OtherAuto — but do NOT release.
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
-        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseMove(window, { clientY: 380, clientX: 400 });
 
         // Live: the overlapped auto task fades and the drag layer appears, before release.
         await waitFor(() => {
@@ -452,7 +453,7 @@ describe('dragging a task (regression: live feedback before release)', () => {
         });
         expect(screen.getByTestId('drag-layer')).toBeInTheDocument();
 
-        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 }); // release to end the drag
+        fireEvent.mouseUp(window, { clientY: 380, clientX: 400 }); // release to end the drag
         await waitFor(() => expect(patched).toHaveLength(1));
     });
 });
@@ -484,7 +485,7 @@ describe('dragging an appointment over another appointment', () => {
 
         const card = (await screen.findByText('DragAppt')).closest('[data-testid="week-view-task"]')!;
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
-        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 }); // onto 14:00
+        fireEvent.mouseMove(window, { clientY: 380, clientX: 400 }); // onto 14:00
 
         await waitFor(() => {
             const other = screen.getByText('OtherAppt').closest('[data-testid="week-view-task"]')!;
@@ -492,7 +493,7 @@ describe('dragging an appointment over another appointment', () => {
             expect(other).toHaveStyle({ opacity: '1' }); // appointments never fade
         });
 
-        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseUp(window, { clientY: 380, clientX: 400 });
         await waitFor(() => expect(patched).toHaveLength(1));
     });
 });
