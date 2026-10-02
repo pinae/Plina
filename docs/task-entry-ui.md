@@ -90,6 +90,12 @@ Mobile (≤ 600 px)
 
 ⚙ opens the settings page (§6.1).
 
+> **Since 2026-09-30 (docs/tasks-tab.md, T-2):** the tabs are *Tasks ·
+> Week Overview · Calendar Plan · Tags · Time Buckets · Dependencies*
+> (phones: *Tasks · Week · Calendar · Tags · Buckets · Deps*), and the app
+> opens on Tasks. There is no Projects tab any more: the outline is the
+> Tasks tab. On phones ⚙ stays in the header row (UI-9).
+
 ### 3.1 Active project switcher
 
 - A chip with the project color and a **breadcrumb** of the active
@@ -102,7 +108,8 @@ Mobile (≤ 600 px)
   - first entry "No project" (new tasks become top-level);
   - last entry "+ New project ‹typed text›" — creates a top-level task
     and activates it;
-  - footer link "Show all projects" → Projects tab with the *All* filter.
+  - footer link "Show all tasks" → the Tasks tab (until T-2: "Show all
+    projects" → Projects tab with the *All* filter).
 - Stored on the server (`UserSettings.active_task`). Other devices pick up
   a change on window focus and every 30 s (TanStack Query
   `refetchOnWindowFocus` + `refetchInterval`).
@@ -177,7 +184,8 @@ Everything else is the header. Example:
 
 - "Split into subtasks" button in the edit dialog (all devices).
 - Context menu / keyboard **S** on a selected outline row (§5) and on a
-  Week-view card (desktop).
+  Week-view card (desktop). *Implemented so far: S on an outline row; the
+  context menu and S on Week-view cards are not built yet (UI-6).*
 - A task that already has subtasks opens the same editor with them loaded
   ("Edit parts"). Clicking a Rest placeholder in the Week view opens it too.
 
@@ -399,9 +407,9 @@ Global shortcuts are ignored while focus is in an input.
 | P | anywhere | open active project switcher |
 | T | anywhere | toggle tracking of the current / next task |
 | ~~A~~ | outline | ~~toggle *Active project / All projects*~~ — removed with the filter (docs/tasks-tab.md) |
-| S | outline row, Week-view card | split |
+| S | outline row (Week-view card: not built yet, UI-6) | split |
 | 0–9 | outline row | priority |
-| / | anywhere | search tasks |
+| / | anywhere | search tasks — *not built yet* |
 | Esc | popovers, quick add | close |
 
 ---

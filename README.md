@@ -52,9 +52,11 @@ offers fresh choices. Feasibility warnings ("Project X can't finish by ...")
 surface as a banner with remedy shortcuts, and the Week view can jump to
 the first day with free capacity.
 
-Try it: `uv run python manage.py populate_demo_data` sets up the full demo
-(two projects, a dependency diamond, tagged recurring buckets, one fixed
-appointment), then use "Plan my week" in the frontend.
+Try it: `uv run python manage.py populate_demo_data` (in `apps/backend`,
+after `migrate`, see [Development Setup](#development-setup)) sets up the
+full demo (two projects, a dependency diamond, tagged recurring buckets, one
+fixed appointment), then use "Plan my week" in the frontend. The command
+replaces all tasks, tags, time buckets and plans in the database.
 
 ### Working with tasks
 
@@ -193,7 +195,20 @@ architectural guidelines:
    ```bash
    uv sync
    ```
-3. Start the development server:
+3. Create the database (SQLite, `apps/backend/db.sqlite3`); run this again
+   whenever a pull brings new migrations:
+   ```bash
+   uv run python manage.py migrate
+   ```
+   Without it every request, the admin included, fails with
+   `no such table: tasks_usersettings`.
+4. Optional: load the demo data (the story above).
+   **It deletes all tasks (with their tracked time and dependencies), tags,
+   time buckets and plans in the database first.**
+   ```bash
+   uv run python manage.py populate_demo_data
+   ```
+5. Start the development server:
    ```bash
    uv run python manage.py runserver
    ```
@@ -209,11 +224,24 @@ architectural guidelines:
    ```bash
    yarn install
    ```
+   The repository is a yarn workspace (`apps/*`), so this installs the
+   whole workspace and `node_modules` ends up in the repository root.
 3. Start the development server:
    ```bash
    yarn run dev
    ```
    The frontend will be available at `http://localhost:5173`.
+
+### Ports
+
+Both ports are fixed. The frontend calls the backend directly at
+`http://localhost:8000/api/` (`apps/frontend/src/api.ts`; the `/api` proxy
+and `BACKEND_PORT` in `vite.config.ts` are not used), and the backend
+accepts browser requests only from `http://localhost:5173` and
+`http://127.0.0.1:5173` (`CORS_ALLOWED_ORIGINS` in
+`apps/backend/plina/settings.py`). If port 5173 is taken, Vite moves to the
+next free port and every API call fails with a CORS error; free the port,
+or start Vite with `yarn run dev --strictPort` to get an error instead.
 
 ## Testing
 
@@ -226,5 +254,24 @@ uv run python manage.py test tasks
 ### Frontend Tests
 Run Vitest from the `apps/frontend/` directory:
 ```bash
-yarn test
+yarn test --run
 ```
+Without `--run`, Vitest starts in watch mode in an interactive terminal and
+re-runs the affected tests on every change until you quit with `q`.
+
+`yarn test` in the repository root runs both suites once (via Turborepo).
+
+### Frontend checks
+From `apps/frontend/`:
+
+* `yarn build`: the type check (`tsc -b`) plus the production build. This
+  is the type gate; `yarn tsc --noEmit` checks nothing, because the root
+  `tsconfig.json` only references the real configs.
+* `yarn lint`: ESLint.
+* `yarn build-storybook`: builds every story (`yarn storybook` serves them
+  on port 6006).
+
+### End-to-end tests
+There is no automated end-to-end suite yet;
+[docs/e2e-test-cases.md](docs/e2e-test-cases.md) describes the target
+scenarios.

@@ -1,73 +1,37 @@
-# React + TypeScript + Vite
+# Plina frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + TypeScript + Vite, MUI for the components, TanStack Query for the
+server state. Setup, ports and the backend: see the
+[main README](../../README.md#development-setup).
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+| Command | What it does |
+|---|---|
+| `yarn dev` | dev server on http://localhost:5173 (the backend must run on port 8000) |
+| `yarn test --run` | all Vitest tests once (`yarn test` alone starts watch mode) |
+| `yarn build` | type check (`tsc -b`) + production build; the type gate |
+| `yarn lint` | ESLint |
+| `yarn storybook` / `yarn build-storybook` | Storybook on port 6006 / static build |
 
-## React Compiler
+## Layout of `src/`
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `api.ts`: typed axios calls, one per endpoint; `types.ts` mirrors the
+  backend serializers.
+- `queries.tsx`: TanStack Query hooks; every mutation that changes the
+  schedule invalidates the plan.
+- `components/<Name>/`: one folder per component with `<Name>.tsx`, its
+  tests and usually a `<Name>.stories.tsx`.
+- `utils/`: pure logic (task tree, drag and drop, quick-add parser, split
+  math …), unit-tested without React.
+- `hooks/`: shared hooks (shortcuts, tracking, responsive layout …).
+- `testing/`: test helpers (`matchMedia` for phone layouts, task-tree
+  fixtures).
 
-## Expanding the ESLint configuration
+## Tests
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Vitest with jsdom and Testing Library; API calls are mocked with msw.
+`src/setupTests.ts` fails a test on an `act()` warning or on a request
+without an msw handler, and provides the jsdom shims React Flow needs.
+Fixtures encode assumptions about the API: check a new payload against the
+live backend before mocking it (docs/development_plan.md, WP-8 bugfix).

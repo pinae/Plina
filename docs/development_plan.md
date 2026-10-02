@@ -233,7 +233,7 @@ Global warning banner (from plan warnings): "Project X can't finish by …" with
 - **M3 — "The product"**: WP-7…WP-11. Node editor, chooser, live week.
 - **M4 — "Complete app"**: WP-12, WP-13. No admin needed for daily use.
 
-Out of scope for this phase (backlog): multi-user auth & per-user data scoping, notifications/reminders, partial-overlap dependency types, async recalculation jobs, mobile layout, calendar (ICS) import of appointments.
+Out of scope for this phase (backlog): multi-user auth & per-user data scoping, notifications/reminders, partial-overlap dependency types, async recalculation jobs, mobile layout (delivered later: docs/task-entry-ui.md, UI-9), calendar (ICS) import of appointments.
 
 ---
 
