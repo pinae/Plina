@@ -22,8 +22,15 @@ import type {
     UserSettings,
 } from './types';
 
+const DEFAULT_BACKEND_URL = 'http://localhost:8000';
+
+/** The API root of a backend given by its root URL (``VITE_BACKEND_URL``,
+ *  without ``/api``); unset or empty means the local dev server. */
+export const apiBaseUrl = (backendUrl?: string) =>
+    `${backendUrl?.trim().replace(/\/+$/, '') || DEFAULT_BACKEND_URL}/api/`;
+
 const api = axios.create({
-    baseURL: 'http://localhost:8000/api/',
+    baseURL: apiBaseUrl(import.meta.env.VITE_BACKEND_URL),
     headers: {
         'Content-Type': 'application/json',
     },

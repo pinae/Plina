@@ -8,7 +8,7 @@ server state. Setup, ports and the backend: see the
 
 | Command | What it does |
 |---|---|
-| `yarn dev` | dev server on http://localhost:5173 (the backend must run on port 8000) |
+| `yarn dev` | dev server on http://localhost:5173, using the backend at http://localhost:8000 or `VITE_BACKEND_URL` |
 | `yarn test --run` | all Vitest tests once (`yarn test` alone starts watch mode) |
 | `yarn build` | type check (`tsc -b`) + production build; the type gate |
 | `yarn lint` | ESLint |
@@ -16,7 +16,8 @@ server state. Setup, ports and the backend: see the
 
 ## Layout of `src/`
 
-- `api.ts`: typed axios calls, one per endpoint; `types.ts` mirrors the
+- `api.ts`: typed axios calls, one per endpoint, against the backend from
+  `VITE_BACKEND_URL` (typed in `vite-env.d.ts`); `types.ts` mirrors the
   backend serializers.
 - `queries.tsx`: TanStack Query hooks; every mutation that changes the
   schedule invalidates the plan.

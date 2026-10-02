@@ -232,16 +232,26 @@ architectural guidelines:
    ```
    The frontend will be available at `http://localhost:5173`.
 
-### Ports
+### Backend URL and ports
 
-Both ports are fixed. The frontend calls the backend directly at
-`http://localhost:8000/api/` (`apps/frontend/src/api.ts`; the `/api` proxy
-and `BACKEND_PORT` in `vite.config.ts` are not used), and the backend
-accepts browser requests only from `http://localhost:5173` and
-`http://127.0.0.1:5173` (`CORS_ALLOWED_ORIGINS` in
-`apps/backend/plina/settings.py`). If port 5173 is taken, Vite moves to the
-next free port and every API call fails with a CORS error; free the port,
-or start Vite with `yarn run dev --strictPort` to get an error instead.
+The frontend calls the backend directly at `http://localhost:8000`. For
+another backend set `VITE_BACKEND_URL` to its root URL (without `/api`),
+either in the environment or in `apps/frontend/.env.local` (ignored by git):
+```bash
+uv run python manage.py runserver 8001                 # in apps/backend
+VITE_BACKEND_URL=http://localhost:8001 yarn run dev    # in apps/frontend
+```
+Vite reads the variable when the dev server starts and writes it into the
+bundle on `yarn build`, so restart or rebuild after changing it. The tests
+always use the default (pinned in `vite.config.ts`). A backend on another
+host must list that host in Django's `ALLOWED_HOSTS`.
+
+The frontend's port is fixed: the backend accepts browser requests only from
+`http://localhost:5173` and `http://127.0.0.1:5173` (`CORS_ALLOWED_ORIGINS`
+in `apps/backend/plina/settings.py`). If port 5173 is taken, Vite moves to
+the next free port and every API call fails with a CORS error; free the
+port, or start Vite with `yarn run dev --strictPort` to get an error
+instead.
 
 ## Testing
 
