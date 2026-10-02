@@ -1,4 +1,4 @@
-"""Task colors (docs/task-entry-ui.md §4.4).
+"""Task and time bucket colors (docs/task-entry-ui.md §4.4).
 
 A task shows its own color (``Task.color``, chosen by the user), else its
 nearest ancestor's (``TreeIndex.effective_color``).  A top-level task without
@@ -6,6 +6,9 @@ one shows its automatic color (``Task.auto_color``): assigned once, as
 different as possible from the colors the open tasks show, and kept while the
 task is nested (it then follows its new parent) so it comes back when the
 task is a project again.
+
+Bucket types work like projects: the chosen color (``TimeBucketType.color``),
+else an automatic one (``auto_color``) unlike the other bucket types' colors.
 
 Distances are measured in OKLab, where equal distances look about equally
 different (0.02 is roughly the smallest visible difference).
@@ -16,7 +19,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 from django.db.models import F
 
-from tasks.models import Task
+from tasks.models import Task, TimeBucketType
 
 #: Shown when nothing else applies (the app's teal).
 FALLBACK_COLOR = "#539dad"
@@ -129,19 +132,35 @@ def colors_in_use() -> List[str]:
     return used
 
 
+def _assign_auto_colors(missing, used: List[str], rng: Optional[random.Random]) -> int:
+    """One after another, so each also differs from those assigned before it."""
+    for item in missing:
+        color = distinct_color(used, rng)
+        type(item).objects.filter(pk=item.pk).update(auto_color=from_hex(color))
+        used.append(color)
+    return len(missing)
+
+
 def ensure_auto_colors(rng: Optional[random.Random] = None) -> int:
-    """Give every top-level task an automatic color if it has none yet, one
-    after another, so each also differs from those assigned before it.  A
+    """Give every top-level task an automatic color if it has none yet.  A
     project with a chosen color gets one too: it is what "Automatic" shows.
     Called by every path that can make a task top-level.  Returns how many."""
     # Projects that will show it first, so they get the most distinct colors.
     missing = list(Task.objects.filter(parent=None, auto_color=None)
                    .order_by(F("color").asc(nulls_first=True), "order", "header"))
-    if not missing:
-        return 0
-    used = colors_in_use()
-    for task in missing:
-        color = distinct_color(used, rng)
-        Task.objects.filter(id=task.id).update(auto_color=from_hex(color))
-        used.append(color)
-    return len(missing)
+    return _assign_auto_colors(missing, colors_in_use(), rng) if missing else 0
+
+
+def bucket_colors_in_use() -> List[str]:
+    """The colors the bucket types show: chosen, else automatic."""
+    return [to_hex(color if color is not None else auto)
+            for color, auto in TimeBucketType.objects.values_list("color", "auto_color")
+            if color is not None or auto is not None]
+
+
+def ensure_bucket_type_colors(rng: Optional[random.Random] = None) -> int:
+    """Give every bucket type an automatic color if it has none yet, unlike
+    the colors the other bucket types show.  Returns how many."""
+    missing = list(TimeBucketType.objects.filter(auto_color=None)
+                   .order_by(F("color").asc(nulls_first=True), "name", "id"))
+    return _assign_auto_colors(missing, bucket_colors_in_use(), rng) if missing else 0

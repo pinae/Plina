@@ -153,7 +153,10 @@ class TaskDependency(models.Model):
 
 class TimeBucketType(models.Model):
     name = models.CharField(max_length=512)
-    color = models.BinaryField(max_length=3, default=b"\x53\x9d\xad")  # byte order: rgb
+    #: Colors like a project's (§4.4, services.colors): the chosen color
+    #: (None = automatic) and the automatic one, assigned once.
+    color = models.BinaryField(max_length=3, blank=True, null=True, default=None)  # rgb
+    auto_color = models.BinaryField(max_length=3, blank=True, null=True, default=None)
     tags = models.ManyToManyField(to=Tag, related_name="time_bucket_types")
     start_times = models.CharField(max_length=512, default="")
     duration = models.DurationField(default=timedelta(hours=4))
@@ -164,13 +167,14 @@ class TimeBucketType(models.Model):
 
     @property
     def hex_color(self) -> str:
-        return "#" + self.color.hex()
+        """The color its buckets show: the chosen one, else the automatic one."""
+        color = self.color if self.color is not None else self.auto_color
+        return "#" + bytes(color).hex() if color is not None else "#539dad"
 
     @hex_color.setter
-    def set_hex_color(self, new_color: str):
-        if new_color.startswith("#"):
-            new_color = new_color[1:]
-        self.color = bytes.fromhex(new_color)
+    def hex_color(self, new_color: str | None):
+        """Sets the chosen color; None = automatic."""
+        self.color = bytes.fromhex(new_color.lstrip("#")) if new_color else None
 
     def generate_buckets(self, generation_range: timedelta, start: datetime | None = None) -> List[TimeBucket]:
         if start is None:

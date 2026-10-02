@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from tasks.models import (Plan, Tag, Task, TaskDependency,
                           TimeBucket, TimeBucketType, TrackingSession)
-from tasks.services.colors import ensure_auto_colors
+from tasks.services.colors import ensure_auto_colors, ensure_bucket_type_colors
 from tasks.services.tree import TreeIndex, next_sibling_order
 
 
@@ -77,14 +77,15 @@ class Command(BaseCommand):
             project.save(update_fields=["duration"])
 
         # Recurring capacity (per the story: mornings deep, afternoons open,
-        # Tuesday evening for writing).
+        # Tuesday evening for writing). The tagged ones share their tag's
+        # color; the open afternoons get an automatic one.
         mornings = TimeBucketType.objects.create(
             name="Weekday Mornings", start_times="every weekday at 09:00",
             duration=timedelta(hours=4), color=b'\x33\x57\xFF')
         mornings.tags.add(tag_deep)
         TimeBucketType.objects.create(
             name="Weekday Afternoons", start_times="every weekday at 14:00",
-            duration=timedelta(hours=3), color=b'\x53\x9d\xad')
+            duration=timedelta(hours=3))
         writing_evening = TimeBucketType.objects.create(
             name="Tuesday Writing", start_times="every tuesday at 19:00",
             duration=timedelta(hours=2), color=b'\x8e\x44\xad')
@@ -101,6 +102,8 @@ class Command(BaseCommand):
         call.save()
 
         # Every project gets a distinct automatic color; subtasks inherit it.
+        # Bucket types get one too (shown by those without a chosen color).
         ensure_auto_colors()
+        ensure_bucket_type_colors()
 
         self.stdout.write(self.style.SUCCESS('Successfully populated demo data'))
