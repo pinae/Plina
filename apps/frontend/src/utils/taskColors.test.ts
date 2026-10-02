@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { makeTask } from '../testing/treeFixtures.ts';
-import { TASK_COLOR_PALETTE, inheritedColorFor } from './taskColors.ts';
+import { TASK_COLOR_PALETTE, inheritedColorFor, titleColor } from './taskColors.ts';
 
 const project = makeTask('p', { hex_color: '#477ed8', inherited_hex_color: '#477ed8', children_ids: ['c'] });
 const child = makeTask('c', { parent_id: 'p', ancestor_ids: ['p'], hex_color: '#477ed8', inherited_hex_color: '#477ed8' });
@@ -33,5 +33,17 @@ describe('TASK_COLOR_PALETTE', () => {
             expect(name).toBeTruthy();
             expect(hex).toMatch(/^#[0-9a-f]{6}$/);
         }
+    });
+});
+
+describe('titleColor', () => {
+    it('lightens the task color by a quarter towards white, so titles stay readable on dark rows', () => {
+        expect(titleColor('#9f7100')).toBe('#b79540');
+        expect(titleColor('#e91e63')).toBe('#ef568a');
+        expect(titleColor('#ffffff')).toBe('#ffffff');
+    });
+
+    it('is undefined without a color (the theme\'s text color applies)', () => {
+        expect(titleColor(null)).toBeUndefined();
     });
 });

@@ -42,6 +42,10 @@ without leaving it.
 - **Compact rows** (≈ 32 px) with aligned columns: handle, expander, name,
   Σ/estimate, tags, deadline, priority, ▶. The keyboard help line becomes a
   "?" tooltip.
+  *Below 900 px (2026-10-02, task colors):* the name comes first — it is
+  shown in the task's color instead of a dot, the tags are hidden, the
+  estimates are aligned left and the active project is marked by its
+  bold, underlined name (no label); at 690 px the names had no room left.
 - **Edit in place with the full dialog.** Clicking a row (or Enter) opens the
   existing `TaskFormDialog` for that task; closing it returns to the same row,
   so ↑/↓ + Enter walk through the list. "+ New task" opens the dialog for a

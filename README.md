@@ -78,6 +78,8 @@ and Wunderlist:
 * Every task has a color (the dot in front of its row): its own, else its
   parent's; a new project gets an automatic color unlike the other
   projects'. It is chosen in the edit dialog (docs/task-entry-ui.md §4.4).
+  Below 900 px the title itself takes the color and the tags give way, so
+  the title keeps its room.
 * "+ Add task" at the end of every project and quick add in the header
   understand tokens: `Order filament 30m #maker !7 >fri +Blog`.
 * "Sort ▶" walks the inbox of tasks without an estimate.

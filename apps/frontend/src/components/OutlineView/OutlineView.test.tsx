@@ -150,6 +150,40 @@ describe('task colors (§4.4)', () => {
     });
 });
 
+describe('narrow screens (< 900 px, e.g. a 690 px window)', () => {
+    let restore: () => void;
+    afterEach(() => restore());
+
+    it('colors the titles instead of showing dots, hides the tags first and aligns estimates left', async () => {
+        restore = fakeScreen({ width: 690 });
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(within(outline()).queryAllByTestId('task-color-dot')).toHaveLength(0);
+        // T250's color (#e91e63), lightened a quarter towards white; CAD inherits it.
+        expect(within(row('T250')).getByText('T250')).toHaveStyle({ color: '#ef568a' });
+        expect(within(row('CAD')).getByText('CAD')).toHaveStyle({ color: '#ef568a' });
+        expect(within(row('Hardware Design')).queryByText('#maker')).toBeNull();
+        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ textAlign: 'left' });
+    });
+
+    it('marks the active project on phones by a bold, underlined name in its own color', async () => {
+        restore = fakeScreen(PHONE);
+        renderOutline();
+        const name = await within(outline()).findByText('Hardware Design');
+        expect(name).toHaveAttribute('data-active-name', 'true');
+        expect(name).toHaveStyle({ color: '#ef568a', fontWeight: 700, textDecoration: 'underline' });
+    });
+
+    it('keeps dots, tags and right-aligned estimates on wide screens', async () => {
+        restore = () => { };
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(within(row('CAD')).getByTestId('task-color-dot')).toBeInTheDocument();
+        expect(within(row('Hardware Design')).getByText('#maker')).toBeInTheDocument();
+        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ textAlign: 'right' });
+    });
+});
+
 describe('one tree (T-3)', () => {
     it('shows every project, the active project\'s top-level task first, the active node marked', async () => {
         activeId = 'article';

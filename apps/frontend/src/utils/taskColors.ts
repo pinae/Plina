@@ -31,3 +31,12 @@ export function inheritedColorFor(task: Task | undefined, parentId: string | nul
     if (parentId) return tasks.find(t => t.id === parentId)?.hex_color ?? null;
     return task && task.parent_id === null ? task.inherited_hex_color : null;
 }
+
+/** A task color as title text on the dark rows: a quarter towards white, so
+ *  even the darker colors read well (at least 5.5:1 on a row, 3:1 on a
+ *  selected one; untinted 3.6:1 and 2:1); undefined = the theme's text color. */
+export function titleColor(hex: string | null): string | undefined {
+    if (!hex) return undefined;
+    const channels = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    return '#' + channels.map(c => Math.round(c + (255 - c) * 0.25).toString(16).padStart(2, '0')).join('');
+}
