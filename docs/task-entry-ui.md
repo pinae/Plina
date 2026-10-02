@@ -255,9 +255,22 @@ Row editing (keyboard-first, like an outliner):
 | Tags | copied at creation (checkbox in the editor, on by default), editable per task afterwards |
 | Priority | copied at creation (checkbox, on by default) |
 | Deadline | inherited live: effective deadline = earliest of own and all ancestors' deadlines. A child can have an earlier deadline, never a later one (the form rejects it with a message naming the ancestor). |
-| Color | inherited live unless the child sets its own |
+| Color | inherited live unless the child sets its own; a project without a chosen color gets an automatic one (see below) |
 | Time spent on the parent | stays on the parent; it reduces the parent's Rest while there is Rest left (§2) |
 | Dependencies | a parent's predecessors apply to all its descendants; a task depending on the parent waits for all its descendants and its Rest (§10, UI-2) |
+
+**Colors (decided 2026-10-02).** A task shows its own color, else its
+nearest ancestor's; tags don't color tasks (they keep their stripe on the
+Week view's cards). A project (top-level task) without a chosen color gets an
+**automatic color**, as different as possible from the colors the other open
+tasks show (measured in OKLab) and dark enough for white text. It is stored
+when assigned, so it never changes because other tasks change, and it is kept
+while the task is nested (it then follows its new parent) and back when it is
+a project again. The edit dialog offers "From parent" (a project:
+"Automatic"), ten swatches and any custom color. The color shows on the Week
+view's cards, as a dot on every row of the Tasks tab and on the dependency
+editor's nodes. Before, every task got the same teal by default, so nothing
+inherited; migration 0017 turned that default into "no color of its own".
 
 ### 4.5 The parent after splitting
 
@@ -372,6 +385,9 @@ More settings can be added later.
 - The project select becomes a **Parent** field (autocomplete over all
   open tasks, showing their breadcrumb; empty = top-level project).
   Preselected with the active project for new tasks.
+- **Color** (2026-10-02, §4.4): "From parent" (a project: "Automatic"),
+  ten swatches or "Custom…"; the first choice previews the color of the
+  parent chosen in the form.
 - **Duration becomes optional:** empty is valid and shows the helper
   `Empty = your default (1h)`; malformatted values keep their error.
 - For a task with children: the estimate shows `Σ parts 10h / 12h` with

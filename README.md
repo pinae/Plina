@@ -75,6 +75,9 @@ and Wunderlist:
   tasks back into the tree.
 * The priority slider (0–10, coloured by urgency) is set with one click or
   drag; digit keys work too.
+* Every task has a color (the dot in front of its row): its own, else its
+  parent's; a new project gets an automatic color unlike the other
+  projects'. It is chosen in the edit dialog (docs/task-entry-ui.md §4.4).
 * "+ Add task" at the end of every project and quick add in the header
   understand tokens: `Order filament 30m #maker !7 >fri +Blog`.
 * "Sort ▶" walks the inbox of tasks without an estimate.
@@ -98,6 +101,8 @@ represent the scheduling domain:
     * latest_finish_date (hard deadline constraint)
     * priority (soft importance constraint)
     * tags (used for affinity).
+    * color (its own, else inherited from the parent; projects get a
+      distinct automatic one).
   * Tasks form a tree (`parent` + sibling `order`): every top-level task is a
     project, and any task can be split into subtasks. A parent's estimate is
     a budget; what its subtasks do not cover is planned as its "Rest". The
