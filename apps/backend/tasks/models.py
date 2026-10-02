@@ -30,8 +30,8 @@ class OptionallyColored(models.Model):
         return "#" + self.color.hex() if self.color is not None else "#539dad"
 
     @hex_color.setter
-    def set_hex_color(self, new_color: str | None):
-        if type(new_color) is str and re.search(r"^#?[0-9,a-f]{6}$", new_color):
+    def hex_color(self, new_color: str | None):
+        if type(new_color) is str and re.search(r"^#?[0-9a-fA-F]{6}$", new_color):
             if new_color.startswith("#"):
                 new_color = new_color[1:]
             self.color = bytes.fromhex(new_color)
@@ -81,6 +81,11 @@ class Task(OptionallyColored):
                                default=None, on_delete=models.PROTECT)
     #: Position among the siblings (the top-level order is the project order).
     order = models.PositiveIntegerField(default=0)
+    #: Colors (§4.4, services.colors): the chosen color (None = inherit from
+    #: the parent), and the automatic one a top-level task without a chosen
+    #: color shows — assigned once, kept while the task is nested.
+    color = models.BinaryField(max_length=3, blank=True, null=True, default=None)  # rgb
+    auto_color = models.BinaryField(max_length=3, blank=True, null=True, default=None)
     # Completion snapshot (§4.6): estimate vs. reality, kept for analysis.
     completion_estimate = models.DurationField(null=True, blank=True, default=None)
     completion_first_estimate = models.DurationField(null=True, blank=True, default=None)
@@ -94,16 +99,6 @@ class Task(OptionallyColored):
 
     def __str__(self) -> str:
         return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
-
-    def get_color(self) -> bytes:
-        if self.color is not None:
-            return self.color
-        if self.parent is not None:
-            return self.parent.get_color()
-        colored_tags = self.tags.exclude(color=None).all()
-        if colored_tags.count() > 0:
-            return self.mix_colors([tag.color for tag in colored_tags])
-        return b'\x53\x9d\xad'
 
 
 class TaskEstimateChange(models.Model):
@@ -158,7 +153,10 @@ class TaskDependency(models.Model):
 
 class TimeBucketType(models.Model):
     name = models.CharField(max_length=512)
-    color = models.BinaryField(max_length=3, default=b"\x53\x9d\xad")  # byte order: rgb
+    #: Colors like a project's (§4.4, services.colors): the chosen color
+    #: (None = automatic) and the automatic one, assigned once.
+    color = models.BinaryField(max_length=3, blank=True, null=True, default=None)  # rgb
+    auto_color = models.BinaryField(max_length=3, blank=True, null=True, default=None)
     tags = models.ManyToManyField(to=Tag, related_name="time_bucket_types")
     start_times = models.CharField(max_length=512, default="")
     duration = models.DurationField(default=timedelta(hours=4))
@@ -169,13 +167,14 @@ class TimeBucketType(models.Model):
 
     @property
     def hex_color(self) -> str:
-        return "#" + self.color.hex()
+        """The color its buckets show: the chosen one, else the automatic one."""
+        color = self.color if self.color is not None else self.auto_color
+        return "#" + bytes(color).hex() if color is not None else "#539dad"
 
     @hex_color.setter
-    def set_hex_color(self, new_color: str):
-        if new_color.startswith("#"):
-            new_color = new_color[1:]
-        self.color = bytes.fromhex(new_color)
+    def hex_color(self, new_color: str | None):
+        """Sets the chosen color; None = automatic."""
+        self.color = bytes.fromhex(new_color.lstrip("#")) if new_color else None
 
     def generate_buckets(self, generation_range: timedelta, start: datetime | None = None) -> List[TimeBucket]:
         if start is None:

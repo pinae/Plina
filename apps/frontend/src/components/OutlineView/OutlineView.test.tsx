@@ -24,6 +24,9 @@ let autoCompleted: { id: string; header: string }[] = [];
 function withTree(list: Task[]): Task[] {
     const byId = new Map(list.map(t => [t.id, t]));
     const ancestors = (t: Task): string[] => (t.parent_id ? [...ancestors(byId.get(t.parent_id)!), t.parent_id] : []);
+    // §4.4: its own color, else the parent's; a project's hex_color is its automatic one.
+    const shown = (t: Task): string | null =>
+        t.own_hex_color ?? (t.parent_id ? shown(byId.get(t.parent_id)!) : t.hex_color);
     return list.map(t => {
         const children = list.filter(c => c.parent_id === t.id).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         const estimate = parseDurationMinutes(t.duration) ?? 60;
@@ -34,6 +37,7 @@ function withTree(list: Task[]): Task[] {
             parts_total: children.length ? minutesToDurationString(parts) : null,
             rest: children.length ? minutesToDurationString(Math.max(0, estimate - parts)) : null,
             over_budget: children.length > 0 && parts > estimate,
+            hex_color: shown(t),
         };
     });
 }
@@ -129,6 +133,58 @@ const select = async (name: string) => {
     for (let i = current; i > target; i--) press('ArrowUp');
     expect(row(name)).toHaveAttribute('aria-selected', 'true');
 };
+
+describe('task colors (§4.4)', () => {
+    const dot = (name: string) => within(row(name)).getByTestId('task-color-dot');
+
+    it('shows a dot in the color each row shows: own, else inherited from the parent', async () => {
+        tasks = tasks.map(t => (t.id === 'fw' ? { ...t, own_hex_color: '#25984d' } : t));
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(dot('T250')).toHaveStyle({ backgroundColor: '#e91e63' });
+        expect(dot('Hardware Design')).toHaveStyle({ backgroundColor: '#e91e63' });
+        expect(dot('CAD')).toHaveStyle({ backgroundColor: '#e91e63' });
+        expect(dot('Firmware')).toHaveStyle({ backgroundColor: '#25984d' });
+        // A Rest is planned as its parent and shows the parent's color.
+        expect(dot('Rest of Hardware Design')).toHaveStyle({ backgroundColor: '#e91e63' });
+    });
+});
+
+describe('narrow screens (< 900 px, e.g. a 690 px window)', () => {
+    let restore: () => void;
+    afterEach(() => restore());
+
+    it('colors the titles instead of showing dots, hides the tags first and lets titles reach the estimate', async () => {
+        restore = fakeScreen({ width: 690 });
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(within(outline()).queryAllByTestId('task-color-dot')).toHaveLength(0);
+        // T250's color (#e91e63), lightened a quarter towards white; CAD inherits it.
+        expect(within(row('T250')).getByText('T250')).toHaveStyle({ color: '#ef568a' });
+        expect(within(row('CAD')).getByText('CAD')).toHaveStyle({ color: '#ef568a' });
+        expect(within(row('Hardware Design')).queryByText('#maker')).toBeNull();
+        // Like on phones: the estimate column hugs its content, so the title
+        // gets all the room up to it (no fixed 130 px column).
+        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ width: 'auto', textAlign: 'right' });
+    });
+
+    it('marks the active project on phones by a bold, underlined name in its own color', async () => {
+        restore = fakeScreen(PHONE);
+        renderOutline();
+        const name = await within(outline()).findByText('Hardware Design');
+        expect(name).toHaveAttribute('data-active-name', 'true');
+        expect(name).toHaveStyle({ color: '#ef568a', fontWeight: 700, textDecoration: 'underline' });
+    });
+
+    it('keeps dots, tags and the aligned estimate column on wide screens', async () => {
+        restore = () => { };
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(within(row('CAD')).getByTestId('task-color-dot')).toBeInTheDocument();
+        expect(within(row('Hardware Design')).getByText('#maker')).toBeInTheDocument();
+        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ width: '130px', textAlign: 'right' });
+    });
+});
 
 describe('one tree (T-3)', () => {
     it('shows every project, the active project\'s top-level task first, the active node marked', async () => {

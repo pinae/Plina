@@ -18,7 +18,8 @@ export const NODE_HEIGHT = 76;
 export interface TaskNodeData extends Record<string, unknown> {
     header: string;
     durationLabel: string;
-    projectColor: string | null;
+    /** The color the task shows (§4.4): its own, else inherited. */
+    color: string | null;
     projectName: string | null;
     isDone: boolean;
     inCycle?: boolean;
@@ -70,7 +71,7 @@ export function buildFlowGraph(
             data: {
                 header: task.header,
                 durationLabel: formatDuration(task.duration),
-                projectColor: project?.hex_color ?? null,
+                color: task.hex_color ?? null,
                 projectName: project?.header ?? null,
                 isDone: task.is_done,
             },

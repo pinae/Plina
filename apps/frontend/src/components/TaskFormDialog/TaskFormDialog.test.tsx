@@ -275,6 +275,76 @@ describe('TaskFormDialog — the task tree (UI-8)', () => {
     });
 });
 
+describe('TaskFormDialog — colors (§4.4)', () => {
+    const task = (id: string, over: Record<string, unknown> = {}) => ({
+        id, header: id, description: '', start_date: null, duration: '01:00:00',
+        latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null,
+        is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
+        active_tracking_start: null, ...treeDefaults, ...over,
+    });
+    const webshop = task('webshop', { header: 'Webshop', children_ids: ['schema'],
+        hex_color: '#8489da', inherited_hex_color: '#8489da' });
+    const schema = task('schema', { header: 'Design schema', parent_id: 'webshop', ancestor_ids: ['webshop'],
+        hex_color: '#8489da', inherited_hex_color: '#8489da' });
+    const blog = task('blog', { header: 'Blog', hex_color: '#ca5551', own_hex_color: '#ca5551',
+        inherited_hex_color: '#9f7100' });
+    const patches: Record<string, unknown>[] = [];
+    const useTree = () => server.use(
+        http.get(`${API}/tasks/`, () => HttpResponse.json([webshop, schema, blog])),
+        http.patch(`${API}/tasks/:id/`, async ({ request }) => {
+            patches.push(await request.json() as Record<string, unknown>);
+            return HttpResponse.json(schema);
+        }),
+    );
+    afterEach(() => { patches.length = 0; });
+    const save = () => fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    it('shows the parent\'s color for a subtask and saves a chosen one', async () => {
+        useTree();
+        render(<TaskFormDialog open onClose={() => { }} task={schema} />, { wrapper });
+        await waitFor(() => expect(screen.getByTestId('default-swatch')).toHaveStyle({ backgroundColor: '#8489da' }));
+        expect(screen.getByRole('button', { name: /from parent/i })).toHaveAttribute('aria-pressed', 'true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Green' }));
+        save();
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({ own_hex_color: '#25984d' });
+    });
+
+    it('goes back to automatic for a project with a chosen color', async () => {
+        useTree();
+        render(<TaskFormDialog open onClose={() => { }} task={blog} />, { wrapper });
+        expect(screen.getByRole('button', { name: 'Red' })).toHaveAttribute('aria-pressed', 'true');
+        // Previews the project's automatic color, not the chosen one.
+        expect(screen.getByTestId('default-swatch')).toHaveStyle({ backgroundColor: '#9f7100' });
+
+        fireEvent.click(screen.getByRole('button', { name: /automatic/i }));
+        save();
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({ own_hex_color: null });
+    });
+
+    it('previews the color of the parent chosen in the form', async () => {
+        useTree();
+        render(<TaskFormDialog open onClose={() => { }} task={schema} />, { wrapper });
+        await waitFor(() => expect(screen.getByRole('combobox', { name: /parent/i })).toHaveValue('Webshop'));
+        fireEvent.mouseDown(screen.getByRole('combobox', { name: /parent/i }));
+        fireEvent.click(await screen.findByRole('option', { name: 'Blog' }));
+        expect(screen.getByTestId('default-swatch')).toHaveStyle({ backgroundColor: '#ca5551' });
+    });
+
+    it('counts a changed color as an unsaved change', async () => {
+        useTree();
+        const onNavigate = vi.fn();
+        render(<TaskFormDialog open onClose={() => { }} task={schema} onNavigate={onNavigate}
+            canNavigate={{ previous: true, next: true }} />, { wrapper });
+        fireEvent.click(screen.getByRole('button', { name: 'Blue' }));
+        fireEvent.click(screen.getByRole('button', { name: /next task/i }));
+        await waitFor(() => expect(patches).toHaveLength(1)); // saved before switching
+        expect(patches[0]).toMatchObject({ own_hex_color: '#477ed8' });
+    });
+});
+
 describe('TaskFormDialog on a phone (UI-9)', () => {
     it('fills the screen', async () => {
         const restore = fakeScreen(PHONE);

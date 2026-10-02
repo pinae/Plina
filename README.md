@@ -75,6 +75,11 @@ and Wunderlist:
   tasks back into the tree.
 * The priority slider (0–10, coloured by urgency) is set with one click or
   drag; digit keys work too.
+* Every task has a color (the dot in front of its row): its own, else its
+  parent's; a new project gets an automatic color unlike the other
+  projects'. It is chosen in the edit dialog (docs/task-entry-ui.md §4.4).
+  Below 900 px the title itself takes the color and the tags give way, so
+  the title keeps its room.
 * "+ Add task" at the end of every project and quick add in the header
   understand tokens: `Order filament 30m #maker !7 >fri +Blog`.
 * "Sort ▶" walks the inbox of tasks without an estimate.
@@ -98,6 +103,8 @@ represent the scheduling domain:
     * latest_finish_date (hard deadline constraint)
     * priority (soft importance constraint)
     * tags (used for affinity).
+    * color (its own, else inherited from the parent; projects get a
+      distinct automatic one).
   * Tasks form a tree (`parent` + sibling `order`): every top-level task is a
     project, and any task can be split into subtasks. A parent's estimate is
     a budget; what its subtasks do not cover is planned as its "Rest". The
@@ -114,6 +121,7 @@ represent the scheduling domain:
 * TimeBucketType: A recurring template for available time.
   * It defines a rule for when a bucket occurs (e.g., "Every weekday at 
     09:00"), its duration (e.g., 4 hours), and its accepted tags.
+  * Its color is chosen, or else automatic: unlike the other bucket types'.
 
 * TimeBucket: A concrete, instantiated block of time in the calendar, 
   generated from a TimeBucketType. These are the "bins" into which the 

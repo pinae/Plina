@@ -222,7 +222,7 @@ describe('TaskNodeCard cycle state', () => {
     it('is visually flagged when part of a cycle', () => {
         render(
             <TaskNodeCard
-                header="A" durationLabel="1h" projectColor={null}
+                header="A" durationLabel="1h" color={null}
                 projectName={null} isDone={false} inCycle={true}
             />,
         );

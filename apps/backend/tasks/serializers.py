@@ -4,6 +4,7 @@ from rest_framework import serializers
 from datetime import timedelta
 
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, UserSettings
+from .services.colors import ensure_auto_colors, ensure_bucket_type_colors, from_hex, to_hex
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
                                  write_completion_snapshot)
 from .services.tree import (TreeIndex, dependency_cycle, earliest_ancestor_deadline,
@@ -50,7 +51,12 @@ class TaskSerializer(serializers.ModelSerializer):
     tag_ids = serializers.PrimaryKeyRelatedField(
         queryset=Tag.objects.all(), source='tags', many=True, write_only=True, required=False
     )
-    hex_color = serializers.CharField(read_only=True)
+    #: The chosen color (§4.4); null = inherit (a top-level task: automatic).
+    #: Read back with ``hex_color`` (shown) and ``inherited_hex_color``.
+    own_hex_color = serializers.RegexField(
+        HEX_COLOR_PATTERN, required=False, allow_null=True, write_only=True,
+        error_messages={"invalid": "Colors must look like #3357ff."},
+    )
     is_done = serializers.BooleanField(read_only=True)
     active_tracking_start = serializers.SerializerMethodField()
     parent_id = serializers.PrimaryKeyRelatedField(
@@ -85,7 +91,16 @@ class TaskSerializer(serializers.ModelSerializer):
         data['parts_total'] = duration_field.to_representation(parts) if parts is not None else None
         data['rest'] = duration_field.to_representation(rest) if rest is not None else None
         data['over_budget'] = tree.over_budget(task.id)
+        data['own_hex_color'] = to_hex(task.color)
+        data['hex_color'] = tree.effective_color(task.id)
+        data['inherited_hex_color'] = tree.inherited_color(task.id)
         return data
+
+    def _pop_color(self, validated_data):
+        """``own_hex_color`` -> the model's rgb bytes (only when given)."""
+        own = validated_data.pop('own_hex_color', self._UNSET)
+        if own is not self._UNSET:
+            validated_data['color'] = from_hex(own) if own else None
 
     def get_active_tracking_start(self, task):
         session = task.tracking_sessions.filter(end=None).first()
@@ -145,6 +160,7 @@ class TaskSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         validated_data.pop('estimate_reason', None)
+        self._pop_color(validated_data)
         if 'order' not in validated_data:
             parent = validated_data.get('parent')
             validated_data['order'] = next_sibling_order(parent.id if parent else None)
@@ -152,11 +168,13 @@ class TaskSerializer(serializers.ModelSerializer):
         record_estimate_change(task, None, task.duration, 'created')
         if task.completed_at is not None:
             write_completion_snapshot(task)
+        ensure_auto_colors()  # a new project
         return task
 
     @transaction.atomic
     def update(self, instance, validated_data):
         reason = validated_data.pop('estimate_reason', 'edited')
+        self._pop_color(validated_data)
         old_duration = instance.duration
         was_done = instance.completed_at is not None
         if 'parent' in validated_data and 'order' not in validated_data \
@@ -175,13 +193,14 @@ class TaskSerializer(serializers.ModelSerializer):
             clear_completion_snapshot(task)
             if task.parent is not None and task.parent.is_done:
                 reopen(task.parent)  # an open task cannot live in a completed one
+        ensure_auto_colors()  # moved to the top level
         return task
 
     class Meta:
         model = Task
         fields = [
             'id', 'header', 'description', 'start_date', 'duration',
-            'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'hex_color', 'is_fixed',
+            'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'own_hex_color', 'is_fixed',
             'is_appointment', 'completed_at', 'is_done', 'active_tracking_start',
             'parent_id', 'order', 'estimate_reason',
             'completion_estimate', 'completion_first_estimate', 'completion_time_spent',
@@ -299,11 +318,41 @@ class TimeBucketTypeSerializer(serializers.ModelSerializer):
         queryset=Tag.objects.all(), source='tags', many=True,
         write_only=True, required=False,
     )
+    #: The color its buckets show: the chosen one, else the automatic one.
     hex_color = serializers.CharField(read_only=True)
+    #: The chosen color (§4.4); null = automatic (``auto_hex_color``).
+    own_hex_color = serializers.RegexField(
+        HEX_COLOR_PATTERN, required=False, allow_null=True, write_only=True,
+        error_messages={"invalid": "Colors must look like #3357ff."},
+    )
+
+    def to_representation(self, bucket_type):
+        data = super().to_representation(bucket_type)
+        data['own_hex_color'] = to_hex(bucket_type.color)
+        data['auto_hex_color'] = to_hex(bucket_type.auto_color)
+        return data
+
+    def _pop_color(self, validated_data):
+        if 'own_hex_color' in validated_data:
+            own = validated_data.pop('own_hex_color')
+            validated_data['color'] = from_hex(own) if own else None
+
+    def create(self, validated_data):
+        self._pop_color(validated_data)
+        bucket_type = super().create(validated_data)
+        ensure_bucket_type_colors()
+        bucket_type.refresh_from_db(fields=['auto_color'])
+        return bucket_type
+
+    def update(self, instance, validated_data):
+        self._pop_color(validated_data)
+        return super().update(instance, validated_data)
 
     class Meta:
         model = TimeBucketType
-        fields = '__all__'
+        # Explicit: '__all__' leaked the raw rgb bytes as base64.
+        fields = ['id', 'name', 'start_times', 'duration', 'tags', 'tag_ids',
+                  'hex_color', 'own_hex_color']
 
 class TimeBucketSerializer(serializers.ModelSerializer):
     type = TimeBucketTypeSerializer(read_only=True)

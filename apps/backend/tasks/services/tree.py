@@ -4,9 +4,9 @@ Every top-level task is a project; tasks can be split indefinitely via
 ``Task.parent``. This module holds the tree rules:
 
 * ``TreeIndex`` — an in-memory snapshot of the whole tree (one query) that
-  answers structural questions (children, ancestors, descendants) and the
-  budget numbers (Σ parts, Rest, over budget, effective deadline) without
-  per-task queries.
+  answers structural questions (children, ancestors, descendants), the
+  budget numbers (Σ parts, Rest, over budget, effective deadline) and the
+  colors tasks show (§4.4) without per-task queries.
 * validation helpers for re-parenting (no cycles) and deadlines (a child's
   deadline may not be later than an ancestor's);
 * ``delete_task`` with the two explicit modes for a parent's children.
@@ -22,6 +22,7 @@ from django.db import transaction
 from django.db.models import Max
 
 from tasks.models import Task
+from tasks.services.colors import FALLBACK_COLOR, to_hex
 
 #: Fallback estimate for unestimated tasks; the user's setting (UI-3) wins.
 DEFAULT_DURATION = timedelta(hours=1)
@@ -44,13 +45,15 @@ class TreeNode:
     duration: Optional[timedelta]
     latest_finish_date: Optional[datetime]
     time_spent: timedelta
+    color: Optional[bytes] = None
+    auto_color: Optional[bytes] = None
 
 
 class TreeIndex:
     """Read-only snapshot of the task tree."""
 
     FIELDS = ("id", "parent_id", "header", "order", "duration",
-              "latest_finish_date", "time_spent")
+              "latest_finish_date", "time_spent", "color", "auto_color")
 
     def __init__(self, nodes: Iterable[TreeNode], default_duration: timedelta = DEFAULT_DURATION):
         self.nodes: Dict[UUID, TreeNode] = {node.id: node for node in nodes}
@@ -125,6 +128,23 @@ class TreeIndex:
 
     def subtree_time_spent(self, task_id: UUID) -> timedelta:
         return sum((self.nodes[i].time_spent for i in self.descendant_ids(task_id)), timedelta(0))
+
+    # Colors (§4.4, services.colors) -------------------------------------------
+
+    def inherited_color(self, task_id: UUID) -> str:
+        """What the task shows without a color of its own: the nearest
+        ancestor's color, else its project's automatic one."""
+        ancestors = self.ancestor_ids(task_id)
+        for ancestor in reversed(ancestors):
+            if self.nodes[ancestor].color is not None:
+                return to_hex(self.nodes[ancestor].color)
+        root = self.nodes[ancestors[0] if ancestors else task_id]
+        return to_hex(root.auto_color) if root.auto_color is not None else FALLBACK_COLOR
+
+    def effective_color(self, task_id: UUID) -> str:
+        """The color the task shows: its own, else the inherited one."""
+        own = self.nodes[task_id].color
+        return to_hex(own) if own is not None else self.inherited_color(task_id)
 
 
 # Validation -----------------------------------------------------------------

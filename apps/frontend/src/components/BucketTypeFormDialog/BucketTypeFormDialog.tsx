@@ -12,6 +12,7 @@ import {
 } from '../../queries.tsx';
 import type { Tag, TimeBucketType } from '../../types.ts';
 import { parseDurationMinutes } from '../../utils/duration.ts';
+import { ColorPicker } from '../ColorPicker/ColorPicker.tsx';
 
 interface FormDialogProps {
     open: boolean;
@@ -106,6 +107,8 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
         bucketType ? String((parseDurationMinutes(bucketType.duration) ?? 240) / 60) : '4',
     );
     const [tagIds, setTagIds] = useState<string[]>(bucketType?.tags.map(t => t.id) ?? []);
+    // The chosen color (§4.4); null = automatic, unlike the other types'.
+    const [ownColor, setOwnColor] = useState<string | null>(bucketType?.own_hex_color ?? null);
     const [occurrences, setOccurrences] = useState<string[]>([]);
     const [previewError, setPreviewError] = useState<string | null>(null);
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -149,8 +152,9 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
             start_times: startTimes.trim(),
             duration: hoursToDuration(Number(hours)),
             tag_ids: tagIds,
+            own_hex_color: ownColor,
         };
-        const done = { onSuccess: () => { setName(''); changeStartTimes(''); onClose(); } };
+        const done = { onSuccess: () => { setName(''); changeStartTimes(''); setOwnColor(null); onClose(); } };
         if (editing) {
             update.mutate({ id: bucketType.id, patch: payload }, done);
         } else {
@@ -190,6 +194,11 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
                     onChange={event => setHours(event.target.value)}
                 />
                 <TagMultiSelect value={tagIds} onChange={setTagIds} />
+                <ColorPicker
+                    value={ownColor} onChange={setOwnColor} automatic others="time buckets"
+                    defaultColor={bucketType?.auto_hex_color ?? null}
+                    chosenHint="Every bucket of this type shows it."
+                />
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Cancel</Button>

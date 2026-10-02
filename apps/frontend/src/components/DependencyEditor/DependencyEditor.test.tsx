@@ -11,12 +11,12 @@ import { TaskNodeCard } from '../TaskNode/TaskNode.tsx';
 import DependencyEditor from './DependencyEditor.tsx';
 
 describe('TaskNodeCard', () => {
-    it('shows header and duration chip with the project color bar', () => {
+    it('shows header and duration chip with the task color bar', () => {
         render(
             <TaskNodeCard
                 header="Design Schema"
                 durationLabel="3h"
-                projectColor="#3357ff"
+                color="#3357ff"
                 projectName="Webshop"
                 isDone={false}
             />,
@@ -24,7 +24,7 @@ describe('TaskNodeCard', () => {
 
         expect(screen.getByText('Design Schema')).toBeInTheDocument();
         expect(screen.getByText('3h')).toBeInTheDocument();
-        const bar = screen.getByTestId('project-color-bar');
+        const bar = screen.getByTestId('task-color-bar');
         expect(bar).toHaveStyle({ backgroundColor: '#3357ff' });
     });
 
@@ -32,7 +32,7 @@ describe('TaskNodeCard', () => {
         render(
             <TaskNodeCard
                 header="Old One" durationLabel="1h"
-                projectColor={null} projectName={null} isDone={true}
+                color={null} projectName={null} isDone={true}
             />,
         );
 

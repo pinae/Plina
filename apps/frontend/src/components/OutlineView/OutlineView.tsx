@@ -61,6 +61,7 @@ import {
     useTags, useTasks, useUpdateTask,
 } from '../../queries.tsx';
 import { PrioritySlider } from '../PrioritySlider/PrioritySlider.tsx';
+import { titleColor } from '../../utils/taskColors.ts';
 import { commitRowTokens, newRow } from '../../utils/outline.ts';
 import {
     inboxItems, outlineItems, type OutlineItem,
@@ -72,7 +73,7 @@ import { projectOptions } from '../../utils/projects.ts';
 import { readCollapsed, readShowCompleted, storeCollapsed, storeShowCompleted } from '../../utils/taskTreePrefs.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
 import type { Task, TaskWrite } from '../../types.ts';
-import { useIsMobile, useIsTouch } from '../../hooks/useResponsive.ts';
+import { useIsMobile, useIsNarrow, useIsTouch } from '../../hooks/useResponsive.ts';
 
 const human = (duration: string | null) => formatDuration(duration);
 const END_OF_TREE = 'add:top';
@@ -182,6 +183,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const selected = selectedIndex >= 0 ? items[selectedIndex] : null;
     const touch = useIsTouch();
     const mobile = useIsMobile();
+    const narrow = useIsNarrow();
     const rowButtons = touch || mobile;
 
     const select = (index: number) => {
@@ -602,6 +604,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         onToggleDone={() => toggleDone(item.task)}
                         onPriority={priority => setPriority(item.task, priority)}
                         compact={mobile}
+                        narrow={narrow}
                         canComplete={item.task.is_done || !(item.task.children_ids ?? []).some(id => openIds.has(id))}
                         onTrack={() => startTracking.mutate(item.task.id, { onError: error => setMessage(serverMessage(error)) })}
                         onEditChange={text => editing && setEditing({ ...editing, text, error: undefined })}
@@ -751,6 +754,10 @@ interface OutlineItemRowProps {
     /** Phones: a chip opening the slider instead of the slider itself, tighter
      *  gaps, and the active project marked by its name (no label). */
     compact: boolean;
+    /** Below 900 px (phones too): the title gets the room — colored in the
+     *  task's color instead of a dot, no tags, the estimate only as wide as
+     *  it is, the active project marked by its name. */
+    narrow: boolean;
     /** False for parents with open subtasks (they complete with the last one). */
     canComplete: boolean;
     onTrack: () => void;
@@ -762,7 +769,7 @@ interface OutlineItemRowProps {
 
 function OutlineItemRow({
     item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compact,
-    canComplete, onTrack,
+    narrow, canComplete, onTrack,
     onEditChange, onEditKeyDown, onEditBlur, onElement, drag,
 }: OutlineItemRowProps) {
     const task = item.task;
@@ -770,6 +777,9 @@ function OutlineItemRow({
     const done = item.kind === 'task' && task.is_done;
     const trackable = !done && (item.kind === 'rest' || !(task.children_ids?.length));
     const overdue = !done && task.latest_finish_date !== null && new Date(task.latest_finish_date) < new Date();
+    // Narrow screens: the title shows the task's color (§4.4) instead of a dot.
+    const tint = narrow ? titleColor(task.hex_color) : undefined;
+    const activeName = narrow && item.kind === 'task' && item.active;
 
     const estimate = (() => {
         if (item.kind === 'rest') return <Typography variant="body2">{human(task.rest ?? null)}</Typography>;
@@ -853,9 +863,16 @@ function OutlineItemRow({
                     </Tooltip>
                 )}
             </Box>
-            {item.kind === 'task' && item.depth === 0 && !sortMode && (
-                <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: task.hex_color ?? 'text.disabled', flexShrink: 0 }} />
+            {/* The color the task shows (§4.4); a Rest shows its parent's. */}
+            {!narrow && (
+                <Box data-testid="task-color-dot" aria-hidden
+                    style={task.hex_color ? { backgroundColor: task.hex_color } : undefined}
+                    sx={{
+                        width: 10, height: 10, borderRadius: '50%', flexShrink: 0, bgcolor: 'text.disabled',
+                        opacity: item.kind === 'rest' ? 0.6 : 1,
+                    }} />
             )}
+
             <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                 {editing?.field === 'header' ? (
                     <TextField size="small" fullWidth autoFocus value={editing.text} error={Boolean(editing.error)}
@@ -866,13 +883,15 @@ function OutlineItemRow({
                 ) : (
                     <Box sx={{ minWidth: 0 }}>
                         <Typography variant="body2" noWrap
-                            data-active-name={compact && item.kind === 'task' && item.active ? 'true' : undefined}
+                            data-active-name={activeName ? 'true' : undefined}
+                            style={tint ? { color: tint } : undefined}
                             sx={{
-                            fontWeight: item.kind === 'task' && (item.hasChildren || (compact && item.active)) ? 'bold' : undefined,
+                            fontWeight: item.kind === 'task' && (item.hasChildren || activeName) ? 'bold' : undefined,
                             fontStyle: item.kind === 'rest' ? 'italic' : undefined,
-                            color: item.kind === 'rest' ? 'text.secondary'
-                                : compact && item.kind === 'task' && item.active ? 'primary.main' : undefined,
-                            textDecoration: done ? 'line-through' : undefined,
+                            color: item.kind === 'rest' ? 'text.secondary' : undefined,
+                            opacity: tint && item.kind === 'rest' ? 0.75 : undefined,
+                            textDecoration: done ? 'line-through' : activeName ? 'underline' : undefined,
+                            textUnderlineOffset: 3,
                         }}>
                             {itemName(item)}
                         </Typography>
@@ -881,24 +900,27 @@ function OutlineItemRow({
                         )}
                     </Box>
                 )}
-                {item.kind === 'task' && item.active && !editing && !compact && (
+                {item.kind === 'task' && item.active && !editing && !narrow && (
                     <Chip size="small" color="primary" variant="outlined" label="active"
                         sx={{ height: 18, fontSize: '0.7rem', flexShrink: 0 }} />
                 )}
             </Box>
-            {/* Aligned, muted details (Todoist/Wunderlist density). Tags and
-                the deadline give way on phone widths. */}
+            {/* Aligned, muted details (Todoist/Wunderlist density). Below 900 px
+                the title comes first: the tags give way and the estimate
+                column hugs its content (on phones the deadline goes too). */}
             <Box sx={{
-                width: { xs: 'auto', sm: 130 }, textAlign: 'right', flexShrink: 0, color: 'text.secondary',
+                width: narrow ? 'auto' : 130, textAlign: 'right', flexShrink: 0, color: 'text.secondary',
                 ...(compact ? { '& .MuiTypography-root': { fontSize: '0.75rem' } } : {}),
             }}>
                 {estimate}
             </Box>
-            <Box sx={{ width: 170, flexShrink: 0, display: { xs: 'none', sm: 'flex' }, justifyContent: 'flex-end', gap: 0.5, overflow: 'hidden' }}>
-                {item.kind === 'task' && task.tags.map(tag => (
-                    <Chip key={tag.id} size="small" variant="outlined" label={`#${tag.name}`} sx={{ height: 20 }} />
-                ))}
-            </Box>
+            {!narrow && (
+                <Box sx={{ width: 170, flexShrink: 0, display: 'flex', justifyContent: 'flex-end', gap: 0.5, overflow: 'hidden' }}>
+                    {item.kind === 'task' && task.tags.map(tag => (
+                        <Chip key={tag.id} size="small" variant="outlined" label={`#${tag.name}`} sx={{ height: 20 }} />
+                    ))}
+                </Box>
+            )}
             <Box sx={{ width: 64, flexShrink: 0, display: { xs: 'none', sm: 'block' }, textAlign: 'right' }}>
                 {item.kind === 'task' && task.latest_finish_date && (
                     <Typography data-testid="deadline" data-overdue={overdue ? 'true' : undefined} variant="caption"

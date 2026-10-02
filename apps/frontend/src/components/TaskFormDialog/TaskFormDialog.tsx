@@ -11,6 +11,8 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useCreateTask, useSettings, useTags, useTasks, useUpdateTask } from '../../queries.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
+import { inheritedColorFor } from '../../utils/taskColors.ts';
+import { ColorPicker } from '../ColorPicker/ColorPicker.tsx';
 import { formatDuration, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import {
     formatHoursInput, mapServerErrors, parseDurationInput, validateTaskForm,
@@ -114,6 +116,8 @@ function TaskForm({
     const [tagIds, setTagIds] = useState<string[]>(task?.tags.map(t => t.id) ?? []);
     // undefined = untouched: a new task starts in the active project (§6.2).
     const [chosenParentId, setChosenParentId] = useState<string | null | undefined>(undefined);
+    // The chosen color (§4.4); null = from the parent / automatic.
+    const [ownColor, setOwnColor] = useState<string | null>(task?.own_hex_color ?? null);
     const [isAppointment, setIsAppointment] = useState(task?.is_appointment ?? defaultAppointment ?? false);
     const [start, setStart] = useState(
         toLocalInput(task?.start_date ?? (initialStart ? initialStart.toISOString() : null)),
@@ -121,7 +125,7 @@ function TaskForm({
     const [startIncomplete, setStartIncomplete] = useState(false);
     // Unsaved changes = the editable values differ from when the form opened.
     const snapshot = JSON.stringify([header, description, hours, estimateReason, deadline, priority,
-        tagIds, chosenParentId, isAppointment, start]);
+        tagIds, chosenParentId, ownColor, isAppointment, start]);
     const [initialSnapshot] = useState(snapshot);
     const dirty = snapshot !== initialSnapshot;
 
@@ -219,6 +223,7 @@ function TaskForm({
             priority,
             tag_ids: tagIds,
             parent_id: parentId,
+            own_hex_color: ownColor,
             is_appointment: isAppointment,
             start_date: isAppointment && start ? new Date(start).toISOString() : task?.start_date ?? null,
         };
@@ -383,6 +388,10 @@ function TaskForm({
                             helperText={parentFeedback ?? (parentOption ? 'Part of this project' : 'Empty = a project of its own')}
                             sx={parentFeedback ? invalidSx(attempts) : undefined} />
                     )}
+                />
+                <ColorPicker
+                    value={ownColor} automatic={!parentId} onChange={setOwnColor}
+                    defaultColor={inheritedColorFor(task, parentId, taskList)}
                 />
                 <FormControlLabel
                     control={

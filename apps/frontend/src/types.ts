@@ -25,7 +25,12 @@ export interface Task {
     time_spent: string;
     priority: number;
     tags: Tag[];
+    /** The color the task shows (§4.4): its own, else inherited. */
     hex_color: string | null;
+    /** The chosen color; null = inherit (a project: automatic). */
+    own_hex_color: string | null;
+    /** What it shows without its own: the parent's, a project's automatic one. */
+    inherited_hex_color: string | null;
     is_fixed: boolean;
     is_appointment: boolean;
     completed_at: string | null;
@@ -69,6 +74,8 @@ export interface TaskWrite {
     completed_at?: string | null;
     parent_id?: string | null;
     order?: number;
+    /** The chosen color (§4.4); null = inherit (a project: automatic). */
+    own_hex_color?: string | null;
     /** Why the estimate changes (history); plain edits are "edited". */
     estimate_reason?: 'edited' | 'set_to_sum' | 'raised_from_warning';
 }
@@ -83,6 +90,8 @@ export interface BucketTypeWrite {
     start_times: string;
     duration: string;
     tag_ids?: string[];
+    /** The chosen color; null = automatic (§4.4). */
+    own_hex_color?: string | null;
 }
 
 export interface RecurrencePreview {
@@ -95,7 +104,12 @@ export interface TimeBucketType {
     start_times: string;
     duration: string;
     tags: Tag[];
+    /** The color its buckets show: the chosen one, else the automatic one. */
     hex_color: string | null;
+    /** The chosen color; null = automatic (§4.4). */
+    own_hex_color: string | null;
+    /** Its automatic color, unlike the other bucket types'. */
+    auto_hex_color: string | null;
 }
 
 export interface TimeBucket {
