@@ -1,8 +1,6 @@
 from __future__ import annotations
 from typing import List
 from django.db import models
-from django.db.models.signals import pre_delete
-from django.dispatch import receiver
 from django.utils import timezone
 from datetime import timedelta, datetime
 from parsedatetime import Constants as pdtConstants
@@ -66,7 +64,7 @@ class Tag(OptionallyColored):
 class Task(OptionallyColored):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     header = models.CharField(max_length=1024)
-    description = models.TextField(default="")
+    description = models.TextField(default="", blank=True)
     start_date = models.DateTimeField("start date", blank=True, null=True, default=None)
     duration = models.DurationField(blank=True, null=True, default=None)
     latest_finish_date = models.DateTimeField("due until", blank=True, null=True, default=None)
@@ -76,6 +74,19 @@ class Task(OptionallyColored):
     is_fixed = models.BooleanField(default=False)
     is_appointment = models.BooleanField(default=False)
     completed_at = models.DateTimeField("completed at", blank=True, null=True, default=None)
+    #: Task tree (UI-1): every top-level task is a project; tasks can be split
+    #: indefinitely. PROTECT so children are never deleted by accident — the
+    #: API decides whether they are lifted or deleted (services.tree).
+    parent = models.ForeignKey(to="self", related_name="children", null=True, blank=True,
+                               default=None, on_delete=models.PROTECT)
+    #: Position among the siblings (the top-level order is the project order).
+    order = models.PositiveIntegerField(default=0)
+    # Completion snapshot (§4.6): estimate vs. reality, kept for analysis.
+    completion_estimate = models.DurationField(null=True, blank=True, default=None)
+    completion_first_estimate = models.DurationField(null=True, blank=True, default=None)
+    completion_time_spent = models.DurationField(null=True, blank=True, default=None)
+    completion_subtree_time_spent = models.DurationField(null=True, blank=True, default=None)
+    completion_dropped_rest = models.DurationField(null=True, blank=True, default=None)
 
     @property
     def is_done(self) -> bool:
@@ -84,101 +95,40 @@ class Task(OptionallyColored):
     def __str__(self) -> str:
         return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
 
-    @property
-    def project(self):
-        try:
-            return self.project_item.project
-        except Task.project_item.RelatedObjectDoesNotExist:
-            return None
-
-    @project.setter
-    def set_project(self, project: Project):
-        project.add(self)
-
-    def has_project(self) -> bool:
-        return hasattr(self, 'project_item') and self.project_item is not None
-
     def get_color(self) -> bytes:
         if self.color is not None:
             return self.color
-        if self.has_project() and self.project_item.project.has_color():
-            return self.project_item.project.color
+        if self.parent is not None:
+            return self.parent.get_color()
         colored_tags = self.tags.exclude(color=None).all()
         if colored_tags.count() > 0:
             return self.mix_colors([tag.color for tag in colored_tags])
-        else:
-            colored_tags = self.project_item.project.tags.exclude(color=None).all()
-            if colored_tags.count() > 0:
-                return self.mix_colors([tag.color for tag in colored_tags])
-            else:
-                return b'\x53\x9d\xad'
+        return b'\x53\x9d\xad'
 
 
-class Project(OptionallyColored):
+class TaskEstimateChange(models.Model):
+    """One change of a task's estimate (§4.6) — the history is kept so
+    estimates can be compared with tracked time when analyzing projects."""
+    REASONS = [
+        ("created", "created"),
+        ("edited", "edited"),
+        ("split", "split"),
+        ("set_to_sum", "set to sum of parts"),
+        ("raised_from_warning", "raised from over-budget warning"),
+        ("migrated", "migrated from a project"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
-    name = models.CharField(max_length=512)
-    description = models.TextField(default="")
-    tags = models.ManyToManyField(to=Tag, related_name="projects", blank=True)
-    priority = models.FloatField(default=5.0)
-    order = models.PositiveIntegerField(default=0)
-
-    def __str__(self):
-        return "Project {}: {} ({:d}:{:.2f})".format(str(self.id), self.name, self.order, self.priority)
-
-    @property
-    def tasks(self) -> List[Task]:
-        return [pti.task for pti in self.task_list.order_by('order', '-task__priority').all()]
-
-    def add(self, task: Task):
-        task_item = ProjectTaskItem(project=self, task=task, order=ProjectTaskItem.objects.filter(project=self).count())
-        task_item.save()
-
-    def insert(self, task: Task, position: int = 0):
-        new_task_item = ProjectTaskItem(project=self, task=task, order=0)
-        for i, pti in enumerate(ProjectTaskItem.objects.filter(project=self).order_by("order").all()):
-            if i == position:
-                new_task_item.order = pti.order
-            if i >= position:
-                pti.order = pti.order + 1
-                pti.save()
-        new_task_item.save()
-
-    def remove(self, task: Task):
-        try:
-            pti = ProjectTaskItem.objects.get(project=self, task=task)
-            for subsequent_pti in ProjectTaskItem.objects.filter(project=self, order__gt=pti.order):
-                subsequent_pti.order = subsequent_pti.order - 1
-                subsequent_pti.save()
-            pti.delete()
-        except ProjectTaskItem.DoesNotExist:
-            pass
-
-    def get_color(self) -> bytes:
-        if self.color is not None:
-            return self.color
-        colored_tags = self.tags.exclude(color=None).all()
-        if colored_tags.count() > 0:
-            return self.mix_colors([tag.color for tag in colored_tags])
-        else:
-            return b'\x53\x9d\xad'
+    task = models.ForeignKey(to=Task, related_name="estimate_changes", on_delete=models.CASCADE)
+    old_duration = models.DurationField(null=True, blank=True, default=None)
+    new_duration = models.DurationField(null=True, blank=True, default=None)
+    changed_at = models.DateTimeField(default=timezone.now)
+    reason = models.CharField(max_length=32, choices=REASONS)
 
     class Meta:
-        ordering = ['order']
+        ordering = ["changed_at"]
 
-
-class ProjectTaskItem(models.Model):
-    project = models.ForeignKey(to=Project, related_name="task_list", on_delete=models.CASCADE)
-    task = models.OneToOneField(to=Task, related_name="project_item", on_delete=models.CASCADE)
-    order = models.PositiveIntegerField()
-
-    class Meta:
-        ordering = ['order']
-
-
-@receiver(pre_delete, sender=Task)
-def pre_task_delete(sender, instance: Task, using, **kwargs):
-    for pti in ProjectTaskItem.objects.filter(task=instance).all():
-        pti.project.remove(instance)
+    def __str__(self) -> str:
+        return f"{self.task.header}: {self.old_duration} → {self.new_duration} ({self.reason})"
 
 
 class TaskDependency(models.Model):
@@ -233,6 +183,12 @@ class TimeBucketType(models.Model):
         start = start.replace(second=0, microsecond=0)
         if not self.start_times.strip():
             return []  # manual-only type: buckets are placed by hand
+        # Rules speak wall-clock time ("at 14:00") in the user's zone (the
+        # active one, see UserTimeZoneMiddleware) — whatever zone ``start``
+        # comes in. Each occurrence gets its own offset, so 14:00 stays 14:00
+        # across a daylight-saving change.
+        zone = timezone.get_current_timezone()
+        local_start = timezone.make_naive(start, zone)
         consts = pdtConstants(localeID='de_DE', usePyICU=False)
         consts.use24 = True
         r = RecurringEvent(now_date=start, parse_constants=consts)
@@ -240,12 +196,10 @@ class TimeBucketType(models.Model):
         rfc_rule = r.get_RFC_rrule()
         if rfc_rule is None:
             return []  # not a recognizable recurrence rule
-        rr = rrule.rrulestr(rfc_rule, dtstart=timezone.make_naive(start))
+        rr = rrule.rrulestr(rfc_rule, dtstart=local_start)
         buckets = []
-        for start_date in rr.between(timezone.make_naive(start),
-                                     timezone.make_naive(start) + generation_range,
-                                     inc=True):
-            buckets.append(TimeBucket(start_date=timezone.make_aware(start_date, timezone=start.tzinfo),
+        for start_date in rr.between(local_start, local_start + generation_range, inc=True):
+            buckets.append(TimeBucket(start_date=timezone.make_aware(start_date, timezone=zone),
                                       duration=self.duration, type=self))
         return buckets
 
@@ -255,6 +209,10 @@ class TimeBucket(models.Model):
     start_date = models.DateTimeField("start date", default=timezone.now)
     duration = models.DurationField(default=timedelta(hours=4))
     type = models.ForeignKey(to=TimeBucketType, related_name="buckets", on_delete=models.CASCADE, null=False)
+    #: When a single recurring occurrence is moved/resized, this records the
+    #: original generated start it replaces so the recurrence rule no longer
+    #: regenerates a duplicate at that slot (see services.bucket_service).
+    origin_date = models.DateTimeField("original occurrence", null=True, blank=True, default=None)
 
     def __str__(self):
         return f"{self.start_date} - {self.end_date}: {self.type.name}"
@@ -332,6 +290,8 @@ class PlanEntry(models.Model):
     start = models.DateTimeField()
     duration = models.DurationField()
     order = models.PositiveIntegerField()
+    #: A slice of the parent's Rest placeholder (``task`` is the parent, UI-2).
+    is_rest = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["order"]
@@ -339,3 +299,24 @@ class PlanEntry(models.Model):
 
     def __str__(self) -> str:
         return f"[{self.order}] {self.task.header} at {self.start}"
+
+
+class UserSettings(models.Model):
+    """Per-user preferences (UI-3). Plina is single-user for now, so there is
+    one row (pk=1, see ``services.settings.get_settings``); it becomes
+    per-user together with authentication."""
+    #: Planning estimate for tasks without an own estimate.
+    default_duration = models.DurationField(default=timedelta(hours=1))
+    #: The project (top-level task or task with subtasks) the user works in;
+    #: preselected as parent of new tasks and synced to all devices.
+    active_task = models.ForeignKey(to=Task, related_name="+", null=True, blank=True,
+                                    default=None, on_delete=models.SET_NULL)
+    #: IANA name (e.g. "Europe/Berlin"), sent by the browser; recurrence
+    #: rules ("every day at 14:00") and messages use it. Empty = server zone.
+    time_zone = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        verbose_name_plural = "user settings"
+
+    def __str__(self) -> str:
+        return f"Settings (default {minutely_str(self.default_duration)})"

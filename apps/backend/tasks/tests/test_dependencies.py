@@ -125,24 +125,18 @@ class DemoDataDependenciesTest(TestCase):
 
 
 class ProjectTaskIdsSerializationTest(TestCase):
-    """Regression (WP-8/10 blank-page bug): the frontend needs a task->project
-    mapping; the serializer must expose the ordered task ids."""
+    """Regression (WP-8/10 blank-page bug): the frontend needs the
+    task->project mapping — since UI-1 that is the ordered ``children_ids``
+    of the top-level task."""
 
-    def test_project_payload_contains_ordered_task_ids(self):
+    def test_project_payload_contains_ordered_children(self):
         from rest_framework.test import APIClient
-        from tasks.models import Project
 
-        project = Project.objects.create(name="P")
-        first = Task.objects.create(header="First")
-        second = Task.objects.create(header="Second")
-        project.add(first)
-        project.add(second)
+        project = Task.objects.create(header="P")  # projects are top-level tasks
+        first = Task.objects.create(header="First", parent=project, order=0)
+        second = Task.objects.create(header="Second", parent=project, order=1)
 
-        response = APIClient().get(f"/api/projects/{project.id}/")
+        response = APIClient().get(f"/api/tasks/{project.id}/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.data["task_ids"], [first.id, second.id]
-        )
-        # `order` stays the project-level ordering integer, untouched.
-        self.assertEqual(response.data["order"], 0)
+        self.assertEqual(response.data["children_ids"], [first.id, second.id])

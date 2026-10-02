@@ -31,7 +31,27 @@ export interface Task {
     completed_at: string | null;
     is_done: boolean;
     active_tracking_start: string | null;
-    project_id: string | null;
+    // Task tree (UI-1).
+    parent_id: string | null;
+    order: number;
+    children_ids: string[];
+    /** Root first, excluding the task itself. */
+    ancestor_ids: string[];
+    /** Earliest deadline of the task and its ancestors. */
+    effective_deadline: string | null;
+    /** False = no own estimate; planned with the default duration. */
+    is_estimated: boolean;
+    /** Parents only (null for leaves): Σ of the children's estimates. */
+    parts_total: string | null;
+    /** Parents only: estimate − Σ parts − own time spent, never negative. */
+    rest: string | null;
+    over_budget: boolean;
+    // Completion snapshot (§4.6), null while open.
+    completion_estimate: string | null;
+    completion_first_estimate: string | null;
+    completion_time_spent: string | null;
+    completion_subtree_time_spent: string | null;
+    completion_dropped_rest: string | null;
 }
 
 /** Fields accepted when creating/updating a task (tag_ids is write-only). */
@@ -47,19 +67,15 @@ export interface TaskWrite {
     is_fixed?: boolean;
     is_appointment?: boolean;
     completed_at?: string | null;
-    project_id?: string | null;
+    parent_id?: string | null;
+    order?: number;
+    /** Why the estimate changes (history); plain edits are "edited". */
+    estimate_reason?: 'edited' | 'set_to_sum' | 'raised_from_warning';
 }
 
 export interface TagWrite {
     name: string;
     hex_color?: string;
-}
-
-export interface ProjectWrite {
-    name: string;
-    description?: string;
-    priority?: number;
-    tag_ids?: string[];
 }
 
 export interface BucketTypeWrite {
@@ -71,19 +87,6 @@ export interface BucketTypeWrite {
 
 export interface RecurrencePreview {
     occurrences: string[];
-}
-
-export interface Project {
-    id: string;
-    name: string;
-    description: string;
-    tags: Tag[];
-    priority: number;
-    /** Project-level ordering integer (not the task list!). */
-    order: number;
-    /** Task ids in project order — the task->project mapping. */
-    task_ids: string[];
-    hex_color: string | null;
 }
 
 export interface TimeBucketType {
@@ -119,6 +122,9 @@ export interface DependencyCycleError {
 export interface PlanItem {
     task_id: string;
     header: string;
+    /** A slice of a parent's Rest placeholder (UI-2): ``task_id`` is the
+     *  parent, ``header`` reads "Rest of …". */
+    is_rest?: boolean;
     start_time: string;
     /** Seconds. */
     duration: number;
@@ -128,6 +134,10 @@ export interface PlanItem {
     hex_color: string | null;
     /** Present on entries of the accepted (stored) plan only. */
     order?: number;
+    /** Client-only: false when a manual placement made this auto-planned item
+     *  impossible as planned; it fades until the next re-plan. Server omits it
+     *  (treated as valid). */
+    valid?: boolean;
 }
 
 export interface PlannedBucket {
@@ -203,17 +213,90 @@ export interface StoredPlan {
 /** Response of track/start, track/stop. */
 export interface TrackingResponse {
     task: Task;
+    /** track/start only: the task whose running session was closed by
+     *  switching over (UI-3), null when nothing else was running. */
+    stopped_task_id?: string | null;
+    /** track/start only: settings after the active project followed the task. */
+    settings?: UserSettings;
+}
+
+/** Response of POST tasks/{id}/move/ (T-1). */
+export interface MoveResponse {
+    task: Task;
+}
+
+/** Response of POST tasks/{id}/reopen/ (UI-2). */
+export interface ReopenResponse {
+    task: Task;
+    /** The task and its reopened ancestors, bottom-up. */
+    reopened: string[];
+}
+
+// -------------------------------------------------------------- settings
+
+/** GET/PATCH /api/settings/ (UI-3). */
+export interface UserSettings {
+    /** DRF duration; used for tasks without an own estimate. */
+    default_duration: string;
+    /** Active project: a top-level task or a task with subtasks. */
+    active_task_id: string | null;
+    /** Breadcrumb of the active project, root first. */
+    active_task_path: { id: string; header: string }[];
+    /** IANA zone of the user's device ("Europe/Berlin"); recurring buckets
+     *  ("every day at 14:00") follow it. Empty = the server's zone. */
+    time_zone: string;
+}
+
+export interface SettingsWrite {
+    default_duration?: string;
+    active_task_id?: string | null;
+    time_zone?: string;
+}
+
+// ----------------------------------------------------------------- split
+
+/** One row of the split editor; ``children`` splits the row itself. */
+export interface SplitRow {
+    /** Existing subtask to update; omit to create a new one. */
+    id?: string;
+    header: string;
+    /** Null/omitted = unestimated (planned with the default duration). */
+    duration?: string | null;
+    priority?: number;
+    /** ISO; must not be later than an ancestor's deadline. */
+    latest_finish_date?: string | null;
+    tag_ids?: string[];
+    /** Omitted/null = keep this task's own subtree as it is. */
+    children?: SplitRow[] | null;
+}
+
+/** Body of POST tasks/{id}/split/: ``children`` is the complete new list of
+ *  direct subtasks in order; existing ones left out are removed. */
+export interface SplitRequest {
+    children: SplitRow[];
+    estimate?: string | null;
+    estimate_reason?: 'split' | 'set_to_sum' | 'raised_from_warning';
+    /** Default true: adds dependencies row 1 → row 2 → … */
+    sequential?: boolean;
+    inherit_tags?: boolean;
+    inherit_priority?: boolean;
+}
+
+export interface SplitResponse {
+    task: Task;
+    children: Task[];
 }
 
 /** Response of complete: choices are embedded when the frontier forks. */
 export interface CompleteResponse {
     task: Task;
     alternatives: PlanAlternative[];
+    /** Parents completed because their last open child was (bottom-up, UI-2). */
+    auto_completed?: { id: string; header: string }[];
 }
 
 /** 400 payload of track/start when predecessors are unfinished. */
 export interface TrackingBlockedError {
     detail: string;
     predecessors?: { id: string; header: string }[];
-    open_task_id?: string;
 }

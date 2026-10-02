@@ -24,7 +24,7 @@ from tasks.services.alternatives import (PlanAlternative, _apply_focus,
 from tasks.services.bucket_service import gather_time_buckets
 from tasks.services.planner_service import (UNBUCKETED, PlanItem,
                                             allocate_tasks,
-                                            build_planning_tasks)
+                                            build_planning_tasks, planning_edges)
 
 
 def _is_persisted(bucket: TimeBucket) -> bool:
@@ -96,7 +96,7 @@ def store_alternatives(alternatives: List[PlanAlternative],
         for order, (bucket_id, item) in enumerate(_chronological_items(alternative.plan)):
             entry = PlanEntry(
                 plan=plan, task=item.task, start=item.start_time,
-                duration=item.duration, order=order,
+                duration=item.duration, order=order, is_rest=item.is_rest,
             )
             if bucket_id is not UNBUCKETED:
                 bucket = bucket_by_id[bucket_id]
@@ -172,8 +172,7 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
     )
     horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
     buckets = gather_time_buckets(now, now + horizon)
-    from tasks.models import TaskDependency
-    edges = list(TaskDependency.objects.values_list("predecessor_id", "successor_id"))
+    edges = planning_edges(snapshots)
 
     preset = plan.config.get("preset", "deadline_safe")
     focus = frozenset(UUID(t) for t in plan.config.get("focus_task_ids", []))
@@ -205,7 +204,7 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
             continue
         entry = PlanEntry(
             plan=plan, task=payload.task, start=payload.start_time,
-            duration=payload.duration, order=position,
+            duration=payload.duration, order=position, is_rest=payload.is_rest,
         )
         if bucket_id is not UNBUCKETED:
             bucket = bucket_by_id[bucket_id]
@@ -236,12 +235,18 @@ def find_placement_conflict(task: Task, start: datetime):
     plan = Plan.objects.filter(is_accepted=True).first()
     if plan is None:
         return None
+    from tasks.services.tree import TreeIndex
+    tree = TreeIndex.load()
+    # A parent's predecessors apply to its whole subtree; a predecessor that
+    # is a parent is only done once its whole subtree (and Rest) is.
     predecessors = Task.objects.filter(
-        outgoing_dependencies__successor=task, completed_at=None
-    )
+        outgoing_dependencies__successor_id__in=[task.id, *tree.ancestor_ids(task.id)],
+        completed_at=None,
+    ).distinct()
     worst = None
     for predecessor in predecessors:
-        entries = list(plan.entries.filter(task=predecessor))
+        subtree = [predecessor.id, *tree.descendant_ids(predecessor.id)]
+        entries = list(plan.entries.filter(task_id__in=subtree))
         if not entries:
             continue
         end = max(entry.start + entry.duration for entry in entries)

@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.utils import timezone
 from datetime import timedelta
-from tasks.models import Task, Project
+from tasks.models import Task
 from tasks.services.planner_service import calculate_dynamic_score, rank_tasks
 
 class PlannerRankingTest(TestCase):

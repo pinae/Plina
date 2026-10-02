@@ -51,27 +51,19 @@ const server = setupServer(
                 start_date: null, duration: '02:00:00', latest_finish_date: null,
                 time_spent: '00:00:00', priority: 8, tags: [], hex_color: null,
                 is_fixed: false, is_appointment: false, completed_at: null,
-                is_done: false, active_tracking_start: null, project_id: null,
+                is_done: false, active_tracking_start: null,
             },
             {
                 id: 't2', header: 'Design Schema', description: '',
                 start_date: null, duration: '03:00:00', latest_finish_date: null,
                 time_spent: '00:00:00', priority: 9, tags: [], hex_color: null,
                 is_fixed: false, is_appointment: false, completed_at: null,
-                is_done: false, active_tracking_start: null, project_id: null,
+                is_done: false, active_tracking_start: null,
             },
         ]),
     ),
     http.get(`${API}/dependencies/`, () =>
         HttpResponse.json([{ id: 'd1', predecessor: 't1', successor: 't2' }]),
-    ),
-    http.get(`${API}/projects/`, () =>
-        HttpResponse.json([
-            {
-                id: 'p1', name: 'Refactor Backend', description: '', tags: [],
-                priority: 8, order: 0, task_ids: ['t1', 't2'], hex_color: '#3357ff',
-            },
-        ]),
     ),
 );
 

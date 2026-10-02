@@ -72,5 +72,3 @@ function TaskNodeComponent({ data }: NodeProps<TaskFlowNode>) {
 }
 
 export const TaskNode = memo(TaskNodeComponent);
-
-export const nodeTypes = { task: TaskNode };

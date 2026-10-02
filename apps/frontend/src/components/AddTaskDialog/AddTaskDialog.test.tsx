@@ -1,5 +1,5 @@
 import {render, screen, fireEvent} from '@testing-library/react';
-import {describe, it, expect, vi, beforeEach} from 'vitest';
+import {describe, it, expect, vi, beforeEach, type Mock} from 'vitest';
 import {AddTaskDialog} from './AddTaskDialog';
 import {useCreateTask} from '../../queries.tsx';
 
@@ -15,7 +15,7 @@ describe('AddTaskDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         // Setup default hook return value
-        (useCreateTask as vi.Mock).mockReturnValue({
+        (useCreateTask as Mock).mockReturnValue({
             mutate: mockMutate,
             isPending: false,
         });
@@ -121,7 +121,7 @@ describe('AddTaskDialog', () => {
     });
 
     it('disables the create button while mutation is pending', () => {
-        (useCreateTask as vi.Mock).mockReturnValue({
+        (useCreateTask as Mock).mockReturnValue({
             mutate: mockMutate,
             isPending: true,
         });

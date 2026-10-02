@@ -42,10 +42,9 @@ class PlanningTaskSnapshotTest(TestCase):
             snapshot.priority = 99.0
 
     def test_snapshot_carries_project_id(self):
-        from tasks.models import Project
-        project = Project.objects.create(name="P")
-        task = Task.objects.create(header="In project", duration=timedelta(hours=1))
-        project.add(task)
+        project = Task.objects.create(header="P")  # projects are top-level tasks
+        task = Task.objects.create(header="In project", duration=timedelta(hours=1),
+                                   parent=project)
         orphan = Task.objects.create(header="No project", duration=timedelta(hours=1))
 
         self.assertEqual(PlanningTask.from_task(task).project_id, project.id)

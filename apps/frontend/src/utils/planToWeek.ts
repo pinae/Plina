@@ -19,9 +19,11 @@ function toViewTask(item: PlanItem): PlacedViewTask {
         // Solid = anchored (fixed or appointment); pastel = fluid.
         manuallySet: item.is_fixed || item.is_appointment,
         isAppointment: item.is_appointment,
+        isRest: Boolean(item.is_rest),
         description: item.warnings.join(', '),
         tags: [],
         continues: false,
+        valid: item.valid ?? true,
     };
 }
 
@@ -30,6 +32,22 @@ export function planToViewTasks(plan: PlanResponse): PlacedViewTask[] {
         ...plan.appointments.map(toViewTask),
         ...plan.buckets.flatMap(bucket => bucket.items.map(toViewTask)),
     ];
+}
+
+/** True when a live drag overlaps at least one auto-planned task — i.e. the
+ *  drag would invalidate it, so the plan becomes obsolete. */
+export function overlapsAutoTask(
+    tasks: PlacedViewTask[],
+    target: { taskId: string; start: Date; durationMinutes: number },
+): boolean {
+    const start = target.start.getTime();
+    const end = start + target.durationMinutes * 60000;
+    return tasks.some(task => {
+        if (task.taskId === target.taskId || task.manuallySet) return false;
+        const taskStart = new Date(task.startTime).getTime();
+        const taskEnd = taskStart + task.duration * 60000;
+        return taskStart < end && start < taskEnd;
+    });
 }
 
 export interface BucketZone {

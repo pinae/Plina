@@ -2,8 +2,8 @@ from rest_framework.views import APIView
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Task, Project, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
-from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
+from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
+from .serializers import (TaskSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer)
 
@@ -27,6 +27,17 @@ class TaskViewSet(RecalculatingModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
+    def destroy(self, request, *args, **kwargs):
+        """A parent needs ``?children=lift`` or ``?children=delete`` (§4.5)."""
+        from tasks.services.tree import TreeError, delete_task
+        task = self.get_object()
+        try:
+            delete_task(task, request.query_params.get("children"))
+        except TreeError as error:
+            return Response(error.payload, status=400)
+        recalculate_accepted_plan()
+        return Response(status=204)
+
     def _tracking_response(self, task, extra=None):
         payload = {"task": TaskSerializer(task).data}
         if extra:
@@ -36,13 +47,19 @@ class TaskViewSet(RecalculatingModelViewSet):
     @action(detail=True, methods=["post"], url_path="track/start")
     def track_start(self, request, pk=None):
         from tasks.services.tracking import TrackingError, start_tracking
+        from tasks.serializers import UserSettingsSerializer
+        from tasks.services.settings import get_settings
         task = self.get_object()
         try:
-            start_tracking(task)
+            _, stopped = start_tracking(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
         task.refresh_from_db()
-        return self._tracking_response(task)
+        return self._tracking_response(task, extra={
+            # The task whose session was closed by switching over (UI-3).
+            "stopped_task_id": stopped.id if stopped is not None else None,
+            "settings": UserSettingsSerializer(get_settings()).data,
+        })
 
     @action(detail=True, methods=["post"], url_path="track/stop")
     def track_stop(self, request, pk=None):
@@ -60,14 +77,73 @@ class TaskViewSet(RecalculatingModelViewSet):
         from tasks.services.tracking import TrackingError, complete_task
         task = self.get_object()
         try:
-            task, alternatives, buckets = complete_task(task)
+            task, auto_completed, alternatives, buckets = complete_task(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
         serialized = serialize_alternatives(
             alternatives, buckets,
             plan_ids=[alternative.plan_id for alternative in alternatives],
         ) if alternatives else []
-        return self._tracking_response(task, extra={"alternatives": serialized})
+        return self._tracking_response(task, extra={
+            "alternatives": serialized,
+            # Parents completed because their last open child was (bottom-up).
+            "auto_completed": [{"id": t.id, "header": t.header} for t in auto_completed],
+        })
+
+    @action(detail=True, methods=["post"])
+    def split(self, request, pk=None):
+        """The split editor's atomic save (UI-3, §4)."""
+        from tasks.serializers import SplitSerializer
+        from tasks.services.split import UNSET, SplitError, split_task
+        task = self.get_object()
+        body = SplitSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        try:
+            children = split_task(
+                task, data["children"], estimate=data.get("estimate", UNSET),
+                estimate_reason=data["estimate_reason"], sequential=data["sequential"],
+                inherit_tags=data["inherit_tags"], inherit_priority=data["inherit_priority"],
+            )
+        except SplitError as error:
+            return Response(error.payload, status=400)
+        recalculate_accepted_plan()
+        task.refresh_from_db()
+        context = self.get_serializer_context()  # shared: one tree snapshot
+        return Response({
+            "task": TaskSerializer(task, context=context).data,
+            "children": TaskSerializer(children, many=True, context=context).data,
+        })
+
+    @action(detail=True, methods=["post"])
+    def move(self, request, pk=None):
+        """Drag and drop in the Tasks tab (T-1): new parent + position."""
+        from tasks.serializers import MoveSerializer
+        from tasks.services.settings import ensure_active_is_project
+        from tasks.services.tree import MoveError, move_task
+        task = self.get_object()
+        body = MoveSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            task = move_task(task, body.validated_data["parent_id"], body.validated_data["index"])
+        except MoveError as error:
+            return Response(error.payload, status=400)
+        ensure_active_is_project()
+        recalculate_accepted_plan()
+        return Response({"task": TaskSerializer(task, context=self.get_serializer_context()).data})
+
+    @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        """Undo a completion (also of auto-completed parents, §4.5)."""
+        from tasks.services.completion import CompletionError, reopen
+        task = self.get_object()
+        try:
+            reopened = reopen(task)
+        except CompletionError as error:
+            return Response(error.payload, status=400)
+        recalculate_accepted_plan()
+        task.refresh_from_db()
+        return self._tracking_response(task, extra={"reopened": [t.id for t in reopened]})
 
 class DependencyViewSet(mixins.ListModelMixin,
                         mixins.RetrieveModelMixin,
@@ -86,10 +162,6 @@ class DependencyViewSet(mixins.ListModelMixin,
         super().perform_destroy(instance)
         recalculate_accepted_plan()
 
-class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.all()
-    serializer_class = ProjectSerializer
-
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
@@ -97,6 +169,29 @@ class TagViewSet(viewsets.ModelViewSet):
 class TimeBucketTypeViewSet(RecalculatingModelViewSet):
     queryset = TimeBucketType.objects.all()
     serializer_class = TimeBucketTypeSerializer
+
+
+class SettingsView(APIView):
+    """GET/PATCH the user settings (UI-3)."""
+
+    def get(self, request):
+        from .serializers import UserSettingsSerializer
+        from .services.settings import get_settings
+        return Response(UserSettingsSerializer(get_settings()).data)
+
+    def patch(self, request):
+        from .serializers import UserSettingsSerializer
+        from .services.settings import get_settings, user_time_zone
+        settings = get_settings()
+        old_default, old_zone = settings.default_duration, settings.time_zone
+        serializer = UserSettingsSerializer(settings, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        if settings.default_duration != old_default or settings.time_zone != old_zone:
+            # Unestimated tasks change size / recurring buckets move (A7).
+            with timezone.override(user_time_zone() or timezone.get_default_timezone()):
+                recalculate_accepted_plan()
+        return Response(serializer.data)
 
 
 class RecurrencePreviewView(APIView):
@@ -121,7 +216,8 @@ from rest_framework.response import Response
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
-from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks, UNBUCKETED
+from tasks.services.planner_service import (build_planning_tasks, rank_tasks, allocate_tasks,
+                                            planning_edges, UNBUCKETED)
 from tasks.services.bucket_service import gather_time_buckets
 from tasks.services.plan_store import recalculate_accepted_plan
 from tasks.models import Task, TimeBucket, TaskDependency, Plan
@@ -129,7 +225,8 @@ from tasks.models import Task, TimeBucket, TaskDependency, Plan
 def _serialize_item(item):
     return {
         "task_id": item.task.id,
-        "header": item.task.header,
+        "header": item.header,
+        "is_rest": item.is_rest,
         "start_time": item.start_time,
         "duration": item.duration.total_seconds(),
         "warnings": item.warnings,
@@ -148,7 +245,8 @@ def _entry_warnings(entry):
 def _serialize_entry(entry):
     return {
         "task_id": entry.task.id,
-        "header": entry.task.header,
+        "header": f"Rest of {entry.task.header}" if entry.is_rest else entry.task.header,
+        "is_rest": entry.is_rest,
         "start_time": entry.start,
         "duration": entry.duration.total_seconds(),
         "warnings": _entry_warnings(entry),
@@ -227,9 +325,7 @@ class PlannerView(APIView):
 
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
-        edges = TaskDependency.objects.values_list("predecessor_id", "successor_id")
-
-        plan = allocate_tasks(buckets, ranked_tasks, edges)
+        plan = allocate_tasks(buckets, ranked_tasks, planning_edges(snapshots))
 
         return Response({
             "accepted_plan_id": None,
@@ -270,10 +366,7 @@ class PlanAlternativesView(APIView):
         )
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
-        edges = list(
-            TaskDependency.objects.values_list("predecessor_id", "successor_id")
-        )
-        return generate_alternatives(snapshots, buckets, edges, now), buckets
+        return generate_alternatives(snapshots, buckets, planning_edges(snapshots), now), buckets
 
     def get(self, request):
         """Preview: compute without storing."""
@@ -294,11 +387,7 @@ class PlanAlternativesView(APIView):
 
 
 def serialize_alternatives(alternatives, buckets, plan_ids=None):
-    from tasks.models import Project
-
-    project_names = {
-    project.id: project.name for project in Project.objects.all()
-    }
+    project_names = dict(Task.objects.filter(parent=None).values_list("id", "header"))
     buckets_by_id = {bucket.id: bucket for bucket in buckets}
 
     def serialize_alternative(alternative):

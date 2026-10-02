@@ -1,20 +1,19 @@
 from django.contrib import admin
-from .models import Tag, Project, Task, ProjectTaskItem, TimeBucketType, TimeBucket
+from .models import Tag, Task, TaskEstimateChange, TimeBucketType, TimeBucket, UserSettings
 
 
-class ProjectRelationInline(admin.StackedInline):
-    model = ProjectTaskItem
-    fields = ('project', 'order',)
-
-
-@admin.register(Project)
-class ProjectAdmin(admin.ModelAdmin):
-    pass
+class EstimateChangeInline(admin.TabularInline):
+    model = TaskEstimateChange
+    extra = 0
+    readonly_fields = ('changed_at', 'old_duration', 'new_duration', 'reason')
 
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    inlines = [ProjectRelationInline]
+    # Projects are top-level tasks (UI-1): the tree is edited via `parent`.
+    list_display = ('header', 'parent', 'order', 'duration', 'time_spent', 'completed_at')
+    list_filter = (('parent', admin.EmptyFieldListFilter),)
+    inlines = [EstimateChangeInline]
 
 
 @admin.register(Tag)
@@ -32,4 +31,6 @@ class TimeBucketAdmin(admin.ModelAdmin):
     pass
 
 
-#admin.site.register(Task, TaskAdmin)
+@admin.register(UserSettings)
+class UserSettingsAdmin(admin.ModelAdmin):
+    list_display = ('default_duration', 'active_task')

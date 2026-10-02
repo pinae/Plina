@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from tasks.models import Plan, Project, Task, TaskDependency, TimeBucketType
+from tasks.models import Plan, Task, TaskDependency, TimeBucketType
 
 
 class PlanWarningsPayloadTest(TestCase):
@@ -45,7 +45,9 @@ class MaraDemoDataTest(TestCase):
         call_command("populate_demo_data", verbosity=0)
 
     def test_two_projects_with_the_story_names(self):
-        names = set(Project.objects.values_list("name", flat=True))
+        # Projects are top-level tasks; the story's two have their steps as children.
+        names = set(Task.objects.filter(parent=None, children__isnull=False)
+                    .values_list("header", flat=True))
         self.assertEqual(names, {"Webshop Relaunch", "Company Blog"})
 
     def test_webshop_chain_and_blog_dependency_exist(self):

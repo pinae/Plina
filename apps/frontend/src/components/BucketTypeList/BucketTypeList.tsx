@@ -5,14 +5,17 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 
 import { useBucketTypes } from '../../queries.tsx';
+import type { TimeBucketType } from '../../types.ts';
 import { formatDuration } from '../../utils/duration.ts';
 import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 
-/** The "Time Buckets" pane: the existing bucket types plus one floating add button. */
+/** The "Time Buckets" pane: the existing time buckets plus one floating add button. */
 export default function BucketTypeList() {
     const bucketTypesQuery = useBucketTypes();
     const bucketTypes = bucketTypesQuery.data ?? [];
-    const [open, setOpen] = useState(false);
+    const [adding, setAdding] = useState(false);
+    const [editBucket, setEditBucket] = useState<TimeBucketType | null>(null);
+    const close = () => { setAdding(false); setEditBucket(null); };
 
     return (
         <Box>
@@ -22,7 +25,10 @@ export default function BucketTypeList() {
             <Paper>
                 <List>
                     {bucketTypes.map(bucketType => (
-                        <ListItem key={bucketType.id} divider>
+                        <ListItem
+                            key={bucketType.id} divider onClick={() => setEditBucket(bucketType)}
+                            sx={{ cursor: 'pointer' }}
+                        >
                             <ListItemText
                                 primary={
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -52,13 +58,15 @@ export default function BucketTypeList() {
                 </List>
             </Paper>
             <Fab
-                color="primary" aria-label="Add bucket type"
-                onClick={() => setOpen(true)}
+                color="primary" aria-label="Add bucket"
+                onClick={() => setAdding(true)}
                 sx={{ position: 'fixed', bottom: 32, right: 32 }}
             >
                 <AddIcon />
             </Fab>
-            {open && <BucketTypeFormDialog open onClose={() => setOpen(false)} />}
+            {(adding || editBucket) && (
+                <BucketTypeFormDialog open onClose={close} bucketType={editBucket ?? undefined} />
+            )}
         </Box>
     );
 }

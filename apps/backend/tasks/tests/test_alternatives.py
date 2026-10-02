@@ -4,7 +4,7 @@ from django.conf import settings
 from django.test import TestCase
 from django.utils import timezone
 
-from tasks.models import Project, Task, TimeBucket, TimeBucketType
+from tasks.models import Task, TimeBucket, TimeBucketType
 from tasks.services.alternatives import generate_alternatives
 from tasks.services.planner_service import UNBUCKETED, build_planning_tasks
 
@@ -45,13 +45,13 @@ class AlternativesEngineTest(TestCase):
         ]
 
     def chain(self, project_name: str, headers: list, **task_kwargs):
-        project = Project.objects.create(name=project_name)
+        project = Task.objects.create(header=project_name)  # projects are top-level tasks
         tasks = []
-        for header in headers:
+        for order, header in enumerate(headers):
             task = Task.objects.create(
-                header=header, duration=timedelta(hours=2), **task_kwargs
+                header=header, duration=timedelta(hours=2), parent=project, order=order,
+                **task_kwargs
             )
-            project.add(task)
             tasks.append(task)
         edges = [(a.id, b.id) for a, b in zip(tasks, tasks[1:])]
         return project, tasks, edges
@@ -165,11 +165,11 @@ class AlternativesApiTest(TestCase):
             duration=timedelta(hours=4),
         )
         for name, headers in [("Webshop", ["A1", "A2"]), ("Blog", ["B1", "B2"])]:
-            project = Project.objects.create(name=name)
+            project = Task.objects.create(header=name)
             previous = None
             for header in headers:
-                task = Task.objects.create(header=header, duration=timedelta(hours=2))
-                project.add(task)
+                task = Task.objects.create(header=header, duration=timedelta(hours=2),
+                                           parent=project)
                 if previous is not None:
                     from tasks.models import TaskDependency
                     TaskDependency.objects.create(predecessor=previous, successor=task)
