@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from tasks.models import (Plan, Task, TaskDependency, TimeBucketType,
                           TrackingSession)
-from tasks.services.tracking import (AnotherSessionOpen, TrackingError,
+from tasks.services.tracking import (TrackingError,
                                      UnfinishedPredecessors, complete_task,
                                      start_tracking, stop_tracking)
 
@@ -20,7 +20,7 @@ class TrackingServiceTest(TestCase):
         self.task = Task.objects.create(header="Work", duration=timedelta(hours=2))
 
     def test_start_opens_session_and_anchors_the_task(self):
-        session = start_tracking(self.task, now=self.now)
+        session, _ = start_tracking(self.task, now=self.now)
 
         self.task.refresh_from_db()
         self.assertTrue(self.task.is_fixed)
@@ -47,12 +47,16 @@ class TrackingServiceTest(TestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.time_spent, timedelta(minutes=15))
 
-    def test_second_start_while_any_session_is_open_is_rejected(self):
+    def test_second_start_while_a_session_is_open_switches_over(self):
+        # UI-3: the running session is closed (booked) instead of a 409.
         other = Task.objects.create(header="Other", duration=timedelta(hours=1))
         start_tracking(other, now=self.now)
 
-        with self.assertRaises(AnotherSessionOpen):
-            start_tracking(self.task, now=self.now + timedelta(minutes=1))
+        start_tracking(self.task, now=self.now + timedelta(minutes=1))
+
+        other.refresh_from_db()
+        self.assertEqual(other.time_spent, timedelta(minutes=1))
+        self.assertEqual(TrackingSession.objects.filter(end=None).get().task, self.task)
 
     def test_start_with_unfinished_predecessor_is_rejected_naming_it(self):
         blocker = Task.objects.create(header="Blocker", duration=timedelta(hours=1))
@@ -72,7 +76,7 @@ class TrackingServiceTest(TestCase):
         )
         TaskDependency.objects.create(predecessor=blocker, successor=self.task)
 
-        session = start_tracking(self.task, now=self.now)
+        session, _ = start_tracking(self.task, now=self.now)
         self.assertIsNotNone(session)
 
     def test_start_on_completed_task_is_rejected(self):
@@ -113,13 +117,14 @@ class TrackingApiTest(TestCase):
         self.assertTrue(response.data["task"]["is_fixed"])
         self.assertIsNotNone(response.data["task"]["active_tracking_start"])
 
-    def test_start_conflict_returns_409(self):
+    def test_start_while_another_runs_switches_over(self):
         other = Task.objects.create(header="Other", duration=timedelta(hours=1))
         self.client.post(f"/api/tasks/{other.id}/track/start/")
 
         response = self.client.post(f"/api/tasks/{self.task.id}/track/start/")
 
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["stopped_task_id"], other.id)
 
     def test_start_blocked_by_predecessor_returns_400_naming_it(self):
         blocker = Task.objects.create(header="Blocker", duration=timedelta(hours=1))

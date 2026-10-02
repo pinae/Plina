@@ -3,7 +3,8 @@ from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
-from .serializers import (TaskSerializer, ProjectSerializer, TagSerializer,
+from .services.colors import FALLBACK_COLOR, ensure_auto_colors
+from .serializers import (TaskSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer)
 
@@ -35,6 +36,7 @@ class TaskViewSet(RecalculatingModelViewSet):
             delete_task(task, request.query_params.get("children"))
         except TreeError as error:
             return Response(error.payload, status=400)
+        ensure_auto_colors()  # lifted subtasks of a project become projects
         recalculate_accepted_plan()
         return Response(status=204)
 
@@ -47,13 +49,19 @@ class TaskViewSet(RecalculatingModelViewSet):
     @action(detail=True, methods=["post"], url_path="track/start")
     def track_start(self, request, pk=None):
         from tasks.services.tracking import TrackingError, start_tracking
+        from tasks.serializers import UserSettingsSerializer
+        from tasks.services.settings import get_settings
         task = self.get_object()
         try:
-            start_tracking(task)
+            _, stopped = start_tracking(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
         task.refresh_from_db()
-        return self._tracking_response(task)
+        return self._tracking_response(task, extra={
+            # The task whose session was closed by switching over (UI-3).
+            "stopped_task_id": stopped.id if stopped is not None else None,
+            "settings": UserSettingsSerializer(get_settings()).data,
+        })
 
     @action(detail=True, methods=["post"], url_path="track/stop")
     def track_stop(self, request, pk=None):
@@ -71,14 +79,75 @@ class TaskViewSet(RecalculatingModelViewSet):
         from tasks.services.tracking import TrackingError, complete_task
         task = self.get_object()
         try:
-            task, alternatives, buckets = complete_task(task)
+            task, auto_completed, alternatives, buckets = complete_task(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
         serialized = serialize_alternatives(
             alternatives, buckets,
             plan_ids=[alternative.plan_id for alternative in alternatives],
         ) if alternatives else []
-        return self._tracking_response(task, extra={"alternatives": serialized})
+        return self._tracking_response(task, extra={
+            "alternatives": serialized,
+            # Parents completed because their last open child was (bottom-up).
+            "auto_completed": [{"id": t.id, "header": t.header} for t in auto_completed],
+        })
+
+    @action(detail=True, methods=["post"])
+    def split(self, request, pk=None):
+        """The split editor's atomic save (UI-3, §4)."""
+        from tasks.serializers import SplitSerializer
+        from tasks.services.split import UNSET, SplitError, split_task
+        task = self.get_object()
+        body = SplitSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        try:
+            children = split_task(
+                task, data["children"], estimate=data.get("estimate", UNSET),
+                estimate_reason=data["estimate_reason"], sequential=data["sequential"],
+                inherit_tags=data["inherit_tags"], inherit_priority=data["inherit_priority"],
+            )
+        except SplitError as error:
+            return Response(error.payload, status=400)
+        ensure_auto_colors()
+        recalculate_accepted_plan()
+        task.refresh_from_db()
+        context = self.get_serializer_context()  # shared: one tree snapshot
+        return Response({
+            "task": TaskSerializer(task, context=context).data,
+            "children": TaskSerializer(children, many=True, context=context).data,
+        })
+
+    @action(detail=True, methods=["post"])
+    def move(self, request, pk=None):
+        """Drag and drop in the Tasks tab (T-1): new parent + position."""
+        from tasks.serializers import MoveSerializer
+        from tasks.services.settings import ensure_active_is_project
+        from tasks.services.tree import MoveError, move_task
+        task = self.get_object()
+        body = MoveSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            task = move_task(task, body.validated_data["parent_id"], body.validated_data["index"])
+        except MoveError as error:
+            return Response(error.payload, status=400)
+        ensure_auto_colors()  # moved to the top level
+        ensure_active_is_project()
+        recalculate_accepted_plan()
+        return Response({"task": TaskSerializer(task, context=self.get_serializer_context()).data})
+
+    @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        """Undo a completion (also of auto-completed parents, §4.5)."""
+        from tasks.services.completion import CompletionError, reopen
+        task = self.get_object()
+        try:
+            reopened = reopen(task)
+        except CompletionError as error:
+            return Response(error.payload, status=400)
+        recalculate_accepted_plan()
+        task.refresh_from_db()
+        return self._tracking_response(task, extra={"reopened": [t.id for t in reopened]})
 
 class DependencyViewSet(mixins.ListModelMixin,
                         mixins.RetrieveModelMixin,
@@ -97,17 +166,6 @@ class DependencyViewSet(mixins.ListModelMixin,
         super().perform_destroy(instance)
         recalculate_accepted_plan()
 
-class ProjectViewSet(RecalculatingModelViewSet):
-    """Compatibility view until UI-8: projects are the top-level tasks."""
-    queryset = Task.objects.filter(parent=None).order_by("order", "header")
-    serializer_class = ProjectSerializer
-
-    def perform_destroy(self, instance):
-        # Old semantics: deleting a project kept its tasks.
-        from tasks.services.tree import LIFT, delete_task
-        delete_task(instance, LIFT)
-        recalculate_accepted_plan()
-
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
@@ -115,6 +173,29 @@ class TagViewSet(viewsets.ModelViewSet):
 class TimeBucketTypeViewSet(RecalculatingModelViewSet):
     queryset = TimeBucketType.objects.all()
     serializer_class = TimeBucketTypeSerializer
+
+
+class SettingsView(APIView):
+    """GET/PATCH the user settings (UI-3)."""
+
+    def get(self, request):
+        from .serializers import UserSettingsSerializer
+        from .services.settings import get_settings
+        return Response(UserSettingsSerializer(get_settings()).data)
+
+    def patch(self, request):
+        from .serializers import UserSettingsSerializer
+        from .services.settings import get_settings, user_time_zone
+        settings = get_settings()
+        old_default, old_zone = settings.default_duration, settings.time_zone
+        serializer = UserSettingsSerializer(settings, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        if settings.default_duration != old_default or settings.time_zone != old_zone:
+            # Unestimated tasks change size / recurring buckets move (A7).
+            with timezone.override(user_time_zone() or timezone.get_default_timezone()):
+                recalculate_accepted_plan()
+        return Response(serializer.data)
 
 
 class RecurrencePreviewView(APIView):
@@ -139,21 +220,31 @@ from rest_framework.response import Response
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
-from tasks.services.planner_service import build_planning_tasks, rank_tasks, allocate_tasks, UNBUCKETED
+from tasks.services.planner_service import (build_planning_tasks, rank_tasks, allocate_tasks,
+                                            planning_edges, UNBUCKETED)
 from tasks.services.bucket_service import gather_time_buckets
 from tasks.services.plan_store import recalculate_accepted_plan
 from tasks.models import Task, TimeBucket, TaskDependency, Plan
 
-def _serialize_item(item):
+def _task_colors():
+    """Color each task shows (§4.4), from one snapshot of the tree; a Rest
+    unit is planned under its parent's id and shows the parent's color."""
+    from tasks.services.tree import TreeIndex
+    tree = TreeIndex.load()
+    return lambda task_id: tree.effective_color(task_id) if task_id in tree.nodes else FALLBACK_COLOR
+
+
+def _serialize_item(item, color_of):
     return {
         "task_id": item.task.id,
-        "header": item.task.header,
+        "header": item.header,
+        "is_rest": item.is_rest,
         "start_time": item.start_time,
         "duration": item.duration.total_seconds(),
         "warnings": item.warnings,
         "is_fixed": item.task.is_fixed,
         "is_appointment": item.task.is_appointment,
-        "hex_color": item.task.hex_color,
+        "hex_color": color_of(item.task.id),
     }
 
 def _entry_warnings(entry):
@@ -163,16 +254,17 @@ def _entry_warnings(entry):
     return []
 
 
-def _serialize_entry(entry):
+def _serialize_entry(entry, color_of):
     return {
         "task_id": entry.task.id,
-        "header": entry.task.header,
+        "header": f"Rest of {entry.task.header}" if entry.is_rest else entry.task.header,
+        "is_rest": entry.is_rest,
         "start_time": entry.start,
         "duration": entry.duration.total_seconds(),
         "warnings": _entry_warnings(entry),
         "is_fixed": entry.task.is_fixed,
         "is_appointment": entry.task.is_appointment,
-        "hex_color": entry.task.hex_color,
+        "hex_color": color_of(entry.task.id),
         "order": entry.order,
     }
 
@@ -180,6 +272,7 @@ def _serialize_entry(entry):
 class PlannerView(APIView):
     def _accepted_plan_response(self, plan):
         entries = list(plan.entries.select_related("task", "bucket__type").all())
+        color_of = _task_colors()
         appointments = sorted(
             (e for e in entries if e.bucket is None and e.task.is_appointment),
             key=lambda e: e.start,
@@ -211,7 +304,7 @@ class PlannerView(APIView):
         return Response({
             "accepted_plan_id": plan.id,
             "warnings": plan.warnings,
-            "appointments": [_serialize_entry(e) for e in appointments],
+            "appointments": [_serialize_entry(e, color_of) for e in appointments],
             "buckets": [
                 {
                     "id": bucket.id,
@@ -222,7 +315,7 @@ class PlannerView(APIView):
                     "hex_color": bucket.type.hex_color,
                     "persisted": True,
                     "items": [
-                        _serialize_entry(e)
+                        _serialize_entry(e, color_of)
                         for e in sorted(bucket_entries, key=lambda e: e.start)
                     ],
                 }
@@ -245,15 +338,14 @@ class PlannerView(APIView):
 
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
-        edges = TaskDependency.objects.values_list("predecessor_id", "successor_id")
-
-        plan = allocate_tasks(buckets, ranked_tasks, edges)
+        plan = allocate_tasks(buckets, ranked_tasks, planning_edges(snapshots))
+        color_of = _task_colors()
 
         return Response({
             "accepted_plan_id": None,
             "warnings": [],
             "appointments": [
-                _serialize_item(item)
+                _serialize_item(item, color_of)
                 for item in sorted(plan[UNBUCKETED], key=lambda i: i.start_time)
             ],
             "buckets": [
@@ -265,7 +357,7 @@ class PlannerView(APIView):
                     "type_id": bucket.type_id,
                     "hex_color": bucket.type.hex_color,
                     "persisted": not bucket._state.adding,
-                    "items": [_serialize_item(item) for item in plan[bucket.id]],
+                    "items": [_serialize_item(item, color_of) for item in plan[bucket.id]],
                 }
                 for bucket in buckets
             ],
@@ -288,10 +380,7 @@ class PlanAlternativesView(APIView):
         )
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
-        edges = list(
-            TaskDependency.objects.values_list("predecessor_id", "successor_id")
-        )
-        return generate_alternatives(snapshots, buckets, edges, now), buckets
+        return generate_alternatives(snapshots, buckets, planning_edges(snapshots), now), buckets
 
     def get(self, request):
         """Preview: compute without storing."""
@@ -314,6 +403,7 @@ class PlanAlternativesView(APIView):
 def serialize_alternatives(alternatives, buckets, plan_ids=None):
     project_names = dict(Task.objects.filter(parent=None).values_list("id", "header"))
     buckets_by_id = {bucket.id: bucket for bucket in buckets}
+    color_of = _task_colors()
 
     def serialize_alternative(alternative):
         planned_buckets = [
@@ -323,7 +413,7 @@ def serialize_alternatives(alternatives, buckets, plan_ids=None):
                 "end_date": buckets_by_id[bucket_id].end_date,
                 "type_name": buckets_by_id[bucket_id].type.name,
                 "hex_color": buckets_by_id[bucket_id].type.hex_color,
-                "items": [_serialize_item(item) for item in items],
+                "items": [_serialize_item(item, color_of) for item in items],
             }
             for bucket_id, items in alternative.plan.items()
             if bucket_id is not UNBUCKETED and items
@@ -363,7 +453,7 @@ def serialize_alternatives(alternatives, buckets, plan_ids=None):
                 ],
             },
             "appointments": [
-                _serialize_item(item)
+                _serialize_item(item, color_of)
                 for item in sorted(
                     alternative.plan[UNBUCKETED], key=lambda i: i.start_time
                 )

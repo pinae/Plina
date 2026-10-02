@@ -1,5 +1,14 @@
 # Plina e2e test cases
 
+> **Status (2026-10-02):** target scenarios, not automated yet. The
+> repository has no end-to-end runner and no CI; the scripts behind the
+> end-to-end checks reported in the work packages (e.g. docs/tasks-tab.md,
+> T-7) are not part of the repository. Both scenarios also need features
+> that do not exist yet: logging in (the app is single-user, without
+> authentication), assigning tasks to other users (Alice), and in Pina's
+> scenario an "Add Dependency" field in the task details and a dependency
+> view filtered to one project (docs/task-hirachy.md).
+
 ## Alice
 
 Alice visits the front page and is asked for authentication. She chooses "Digisoul Account (OAuth2)" and is redirected to auth.digisoul-lab.de (this is mocked in the e2e test). She authenticates and is redirected to her dashboard. She goes to "Time Buckets" and creates four time buckets with the tag "HomeOffice": Mo 9:00 to 12:00, Mo 13:00 to 18:00, Fr 9:00 to 12:00 and Fr 13:00 to 18:00. She then adds two with the tag "TrainOffice": Tu 8:30 to 12:00 and Th 15:00 to 18:30. After that she adds two with the tag "PhD-Meeting" on Th 9:30 to 12:00 and Th 13:00 to 15:00. She then adds to with the tag "Teaching" on Tu 13:00 to 17:30 and on We 9:00 to 12:00. Then she adds one with the tag "Research" on We from 13:00 to 18:00. All of these time buckets repeat every week at the same time.
@@ -9,7 +18,7 @@ The planned week of Alice starts with "Notify Dennis" on monday morning at 9:00.
 
 ## Pina
 
-Pina authenticates and navigates to "Projects". "Projects" is a page displaying all tasks that have subtasks. She then creates the project/task "T250" with the tag "maker" and starts to enter subtasks:
+Pina authenticates and lands on "Tasks", the first tab: all open tasks as one tree, the current project on top. She then creates the project/task "T250" with the tag "maker" and starts to enter subtasks:
 - "print bed frame" (duration 15min)
 - "route wires" (duration 2h)
 - "flash mainboard" (duration 1h)

@@ -5,15 +5,18 @@ import {
 } from '@mui/material';
 
 import api from '../../api.ts';
-import { useAcceptPlan, useCompleteTask, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
+import { useCompleteTask, useSettings, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
 import { usePlacement } from '../../hooks/usePlacement.ts';
 import { bucketsToZones, firstFreeDay, overlapsAutoTask, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
-import { minutesToDurationString } from '../../utils/duration.ts';
+import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
+import { useNow } from '../../hooks/useNow.ts';
 import type { PlanAlternative } from '../../types.ts';
 import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { WeekView } from '../WeekView/WeekView.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
-import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
+import { WhatNextDialog } from '../WhatNextDialog/WhatNextDialog.tsx';
+import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
+import { CompletionSnackbar } from '../CompletionSnackbar/CompletionSnackbar.tsx';
 import { FeasibilityBanner } from '../FeasibilityBanner/FeasibilityBanner.tsx';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
@@ -112,7 +115,6 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
     const startTracking = useStartTracking();
     const stopTracking = useStopTracking();
     const complete = useCompleteTask();
-    const accept = useAcceptPlan();
     const client = useQueryClient();
     const [choices, setChoices] = useState<PlanAlternative[] | null>(null);
     const [editingZone, setEditingZone] = useState<DayZone | null>(null);
@@ -120,6 +122,7 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
     const [newTaskDraft, setNewTaskDraft] = useState<{ start: Date; durationMinutes: number } | null>(null);
     const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null);
     const [actionToast, setActionToast] = useState<string | null>(null);
+    const [autoCompleted, setAutoCompleted] = useState<{ id: string; header: string }[] | null>(null);
     const [weekAnchor, setWeekAnchor] = useState<Date | undefined>(initialDate);
 
     const viewTasks = useMemo(
@@ -138,6 +141,23 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
         () => tasks.data?.find(task => task.active_tracking_start !== null)?.id ?? null,
         [tasks.data],
     );
+    // Tracked time beyond the estimate per task (UI-8); the running session
+    // counts too, refreshed every minute.
+    const settings = useSettings();
+    const now = useNow(60_000);
+    const overEstimate = useMemo(() => {
+        const defaultMinutes = parseDurationMinutes(settings.data?.default_duration ?? null) ?? 60;
+        const result = new Map<string, number>();
+        for (const task of tasks.data ?? []) {
+            if (task.children_ids?.length) continue; // parents: their Rest, not the parts, is on the card
+            const running = task.active_tracking_start
+                ? (now.getTime() - new Date(task.active_tracking_start).getTime()) / 60000 : 0;
+            const spent = (parseDurationMinutes(task.time_spent) ?? 0) + running;
+            const over = Math.floor(spent - (parseDurationMinutes(task.duration) ?? defaultMinutes));
+            if (over > 0) result.set(task.id, over);
+        }
+        return result;
+    }, [tasks.data, settings.data, now]);
 
     if (plan.isPending) {
         return (
@@ -170,6 +190,7 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
             complete.mutate(taskId, {
                 onSuccess: data => {
                     if (data.alternatives.length > 0) setChoices(data.alternatives);
+                    if (data.auto_completed?.length) setAutoCompleted(data.auto_completed);
                 },
                 onError: error => surface(error, 'Could not complete the task.'),
             }),
@@ -222,6 +243,7 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                     ...task,
                     // The card of the actively tracked task offers ⏹.
                     trackingActive: task.taskId === trackedTaskId,
+                    overEstimateMinutes: task.isRest ? undefined : overEstimate.get(task.taskId),
                 }))}
                 initialDate={weekAnchor}
                 zones={zones}
@@ -237,9 +259,13 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
             {editingZone && (
                 <BucketEditDialog zone={editingZone} onClose={() => setEditingZone(null)} />
             )}
-            {editingTask && (
+            {/* A card of a task with subtasks is its Rest: it opens the split
+                editor (§4.5); every other card opens the task dialog. */}
+            {editingTask && (editingTask.children_ids?.length ? (
+                <SplitEditor open task={editingTask} onClose={() => setEditingTaskId(null)} />
+            ) : (
                 <TaskFormDialog open task={editingTask} onClose={() => setEditingTaskId(null)} />
-            )}
+            ))}
             {newTaskDraft && (
                 <TaskFormDialog
                     open
@@ -249,19 +275,11 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                     onClose={() => setNewTaskDraft(null)}
                 />
             )}
-            <Dialog open={choices !== null} onClose={() => setChoices(null)} maxWidth="lg" fullWidth>
-                <DialogTitle>Nice! What next?</DialogTitle>
-                <DialogContent>
-                    {choices && (
-                        <PlanChooser
-                            alternatives={choices}
-                            accepting={accept.isPending}
-                            onAccept={planId =>
-                                accept.mutate(planId, { onSuccess: () => setChoices(null) })}
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
+            {/* With choices, the Undo sits in the dialog (see WhatNextDialog). */}
+            <WhatNextDialog alternatives={choices} autoCompleted={autoCompleted}
+                onClose={() => { setChoices(null); setAutoCompleted(null); }} />
+            <CompletionSnackbar autoCompleted={choices ? null : autoCompleted}
+                onClose={() => setAutoCompleted(null)} />
             <Snackbar
                 open={toast !== null} autoHideDuration={6000} onClose={clearToast}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}

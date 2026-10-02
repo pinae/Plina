@@ -90,6 +90,12 @@ Mobile (≤ 600 px)
 
 ⚙ opens the settings page (§6.1).
 
+> **Since 2026-09-30 (docs/tasks-tab.md, T-2):** the tabs are *Tasks ·
+> Week Overview · Calendar Plan · Tags · Time Buckets · Dependencies*
+> (phones: *Tasks · Week · Calendar · Tags · Buckets · Deps*), and the app
+> opens on Tasks. There is no Projects tab any more: the outline is the
+> Tasks tab. On phones ⚙ stays in the header row (UI-9).
+
 ### 3.1 Active project switcher
 
 - A chip with the project color and a **breadcrumb** of the active
@@ -102,7 +108,8 @@ Mobile (≤ 600 px)
   - first entry "No project" (new tasks become top-level);
   - last entry "+ New project ‹typed text›" — creates a top-level task
     and activates it;
-  - footer link "Show all projects" → Projects tab with the *All* filter.
+  - footer link "Show all tasks" → the Tasks tab (until T-2: "Show all
+    projects" → Projects tab with the *All* filter).
 - Stored on the server (`UserSettings.active_task`). Other devices pick up
   a change on window focus and every 30 s (TanStack Query
   `refetchOnWindowFocus` + `refetchInterval`).
@@ -177,7 +184,8 @@ Everything else is the header. Example:
 
 - "Split into subtasks" button in the edit dialog (all devices).
 - Context menu / keyboard **S** on a selected outline row (§5) and on a
-  Week-view card (desktop).
+  Week-view card (desktop). *Implemented so far: S on an outline row; the
+  context menu and S on Week-view cards are not built yet (UI-6).*
 - A task that already has subtasks opens the same editor with them loaded
   ("Edit parts"). Clicking a Rest placeholder in the Week view opens it too.
 
@@ -247,9 +255,30 @@ Row editing (keyboard-first, like an outliner):
 | Tags | copied at creation (checkbox in the editor, on by default), editable per task afterwards |
 | Priority | copied at creation (checkbox, on by default) |
 | Deadline | inherited live: effective deadline = earliest of own and all ancestors' deadlines. A child can have an earlier deadline, never a later one (the form rejects it with a message naming the ancestor). |
-| Color | inherited live unless the child sets its own |
+| Color | inherited live unless the child sets its own; a project without a chosen color gets an automatic one (see below) |
 | Time spent on the parent | stays on the parent; it reduces the parent's Rest while there is Rest left (§2) |
 | Dependencies | a parent's predecessors apply to all its descendants; a task depending on the parent waits for all its descendants and its Rest (§10, UI-2) |
+
+**Colors (decided 2026-10-02).** A task shows its own color, else its
+nearest ancestor's; tags don't color tasks (they keep their stripe on the
+Week view's cards). A project (top-level task) without a chosen color gets an
+**automatic color**, as different as possible from the colors the other open
+tasks show (measured in OKLab) and dark enough for white text. It is stored
+when assigned, so it never changes because other tasks change, and it is kept
+while the task is nested (it then follows its new parent) and back when it is
+a project again. The edit dialog offers "From parent" (a project:
+"Automatic"), ten swatches and any custom color. The color shows on the Week
+view's cards, as a dot on every row of the Tasks tab and on the dependency
+editor's nodes. Before, every task got the same teal by default, so nothing
+inherited; migration 0017 turned that default into "no color of its own".
+
+**Time bucket colors work the same way** (2026-10-02): a bucket type shows
+its chosen color, else an automatic one, stored once and as different as
+possible from the colors the other bucket types show (bucket colors are
+compared with each other, not with task colors: buckets have their own
+column in the Week view). Every bucket shows its type's color. The bucket
+type form has the same picker ("Automatic", swatches, "Custom…");
+migration 0018 turned the old teal default into "Automatic".
 
 ### 4.5 The parent after splitting
 
@@ -293,6 +322,13 @@ No analysis UI is part of this spec, but the data must exist from day one:
 The split editor's row editing is the same component as a full-page
 **outline**: the tree of all open tasks, one row per task. It replaces the
 current Projects list.
+
+> **Since 2026-10-01 (docs/tasks-tab.md, T-1 … T-7):** the outline is the
+> **Tasks** tab, the first tab. The *Active project / All projects* filter
+> and the `A` key are gone — every project is shown, the active one on top;
+> a click or Enter opens the edit dialog (no inline renaming); rows are
+> reordered and re-nested by drag and drop; a circle completes, a slider
+> sets the priority. The rest of this section still applies.
 
 ```
 [ Active project │ All projects ]   A toggles        Inbox (3)   Sort ▶
@@ -347,6 +383,7 @@ all projects) and selects the first row. The user walks the list with
 | Setting | Default | Effect |
 |---|---|---|
 | Default duration | 1h | used for unestimated tasks in planning, Σ parts and ghosts |
+| Time zone | the device's | recurring bucket rules ("every day at 14:00") and times in messages mean this zone's wall-clock time; set automatically by the browser (added 2026-09-30 — before, the server's UTC shifted the buckets) |
 
 Stored in the server-side `UserSettings` together with the active project.
 More settings can be added later.
@@ -356,6 +393,9 @@ More settings can be added later.
 - The project select becomes a **Parent** field (autocomplete over all
   open tasks, showing their breadcrumb; empty = top-level project).
   Preselected with the active project for new tasks.
+- **Color** (2026-10-02, §4.4): "From parent" (a project: "Automatic"),
+  ten swatches or "Custom…"; the first choice previews the color of the
+  parent chosen in the form.
 - **Duration becomes optional:** empty is valid and shows the helper
   `Empty = your default (1h)`; malformatted values keep their error.
 - For a task with children: the estimate shows `Σ parts 10h / 12h` with
@@ -390,10 +430,10 @@ Global shortcuts are ignored while focus is in an input.
 | N | anywhere | focus quick add |
 | P | anywhere | open active project switcher |
 | T | anywhere | toggle tracking of the current / next task |
-| A | outline | toggle *Active project / All projects* |
-| S | outline row, Week-view card | split |
+| ~~A~~ | outline | ~~toggle *Active project / All projects*~~ — removed with the filter (docs/tasks-tab.md) |
+| S | outline row (Week-view card: not built yet, UI-6) | split |
 | 0–9 | outline row | priority |
-| / | anywhere | search tasks |
+| / | anywhere | search tasks — *not built yet* |
 | Esc | popovers, quick add | close |
 
 ---
@@ -491,6 +531,37 @@ L ≈ 2–4 days).
   parent delays successors until all its leaves and Rest are allocated;
   completing the last child completes parent and grandparent; reopen
   restores both.
+- *Delivered (2026-09-28, TDD):* 21 new backend tests (`test_planner_tree.py`
+  + a graph regression test) and 5 frontend tests; 248 backend / 200
+  frontend green. `build_planning_tasks` emits `PlanningTask.rest_of(parent)`
+  units (id = parent id, `is_rest`, header "Rest of …", effective deadline,
+  project = top-level ancestor); `planning_edges()` replaces every raw edge
+  query in the planner, alternatives, recalculation and completion paths.
+  `tree.expand_edges` implements the subtree rule and "Rest after ordered
+  children": the Rest follows every child without a sibling successor
+  whenever the children have at least one dependency among themselves (that
+  is what "do these in this order" creates). Cycle checks model each task as
+  a Start and an End node (parents start before and end after their
+  children), so a cycle only visible through the tree is found both when
+  adding a dependency and when moving a task. Plan entries store `is_rest`;
+  items expose it. Tracking and manual placement respect predecessors of
+  ancestors. `services/completion.py` holds auto-completion (also via PATCH
+  `completed_at`) and `reopen`. Verified live: Rest units planned after
+  CAD → test prints, hatched Rest cards in the Week view, auto-completion of
+  parent and grandparent with the dropped Rest in the snapshot, reopen
+  re-plans both Rests.
+  Decisions beyond the spec: **(1)** a parent with open subtasks cannot be
+  completed directly (400 naming the count) — completing it would silently
+  drop planned work; it completes by itself with its last subtask.
+  **(2)** Reopening a task (also via PATCH) reopens its completed ancestors,
+  since an open task cannot live inside a completed one. **(3)** Frontend:
+  Rest cards are hatched, can be tracked (▶ = time on the parent) and opened,
+  but not resized or completed — resizing would have written the slice
+  length as the parent's estimate.
+  Bugs found and fixed on the way: `graph._find_any_cycle` crashed with
+  `StopIteration` when it started on a node downstream of a cycle (now walks
+  backwards); the Week view left stale cards behind when switching weeks if
+  a task had two slices on one day (duplicate React key `taskId`).
 
 **UI-3 · Settings, active project, tracking switch — M**
 - `UserSettings` singleton (single-user app; becomes per-user with auth):
@@ -506,6 +577,32 @@ L ≈ 2–4 days).
   time, B running, active project = B's project; split endpoint creates
   children + chain edges in one transaction and rolls back fully on any
   validation error.
+- *Delivered (2026-09-28, TDD):* 30 new backend tests (`test_user_settings.py`,
+  `test_tracking_switch.py`, `test_split.py`); 278 backend / 200 frontend
+  green. `UserSettings` (pk=1, migration 0014) via `services/settings.py`;
+  `TreeIndex.load()` and the planner read the default duration from it, so
+  Σ parts, Rest and planning follow the setting, and changing it
+  recalculates the accepted plan. `GET/PATCH /api/settings/` returns the
+  active project's breadcrumb (`active_task_path`). `start_tracking` returns
+  `(session, stopped_task)`: a running session for another task is closed
+  and booked first, starting the running task again is a no-op, a blocked
+  start leaves the running session alone; the response carries
+  `stopped_task_id` and the new settings. `POST /api/tasks/{id}/split/`
+  (`services/split.py`) takes the complete new list of direct subtasks
+  (rows with `id` update, rows without create, missing ones are removed;
+  rows may nest `children`), optional `estimate` + `estimate_reason`,
+  `sequential` (default on), `inherit_tags`/`inherit_priority` (default on);
+  row errors come back per row (`children[1].header`). Frontend: types and
+  API functions for settings, split, reopen and delete modes (UI-5/UI-6 use
+  them). Verified live over HTTP on the demo data.
+  Decisions beyond the spec: **(1)** the active project must be open and a
+  project (top-level or with subtasks) — a single step is refused with a
+  message; **(2)** when the active project completes, it hands over to its
+  nearest open ancestor (or none); **(3)** the split endpoint refuses to
+  remove a subtask that has tracked time, subtasks of its own or is
+  completed (§4.6: never lose measurement data) — the whole save is rolled
+  back with a message naming it; **(4)** the default duration must be
+  between 1 minute and 1000 hours.
 
 **UI-4 · Quick-add parser — S**
 - Pure `parseQuickAdd(text, { now, tags, projects })` → `{ header,
@@ -514,6 +611,26 @@ L ≈ 2–4 days).
   errors }` covering every §3.3 token, escaping and date format (EN + DE).
 - *Accept:* table-driven tests for each token kind, combinations,
   escapes, ambiguous input (e.g. `>32.1.` → error chip, not silently text).
+- *Delivered (2026-09-28, TDD):* `src/utils/quickAdd.ts` with 68
+  table-driven tests (`quickAdd.test.ts`); 268 frontend tests green.
+  `parseQuickAdd(text, { now, tags, projects })` returns `header`,
+  `durationMinutes`, `tags: { existing: ids, new: names }`, `parentId`,
+  `priority`, `deadline` (local 23:59) and `tokens` (`kind`, `start`/`end`
+  into the input, chip `label`, `message` for error chips) plus `errors`.
+  Also exported: `parseDeadline` and `matchProject` for reuse in the
+  autocomplete. Rules: a duration needs a unit or `h:mm` (bare numbers like
+  "Buy 2 apples" stay text); `+name` matches the exact name, then the name
+  ignoring spaces/dashes (`+company-blog`), then a unique prefix, then a
+  unique name with a word starting with it (`+Blog`) — several matches are
+  an error naming them; a second duration/project/priority/deadline is an
+  error chip, the first one counts; tags repeat freely; a date without year
+  that has passed means next year, an explicit past date is an error; a lone
+  `#`, `+`, `!` or `>` stays text.
+  Deviation: `parentId` is `string | null` (null = no `+project` typed, use
+  the active project) — the spec's `'none'` value is not needed because
+  making a task top-level is the ✕ on the project chip (UI state, UI-5).
+  Note for UI-5: `10:30` parses as a 10h 30m duration (the spec lists `1:30`
+  as a duration); the chip makes this visible and `\10:30` keeps it as text.
 
 **UI-5 · Header: switcher, tracker, quick add, shortcuts — L**
 - `ActiveProjectSwitcher`, `HeaderTracker`, `QuickAdd` (uses UI-4),
@@ -522,6 +639,36 @@ L ≈ 2–4 days).
   `useStartTracking` hook (sets active project via the server response).
 - *Accept:* §11 scenarios 1 and 2 as integration tests (msw); shortcut
   keys ignored inside inputs.
+- *Delivered (2026-09-28, TDD):* 57 new frontend tests (325 total), 2
+  backend tests (280 total); `yarn build` and `storybook build` green, all
+  32 stories render. New: `AppHeader` (composes the three parts above the
+  tabs, "Plan my week" moved into it; owns the edit and "What next?"
+  dialogs), `ActiveProjectSwitcher` (breadcrumb with clickable ancestors;
+  picker via ▾ or P with type-to-filter, "No project", "+ New project …",
+  "Show all projects" → Projects tab; recently used projects first, kept per
+  browser), `HeaderTracker` + `useTracker` (shared with the T shortcut;
+  live timer in its own component so only it re-renders every second;
+  amber "+h:mm over"; ▶ "Next: …" = first running/upcoming plan item inside
+  the active project; picker lists the active project's single steps
+  first; errors such as a blocked start in a snackbar), `QuickAdd` (live
+  chips from `parseQuickAdd`; the project chip's ✕ makes the task
+  top-level; inherits the parent's tags and priority unless typed; new tags
+  are created on save; the over-budget snackbar's "Raise estimate" PATCHes
+  the estimate to Σ parts with `estimate_reason: raised_from_warning`),
+  `WhatNextDialog` (extracted from the Week view, reused by the header),
+  `useGlobalShortcuts` (ignores inputs, contenteditable, open dialogs and
+  modifier keys), `useSettings` (refetch on focus + every 30 s),
+  `useUpdateSettings`; `useStartTracking` writes the settings from the
+  response into the cache, so the header follows ▶ in the Week view without
+  a refetch. Pure helpers in `utils/projects.ts`. Backend: task PATCH
+  accepts an optional `estimate_reason`. Verified live against the backend
+  with demo data (quick add into the active project with priority/deadline
+  tokens and the over-budget warning, ▶ in the Week view switching the
+  active project, P picker).
+  Decisions beyond the spec: **(1)** Quick add refuses to save until tasks,
+  tags and settings are loaded (it shows "Loading…") — otherwise a task
+  typed right after page load would silently become a top-level project;
+  **(2)** the ⚙ settings entry comes with the settings page (UI-8).
 
 **UI-6 · Split editor — L**
 - Pure helpers: `ghostDurations(available, rows)` (15-min rounding, exact
@@ -531,6 +678,30 @@ L ≈ 2–4 days).
   `SplitEditor` (dialog, calls the split endpoint).
 - *Accept:* §11 scenario 3; paste of an indented list builds nested rows;
   over-budget state shows the raise button and saves correctly.
+- *Delivered (2026-09-29, TDD):* 49 new frontend tests (374 total) and 5
+  backend tests (285 total); `yarn build`, `storybook build` (38 stories)
+  green. Pure helpers `utils/outline.ts` (flat row model with depth; insert,
+  indent, outdent, move, remove, to-tree, paste parsing, `commitRowTokens`
+  reusing the quick-add parser) and `utils/splitMath.ts` (`ghostDurations`,
+  `computeBudgets` for nested rows incl. "parts +x over" per row,
+  `allocation` for the bar), `utils/splitPayload.ts` (task subtree ↔ rows ↔
+  request). Components `OutlineRows` (reused by UI-7), `AllocationBar`,
+  `SplitEditor` (waits for tasks/tags/settings before building its rows;
+  "Set estimate to Σ parts" = `set_to_sum`, "Raise estimate to …" in the
+  overflow line = `raised_from_warning`, a typed estimate = `split`).
+  Entry points: "Split into subtasks" / "Edit parts (n)" in the edit dialog,
+  and clicking a Rest card in the Week view. Verified live: pasting a nested
+  list into "Implement API" (8h) saved Endpoints 3:30 › Orders 2h, Payments
+  1:30; Auth 1h; Tests 3:30, with chains per level and inherited tags.
+  Backend change (supersedes UI-3 decision 3): the split request is the
+  complete outline below the task — a row may reference any task of the
+  subtree (moving it between levels), a row with an id and without
+  `children` keeps its subtree, everything else of the subtree that is not
+  listed is removed (refused for tracked time or completed tasks); rows
+  accept `latest_finish_date` (not later than an ancestor's); a final
+  tree-aware cycle check rolls everything back with the cycle named.
+  Not yet: the S shortcut on Week-view cards (needs a hovered/selected card;
+  S arrives with the outline's row selection in UI-7).
 
 **UI-7 · Outline view + sorting session — L**
 - `OutlineView` replaces `ProjectList` in the Projects tab: tree rows
@@ -540,6 +711,30 @@ L ≈ 2–4 days).
 - *Accept:* toggling A shows all projects; Tab on a row re-parents it and
   the new parent's Σ/Rest update; sort mode removes a row from the list
   once an estimate is entered.
+- *Delivered (2026-09-29, TDD):* 26 new frontend tests (400 total);
+  `yarn build` and `storybook build` (42 stories) green. `OutlineView`
+  replaces `ProjectList` in the Projects tab (the old component stays until
+  UI-8's cleanup): rows edited in place with every change saved at once,
+  filter *Active project / All projects* (A, remembered per browser;
+  "Show all projects" in the header opens it with *All*), collapsible
+  parents with `Σ parts / estimate` (amber when over budget), Rest rows
+  (▶ tracks the parent, Enter/S open the split editor), and the full key
+  set of §5/§5.1 including Enter on the last row of a level adding a new
+  sibling (tokens work; it inherits the parent's tags and priority like
+  quick add). Sorting session = inbox of unestimated tasks with their path;
+  once a row gets an estimate the next row is selected. Pure helpers in
+  `utils/outlineTree.ts`; `ProjectPicker` extracted from the header switcher
+  and reused for M. Verified live: Shift+Tab re-parents, estimating in the
+  sorting session empties the inbox row by row, and a Tab that would create
+  a dependency loop is refused with the server's explanation.
+  Decisions beyond the spec: **(1)** the outline has its own live row
+  component instead of reusing `OutlineRows` (that one edits a local draft
+  saved in one request; the outline saves each change immediately) — they
+  share the pure token/outline helpers; **(2)** Del on a leaf hides the row
+  and deletes after 6 s unless undone; Del on a parent asks "move its
+  subtasks up / delete everything" (§4.5) and has no undo; **(3)** the inbox
+  is ordered by project path (top-level tasks first); **(4)** A, digits and
+  the other single keys act only while the outline has the focus.
 
 **UI-8 · Form, settings page, Week view, migration of old UI — M**
 - `TaskFormDialog`: Parent field, optional duration with default hint,
@@ -554,12 +749,90 @@ L ≈ 2–4 days).
 - *Accept:* existing tests migrated; saving a task with empty duration
   works and it is planned with the default; completing the last child in
   the Week view shows the undo snackbar and Undo reopens the parent.
+- *Delivered (2026-09-30, TDD):* 21 new frontend tests (421 total), backend
+  281 tests (old project tests replaced by removal checks); `yarn build` and
+  `storybook build` (45 stories, all render) green. `TaskFormDialog`: the
+  project select became a **Parent** autocomplete over all open tasks (new
+  tasks start in the active project; an emptied field = a project of its
+  own), the duration may stay empty ("Empty = your default (1h)", saved as
+  `null`), parents show `Σ parts` with "Set estimate to Σ parts (x)"
+  (`set_to_sum`) next to "Edit parts", and "Spent x of y (+z)"; a deadline
+  later than an ancestor's is refused before saving, naming the ancestor.
+  `SettingsPage` (default duration) opens from the ⚙ button in the header.
+  `CompletionSnackbar` ("“T250” completed too · Undo", Undo reopens the
+  lowest auto-completed parent and with it the others) after completing in
+  the Week view and in the header tracker. Week-view cards of leaves show
+  "+x over" once the tracked time, including a running session, exceeds the
+  estimate (or the default). Removed: `ProjectList`, `ProjectFormDialog`, the
+  `Project` types, `project_id` on tasks, `/api/projects/`, the
+  `Project`/`ProjectTaskItem` models (migration 0015) and the `project_id`
+  write alias; the dependency editor and the feasibility banner name projects
+  via `ancestor_ids`. The `Task` type's tree fields are now required, with
+  `treeDefaults` for fixtures. The test setup now also fails a test on a
+  request without an msw handler (in addition to act() warnings). Verified
+  live against the backend with demo data: new task with empty duration
+  saved into the active project and planned with the default, default
+  changed to 30m in ⚙, completing the last subtask of a project + Undo,
+  "+15m over" on a tracked card.
+  Decisions beyond the spec: **(1)** appointments still require a duration
+  (they are placed at a fixed time, a default length would be a guess);
+  **(2)** "Set estimate to Σ parts" includes the parent's own tracked time
+  (Σ parts + spent), otherwise the button would itself create a negative
+  Rest; **(3)** when completing also opens "What next?", the Undo is shown
+  inside that dialog instead of the snackbar (the modal hides the page from
+  keyboard and screen readers), and Undo closes the dialog because its
+  alternatives no longer fit; **(4)** a card that has used up its estimate
+  is not planned any more, so "+x over" appears on cards still in the
+  accepted plan — typically the one being tracked; the header tracker shows
+  it anyway (UI-5).
+  Bug found and fixed on the way: on cards shorter than title + buttons the
+  bottom resize handle covered ▶/✓ and swallowed their clicks.
 
 **UI-9 · Mobile — M**
 - Compact header, ⊕ quick-add bottom sheet with recent tag/project chips,
   split editor/outline row buttons for indent/outdent.
 - *Accept:* at 390 px width header fits without horizontal scroll;
   quick add works by tapping only (plus typing the header).
+- *Delivered (2026-09-30, TDD):* 48 new frontend tests (469 total), backend
+  unchanged (281); `yarn build` and `storybook build` (52 stories, all
+  render) green. `hooks/useResponsive.ts`: `useIsMobile` (≤ 600 px) and
+  `useIsTouch` (coarse pointer); tests switch layouts with
+  `testing/matchMedia.ts` (jsdom has no `matchMedia`, so every other test
+  keeps the desktop). On phones the header shows the active project's last
+  level (tapping the name opens the picker), a compact tracker (⏹, the
+  running time — tapping it opens the task — and ✓; idle ▶ "start next"),
+  "Plan my week" as an icon and ⚙; the tabs get short labels. The quick add
+  moves into `QuickAddSheet`: ⊕ in the corner opens a bottom sheet with the
+  quick add's `sheet` variant — chips always visible, `QuickAddSuggestions`
+  to tap a project ("No project", recently used, then by priority), tags
+  (recently used, then by use in open tasks) and an estimate (15m … 4h), and
+  an Add button; the sheet stays open for the next task, N opens it. Recent
+  projects/tags per browser in `utils/recent.ts` (shared with the switcher).
+  On touch screens the focused split-editor row and the selected outline row
+  get buttons for outdent, indent and move up/down; the outline row also has
+  "details" (the edit dialog) and "split", and both hide the keyboard help.
+  The edit dialog, the split editor and both plan choosers fill the screen
+  on phones. Verified live at 390 px with touch against the demo data: the
+  header fits (no horizontal scroll, no button outside, idle and tracking),
+  a task captured by typing its name and tapping a tag, 30m and Add landed in
+  the active project, ▶ "start next" in the header, outline indent/outdent by
+  buttons (and a dependency cycle refused with the server's message), the
+  full-screen edit dialog, split-editor indent by button with the focus kept;
+  desktop and a touch tablet keep the desktop header.
+  Decisions beyond the spec: **(1)** ⚙ stays in the header row (as an icon
+  next to "Plan my week") instead of the tab row — it fits and keeps the
+  settings dialog with the header; **(2)** the compact tracker names the
+  running task only in the label of its time button; **(3)** in the sheet
+  "No project" is a chip instead of the ✕ on the project chip; typed tokens
+  win over tapped chips; **(4)** row buttons follow the pointer, not the
+  width: tablets get them too; **(5)** the sheet has no "add and open
+  details" (Ctrl+Enter) — "details" on the outline row covers it.
+  Bug found and fixed on the way: in the project picker a recently used
+  project matching by path came before an exact name ("T250" + Enter picked
+  "T250 › Hardware Design"); typed matches now rank exact name, then names
+  starting with the text, then other matches (recents first within each).
+  Also: the ⊕ button gets bottom padding in the tab content so the last rows
+  scroll clear of it.
 
 ---
 

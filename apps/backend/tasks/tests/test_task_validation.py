@@ -33,9 +33,9 @@ class TaskDescriptionOptionalTest(TestCase):
         self.assertEqual(task.description, "")
 
     def test_project_with_empty_description_can_be_created(self):
-        # Same bug on Project: the project form also sends description "".
-        response = self.client.post("/api/projects/", {
-            "name": "No description", "description": "",
+        # Projects are top-level tasks (UI-1): the same rule applies.
+        response = self.client.post("/api/tasks/", {
+            "header": "No description", "description": "", "parent_id": None,
         }, format="json")
 
         self.assertEqual(response.status_code, 201, response.data)

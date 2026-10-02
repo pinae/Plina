@@ -7,11 +7,12 @@ import {
 
 import { previewRecurrence } from '../../api.ts';
 import {
-    useCreateBucketType, useCreateProject, useCreateTag,
-    useTags, useUpdateBucketType, useUpdateProject, useUpdateTag,
+    useCreateBucketType, useCreateTag,
+    useTags, useUpdateBucketType, useUpdateTag,
 } from '../../queries.tsx';
-import type { Project, Tag, TimeBucketType } from '../../types.ts';
+import type { Tag, TimeBucketType } from '../../types.ts';
 import { parseDurationMinutes } from '../../utils/duration.ts';
+import { ColorPicker } from '../ColorPicker/ColorPicker.tsx';
 
 interface FormDialogProps {
     open: boolean;
@@ -89,57 +90,6 @@ function TagMultiSelect({ value, onChange }: {
     );
 }
 
-export function ProjectFormDialog({ open, onClose, project }: FormDialogProps & { project?: Project }) {
-    const editing = project !== undefined;
-    const [name, setName] = useState(project?.name ?? '');
-    const [description, setDescription] = useState(project?.description ?? '');
-    const [priority, setPriority] = useState(String(project?.priority ?? 5));
-    const [tagIds, setTagIds] = useState<string[]>(project?.tags.map(t => t.id) ?? []);
-    const create = useCreateProject();
-    const update = useUpdateProject();
-
-    const submit = () => {
-        if (!name.trim()) return;
-        const payload = {
-            name: name.trim(), description,
-            priority: Number(priority) || 5, tag_ids: tagIds,
-        };
-        const done = { onSuccess: () => { setName(''); onClose(); } };
-        if (editing) {
-            update.mutate({ id: project.id, patch: payload }, done);
-        } else {
-            create.mutate(payload, done);
-        }
-    };
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>{editing ? 'Edit project' : 'New project'}</DialogTitle>
-            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                <TextField
-                    label="Name" value={name} autoFocus margin="dense"
-                    onChange={event => setName(event.target.value)}
-                />
-                <TextField
-                    label="Description" value={description} multiline minRows={2}
-                    onChange={event => setDescription(event.target.value)}
-                />
-                <TextField
-                    label="Priority" type="number" value={priority}
-                    onChange={event => setPriority(event.target.value)}
-                />
-                <TagMultiSelect value={tagIds} onChange={setTagIds} />
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" onClick={submit} disabled={create.isPending || update.isPending}>
-                    {editing ? 'Save' : 'Create'}
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
-}
-
 const PREVIEW_DEBOUNCE_MS = 300;
 
 /** Hours-as-decimal -> "HH:MM:00" duration string. */
@@ -157,20 +107,27 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
         bucketType ? String((parseDurationMinutes(bucketType.duration) ?? 240) / 60) : '4',
     );
     const [tagIds, setTagIds] = useState<string[]>(bucketType?.tags.map(t => t.id) ?? []);
+    // The chosen color (§4.4); null = automatic, unlike the other types'.
+    const [ownColor, setOwnColor] = useState<string | null>(bucketType?.own_hex_color ?? null);
     const [occurrences, setOccurrences] = useState<string[]>([]);
     const [previewError, setPreviewError] = useState<string | null>(null);
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
     const create = useCreateBucketType();
     const update = useUpdateBucketType();
 
+    const changeStartTimes = (value: string) => {
+        setStartTimes(value);
+        // An emptied rule has no preview (cleared here, not in the effect).
+        if (!value.trim()) {
+            setOccurrences([]);
+            setPreviewError(null);
+        }
+    };
+
     // Live preview: server-parsed occurrences, debounced while typing.
     useEffect(() => {
         clearTimeout(debounce.current);
-        if (!startTimes.trim()) {
-            setOccurrences([]);
-            setPreviewError(null);
-            return;
-        }
+        if (!startTimes.trim()) return;
         debounce.current = setTimeout(() => {
             previewRecurrence(startTimes)
                 .then(preview => {
@@ -195,8 +152,9 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
             start_times: startTimes.trim(),
             duration: hoursToDuration(Number(hours)),
             tag_ids: tagIds,
+            own_hex_color: ownColor,
         };
-        const done = { onSuccess: () => { setName(''); setStartTimes(''); onClose(); } };
+        const done = { onSuccess: () => { setName(''); changeStartTimes(''); setOwnColor(null); onClose(); } };
         if (editing) {
             update.mutate({ id: bucketType.id, patch: payload }, done);
         } else {
@@ -216,7 +174,7 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
                     label="Recurrence" value={startTimes}
                     placeholder="every weekday at 09:00"
                     helperText="Plain language, e.g. “every day at 14:00”"
-                    onChange={event => setStartTimes(event.target.value)}
+                    onChange={event => changeStartTimes(event.target.value)}
                 />
                 {previewError && <Alert severity="error">{previewError}</Alert>}
                 {occurrences.length > 0 && (
@@ -236,6 +194,11 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
                     onChange={event => setHours(event.target.value)}
                 />
                 <TagMultiSelect value={tagIds} onChange={setTagIds} />
+                <ColorPicker
+                    value={ownColor} onChange={setOwnColor} automatic others="time buckets"
+                    defaultColor={bucketType?.auto_hex_color ?? null}
+                    chosenHint="Every bucket of this type shows it."
+                />
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Cancel</Button>

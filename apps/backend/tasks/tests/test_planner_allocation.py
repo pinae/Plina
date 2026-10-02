@@ -34,22 +34,28 @@ class PlannerAllocationTest(TestCase):
         self.general_bucket_type = TimeBucketType.objects.create(name="General Time")
 
     def test_affinity_tag_match(self):
-        """Coding bucket should prefer coding tasks."""
+        """A tagged bucket only takes tasks sharing one of its tags."""
         bucket = TimeBucket.objects.create(
             start_date=self.now, duration=timedelta(hours=2), type=self.coding_bucket_type
         )
-        
-        tasks = [self.task_general, self.task_coding] # General comes first in list
-        
+
+        tasks = [self.task_meeting, self.task_coding]  # meeting comes first in list
+
         plan = allocate_tasks([bucket], tasks)
-        
-        # Expectation: Coding task allocated to Coding bucket, General task skipped or later?
-        # Requirement: "Yes: Only consider tasks that share at least one tag"
-        # So General Task should NOT be in Coding Bucket.
-        
+
         bucket_plan = plan.get(bucket.id, [])
-        self.assertEqual(len(bucket_plan), 1)
-        self.assertEqual(bucket_plan[0].task, self.task_coding)
+        self.assertEqual([item.task for item in bucket_plan], [self.task_coding])
+
+    def test_untagged_task_fits_a_tagged_bucket(self):
+        """A task without tags was just not sorted yet: it may go into any
+        bucket, as if it had every tag."""
+        bucket = TimeBucket.objects.create(
+            start_date=self.now, duration=timedelta(hours=2), type=self.coding_bucket_type
+        )
+
+        plan = allocate_tasks([bucket], [self.task_general, self.task_meeting])
+
+        self.assertEqual([item.task for item in plan.get(bucket.id, [])], [self.task_general])
 
     def test_affinity_general_bucket(self):
         """General bucket accepts all tasks."""

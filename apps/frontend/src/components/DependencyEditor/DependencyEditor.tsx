@@ -10,12 +10,15 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { useDependencies, useProjects, useTasks } from '../../queries.tsx';
+import { useDependencies, useTasks } from '../../queries.tsx';
 import { useDependencyEditing } from '../../hooks/useDependencyEditing.ts';
 import { applyCycleHighlight, buildFlowGraph, type TaskFlowNode } from '../../utils/dependencyGraph.ts';
 import type { Edge } from '@xyflow/react';
-import { nodeTypes } from '../TaskNode/TaskNode.tsx';
+import { TaskNode } from '../TaskNode/TaskNode.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
+
+// Module level: React Flow needs the same object on every render.
+const nodeTypes = { task: TaskNode };
 
 /**
  * WP-8/9: the dependency graph editor.
@@ -27,31 +30,30 @@ import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 export default function DependencyEditor() {
     const tasks = useTasks();
     const dependencies = useDependencies();
-    const projects = useProjects();
     const editing = useDependencyEditing();
     const [addOpen, setAddOpen] = useState(false);
     const colorMode = useTheme().palette.mode;
 
     const graph = useMemo(() => {
         const built = buildFlowGraph(
-            tasks.data ?? [], dependencies.data ?? [], projects.data ?? [],
+            tasks.data ?? [], dependencies.data ?? [],
         );
         return applyCycleHighlight(built.nodes, built.edges, editing.cyclePath);
-    }, [tasks.data, dependencies.data, projects.data, editing.cyclePath]);
+    }, [tasks.data, dependencies.data, editing.cyclePath]);
 
     const [nodes, setNodes, onNodesChange] = useNodesState<TaskFlowNode>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     useEffect(() => setNodes(graph.nodes), [graph.nodes, setNodes]);
     useEffect(() => setEdges(graph.edges), [graph.edges, setEdges]);
 
-    if (tasks.isPending || dependencies.isPending || projects.isPending) {
+    if (tasks.isPending || dependencies.isPending) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 6 }}>
                 <CircularProgress />
             </Box>
         );
     }
-    if (tasks.isError || dependencies.isError || projects.isError) {
+    if (tasks.isError || dependencies.isError) {
         return <Alert severity="error">Could not load the dependency graph.</Alert>;
     }
 

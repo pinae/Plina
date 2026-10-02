@@ -13,6 +13,8 @@ export interface PlanMyWeekButtonProps {
     onTrigger: () => void;
     /** Fired when the user clicks the button (immediate re-plan). */
     onClick: () => void;
+    /** Phones (UI-9): icon only, the name stays for screen readers. */
+    compact?: boolean;
 }
 
 /**
@@ -21,7 +23,7 @@ export interface PlanMyWeekButtonProps {
  * then triggers a plan event. Starting another drag postpones it — the
  * countdown restarts after that drag finishes.
  */
-export function PlanMyWeekButton({ dirty, dragging, onTrigger, onClick }: PlanMyWeekButtonProps) {
+export function PlanMyWeekButton({ dirty, dragging, onTrigger, onClick, compact = false }: PlanMyWeekButtonProps) {
     const counting = dirty && !dragging;
 
     // The countdown runs only while counting; the progress overlay remounts
@@ -37,9 +39,10 @@ export function PlanMyWeekButton({ dirty, dragging, onTrigger, onClick }: PlanMy
             variant="contained"
             size="small"
             color={dirty ? 'warning' : 'primary'}
-            startIcon={<EventAvailableIcon />}
+            startIcon={compact ? undefined : <EventAvailableIcon />}
+            aria-label={compact ? 'Plan my week' : undefined}
             onClick={onClick}
-            sx={{ mr: 1, flexShrink: 0, position: 'relative', overflow: 'hidden' }}
+            sx={{ mr: compact ? 0 : 1, flexShrink: 0, position: 'relative', overflow: 'hidden', ...(compact && { minWidth: 0, px: 1 }) }}
             data-dirty={dirty || undefined}
         >
             {counting && (
@@ -57,7 +60,9 @@ export function PlanMyWeekButton({ dirty, dragging, onTrigger, onClick }: PlanMy
                     }}
                 />
             )}
-            <Box component="span" sx={{ position: 'relative' }}>Plan my week</Box>
+            {compact
+                ? <EventAvailableIcon fontSize="small" sx={{ position: 'relative' }} />
+                : <Box component="span" sx={{ position: 'relative' }}>Plan my week</Box>}
         </Button>
     );
 }

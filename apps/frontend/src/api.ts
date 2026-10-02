@@ -5,9 +5,12 @@ import type {
     CompleteResponse,
     Dependency,
     PlanResponse,
-    Project,
-    ProjectWrite,
     RecurrencePreview,
+    MoveResponse,
+    ReopenResponse,
+    SettingsWrite,
+    SplitRequest,
+    SplitResponse,
     StoredPlan,
     Tag,
     TagWrite,
@@ -16,10 +19,18 @@ import type {
     TimeBucket,
     TimeBucketType,
     TrackingResponse,
+    UserSettings,
 } from './types';
 
+const DEFAULT_BACKEND_URL = 'http://localhost:8000';
+
+/** The API root of a backend given by its root URL (``VITE_BACKEND_URL``,
+ *  without ``/api``); unset or empty means the local dev server. */
+export const apiBaseUrl = (backendUrl?: string) =>
+    `${backendUrl?.trim().replace(/\/+$/, '') || DEFAULT_BACKEND_URL}/api/`;
+
 const api = axios.create({
-    baseURL: 'http://localhost:8000/api/',
+    baseURL: apiBaseUrl(import.meta.env.VITE_BACKEND_URL),
     headers: {
         'Content-Type': 'application/json',
     },
@@ -58,8 +69,29 @@ export const createTask = (task: TaskWrite) =>
 export const updateTask = (taskId: string, patch: TaskWrite) =>
     api.patch<Task>(`tasks/${taskId}/`, patch).then(r => r.data);
 
-export const deleteTask = (taskId: string) =>
-    api.delete(`tasks/${taskId}/`).then(() => undefined);
+/** A task with subtasks needs ``children``: ``lift`` moves them up one
+ *  level, ``delete`` removes the whole subtree (UI-1). */
+export const deleteTask = (taskId: string, children?: 'lift' | 'delete') =>
+    api.delete(`tasks/${taskId}/`, { params: children ? { children } : undefined })
+        .then(() => undefined);
+
+export const splitTask = (taskId: string, body: SplitRequest) =>
+    api.post<SplitResponse>(`tasks/${taskId}/split/`, body).then(r => r.data);
+
+/** T-1: new parent (null = top level) and position among its subtasks. */
+export const moveTask = (taskId: string, parentId: string | null, index: number) =>
+    api.post<MoveResponse>(`tasks/${taskId}/move/`, { parent_id: parentId, index }).then(r => r.data);
+
+export const reopenTask = (taskId: string) =>
+    api.post<ReopenResponse>(`tasks/${taskId}/reopen/`).then(r => r.data);
+
+// -------------------------------------------------------------- settings
+
+export const fetchSettings = () =>
+    api.get<UserSettings>('settings/').then(r => r.data);
+
+export const updateSettings = (patch: SettingsWrite) =>
+    api.patch<UserSettings>('settings/', patch).then(r => r.data);
 
 // -------------------------------------------------------------- tracking
 
@@ -88,8 +120,6 @@ export const deleteDependency = (dependencyId: string) =>
 export const fetchTags = () =>
     api.get<Tag[]>('tags/').then(r => r.data);
 
-export const fetchProjects = () =>
-    api.get<Project[]>('projects/').then(r => r.data);
 
 export const fetchBucketTypes = () =>
     api.get<TimeBucketType[]>('buckettypes/').then(r => r.data);
@@ -103,11 +133,6 @@ export const createTag = (tag: TagWrite) =>
 export const updateTag = (tagId: string, patch: Partial<TagWrite>) =>
     api.patch<Tag>(`tags/${tagId}/`, patch).then(r => r.data);
 
-export const createProject = (project: ProjectWrite) =>
-    api.post<Project>('projects/', project).then(r => r.data);
-
-export const updateProject = (projectId: string, patch: Partial<ProjectWrite>) =>
-    api.patch<Project>(`projects/${projectId}/`, patch).then(r => r.data);
 
 export const createBucketType = (bucketType: BucketTypeWrite) =>
     api.post('buckettypes/', bucketType).then(r => r.data);

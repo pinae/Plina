@@ -34,29 +34,28 @@ class RecurrencePreviewTest(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
-class TaskProjectAssignmentTest(TestCase):
+class TaskParentAssignmentTest(TestCase):
+    """Tasks are put into projects via ``parent_id`` (UI-1/UI-8)."""
+
     def setUp(self):
         self.client = APIClient()
-        # Projects are top-level tasks (UI-1); project_id is the compat alias.
         self.project_a = Task.objects.create(header="A")
         self.project_b = Task.objects.create(header="B")
 
-    def test_create_task_with_project(self):
+    def test_create_task_in_a_project(self):
         response = self.client.post("/api/tasks/", {
-            "header": "In A", "project_id": str(self.project_a.id),
+            "header": "In A", "parent_id": str(self.project_a.id),
         }, format="json")
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["project_id"], self.project_a.id)
-        task = Task.objects.get(id=response.data["id"])
-        self.assertEqual(task.parent, self.project_a)
+        self.assertEqual(response.data["parent_id"], self.project_a.id)
+        self.assertEqual(Task.objects.get(id=response.data["id"]).parent, self.project_a)
 
     def test_move_task_between_projects(self):
         task = Task.objects.create(header="Mover", parent=self.project_a)
 
         response = self.client.patch(
-            f"/api/tasks/{task.id}/", {"project_id": str(self.project_b.id)},
-            format="json",
+            f"/api/tasks/{task.id}/", {"parent_id": str(self.project_b.id)}, format="json",
         )
 
         self.assertEqual(response.status_code, 200)
@@ -64,12 +63,10 @@ class TaskProjectAssignmentTest(TestCase):
         self.assertEqual(task.parent, self.project_b)
         self.assertFalse(self.project_a.children.exists())
 
-    def test_clear_project_with_null(self):
+    def test_make_a_task_top_level_with_null(self):
         task = Task.objects.create(header="Loner", parent=self.project_a)
 
-        response = self.client.patch(
-            f"/api/tasks/{task.id}/", {"project_id": None}, format="json",
-        )
+        response = self.client.patch(f"/api/tasks/{task.id}/", {"parent_id": None}, format="json")
 
         self.assertEqual(response.status_code, 200)
         task.refresh_from_db()
@@ -121,8 +118,8 @@ class BucketTypeRouteTest(TestCase):
 class ProjectTagsWriteTest(TestCase):
     def test_create_project_with_tags(self):
         tag = Tag.objects.create(name="client")
-        response = APIClient().post("/api/projects/", {
-            "name": "Webshop", "priority": 8.0, "tag_ids": [str(tag.id)],
+        response = APIClient().post("/api/tasks/", {
+            "header": "Webshop", "priority": 8.0, "tag_ids": [str(tag.id)],
         }, format="json")
 
         self.assertEqual(response.status_code, 201)

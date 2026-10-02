@@ -8,7 +8,7 @@
 
 export type TaskField =
     | 'header' | 'description' | 'hours' | 'deadline'
-    | 'priority' | 'tags' | 'project' | 'start';
+    | 'priority' | 'tags' | 'parent' | 'start';
 
 export interface TaskFormValues {
     header: string;
@@ -21,7 +21,8 @@ export interface TaskFormValues {
     deadlineIncomplete: boolean;
     priority: number;
     tagIds: string[];
-    projectId: string;
+    /** '' = top level (a new project). */
+    parentId: string;
     isAppointment: boolean;
     start: string;
     startIncomplete: boolean;
@@ -29,9 +30,12 @@ export interface TaskFormValues {
 
 export interface ValidationContext {
     now: Date;
-    /** Ids of existing tags/projects; null while still loading (checks skipped). */
+    /** Ids of existing tags/possible parents; null while loading (checks skipped). */
     knownTagIds: string[] | null;
-    knownProjectIds: string[] | null;
+    knownParentIds: string[] | null;
+    /** The earliest deadline of the chosen parent and its ancestors: a
+     *  task's own deadline can't be later (UI-1). */
+    parentDeadline?: { header: string; date: Date } | null;
     /** Original values in edit mode: an unchanged past deadline stays allowed. */
     originalDeadline?: string;
 }
@@ -111,11 +115,14 @@ export function validateTaskForm(values: TaskFormValues, context: ValidationCont
 
     // Description — optional; any text (including none) is fine.
 
-    // Duration — required so the planner knows how much time to reserve.
+    // Duration — optional (empty = the user's default duration, UI-8), except
+    // for appointments: their slot needs a length.
     const duration = parseDurationInput(values.hours);
     let durationMinutes: number | null = null;
     if (duration.kind === 'empty') {
-        errors.hours = 'The duration is empty. Enter how long the task will take, e.g. 1.5 hours (or 1:30).';
+        if (values.isAppointment) {
+            errors.hours = 'An appointment needs a duration. Enter how long it lasts, e.g. 1.5 hours (or 1:30).';
+        }
     } else if (duration.kind === 'invalid') {
         errors.hours = `“${values.hours.trim()}” is not a valid duration. Enter hours as a number like `
             + '1.5 or 1,5, as hours:minutes like 1:30, or minutes like 90m.';
@@ -163,6 +170,12 @@ export function validateTaskForm(values: TaskFormValues, context: ValidationCont
         } else if (appointmentEnd && deadline.date < appointmentEnd) {
             errors.deadline = `The deadline (${formatDateTime(deadline.date)}) is before the appointment `
                 + `ends (${formatDateTime(appointmentEnd)}). Move the deadline later or remove it.`;
+        } else if (context.parentDeadline && deadline.date > context.parentDeadline.date) {
+            const limit = context.parentDeadline.date;
+            const day = `${limit.getDate()}.${limit.getMonth() + 1}.`
+                + (limit.getFullYear() === context.now.getFullYear() ? '' : limit.getFullYear());
+            errors.deadline = `The deadline is later than the deadline of “${context.parentDeadline.header}” `
+                + `(${day}). Choose a date on or before it.`;
         }
     }
 
@@ -171,12 +184,13 @@ export function validateTaskForm(values: TaskFormValues, context: ValidationCont
         errors.priority = 'Priority must be between 0 and 10.';
     }
 
-    // Tags / project — selections must still exist (they may have been deleted).
+    // Tags / parent — selections must still exist (they may have been deleted).
     if (context.knownTagIds && values.tagIds.some(id => !context.knownTagIds!.includes(id))) {
         errors.tags = 'A selected tag no longer exists (it may have been deleted). Remove it from the selection.';
     }
-    if (context.knownProjectIds && values.projectId && !context.knownProjectIds.includes(values.projectId)) {
-        errors.project = 'The selected project no longer exists. Choose another project or “No project”.';
+    if (context.knownParentIds && values.parentId && !context.knownParentIds.includes(values.parentId)) {
+        errors.parent = 'The selected parent no longer exists (it may have been completed or deleted). '
+            + 'Choose another one, or leave the field empty to make this a project of its own.';
     }
 
     return errors;
@@ -187,7 +201,7 @@ export function validateTaskForm(values: TaskFormValues, context: ValidationCont
 const SERVER_FIELD: Record<string, TaskField> = {
     header: 'header', description: 'description', duration: 'hours',
     latest_finish_date: 'deadline', priority: 'priority', tag_ids: 'tags',
-    project_id: 'project', start_date: 'start',
+    parent_id: 'parent', start_date: 'start',
 };
 
 /** Map a DRF 400 payload ({field: [messages]}) onto form fields; anything that

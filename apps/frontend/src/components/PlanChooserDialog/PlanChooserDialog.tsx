@@ -6,6 +6,7 @@ import {
 import { useAcceptPlan, useComputeAlternatives } from '../../queries.tsx';
 import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
 import type { PlanAlternative } from '../../types.ts';
+import { useIsMobile } from '../../hooks/useResponsive.ts';
 
 const hasScheduledWork = (alternative: PlanAlternative) =>
     alternative.appointments.length > 0
@@ -24,6 +25,7 @@ interface PlanChooserDialogProps {
  * two or more render as cards.
  */
 export function PlanChooserDialog({ open, onClose, onAccepted }: PlanChooserDialogProps) {
+    const fullScreen = useIsMobile(); // phones (UI-9)
     const compute = useComputeAlternatives();
     const accept = useAcceptPlan();
     const computedFor = useRef(false);
@@ -83,7 +85,7 @@ export function PlanChooserDialog({ open, onClose, onAccepted }: PlanChooserDial
     const showCards = compute.isSuccess && alternatives.length > 1 && !nothingSchedulable;
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+        <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth fullScreen={fullScreen}>
             <DialogTitle>How do you want to plan?</DialogTitle>
             <DialogContent>
                 {(compute.isPending || (compute.isSuccess && alternatives.length === 1 && !nothingSchedulable)) && (

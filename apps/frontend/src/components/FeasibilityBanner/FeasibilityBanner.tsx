@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, AlertTitle, Button, Stack } from '@mui/material';
 import { format } from 'date-fns';
 
-import { useProjects, useTasks } from '../../queries.tsx';
+import { useTasks } from '../../queries.tsx';
 import type { PlanWarning } from '../../types.ts';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
@@ -14,7 +14,6 @@ import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDial
  */
 export function FeasibilityBanner({ warnings }: { warnings: PlanWarning[] }) {
     const tasks = useTasks();
-    const projects = useProjects();
     const [bucketFormOpen, setBucketFormOpen] = useState(false);
     const [editTaskId, setEditTaskId] = useState<string | null>(null);
 
@@ -22,9 +21,11 @@ export function FeasibilityBanner({ warnings }: { warnings: PlanWarning[] }) {
 
     const describe = (warning: PlanWarning): string => {
         const task = tasks.data?.find(t => t.id === warning.task_id);
-        const project = projects.data?.find(p => p.id === task?.project_id);
+        // The project is the top-level task above it (UI-1).
+        const rootId = task?.ancestor_ids?.[0];
+        const project = rootId ? tasks.data?.find(t => t.id === rootId) : undefined;
         const subject = project
-            ? `Project “${project.name}” (task “${warning.header}”)`
+            ? `Project “${project.header}” (task “${warning.header}”)`
             : `“${warning.header}”`;
         if (warning.kind === 'deadline_missed' && warning.deadline) {
             const projected = warning.projected_finish

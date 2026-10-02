@@ -2,13 +2,14 @@
  * WP-8: pure construction of the React Flow graph from API data.
  *
  * Kept free of React so the layout is unit-testable: tasks + dependencies
- * (+ projects for the color bar) in, positioned nodes and edges out.
+ * in, positioned nodes and edges out. The color bar shows the project, i.e.
+ * the top-level ancestor (UI-1: projects are top-level tasks).
  */
 import dagre from '@dagrejs/dagre';
 import type { Edge, Node } from '@xyflow/react';
 import { MarkerType } from '@xyflow/react';
 
-import type { Dependency, Project, Task } from '../types';
+import type { Dependency, Task } from '../types';
 import { formatDuration } from './duration';
 
 export const NODE_WIDTH = 210;
@@ -17,7 +18,8 @@ export const NODE_HEIGHT = 76;
 export interface TaskNodeData extends Record<string, unknown> {
     header: string;
     durationLabel: string;
-    projectColor: string | null;
+    /** The color the task shows (§4.4): its own, else inherited. */
+    color: string | null;
     projectName: string | null;
     isDone: boolean;
     inCycle?: boolean;
@@ -25,14 +27,12 @@ export interface TaskNodeData extends Record<string, unknown> {
 
 export type TaskFlowNode = Node<TaskNodeData, 'task'>;
 
-function projectLookup(projects: Project[]): Map<string, Project> {
-    const byTask = new Map<string, Project>();
-    for (const project of projects) {
-        for (const taskId of project.task_ids ?? []) {
-            byTask.set(taskId, project);
-        }
-    }
-    return byTask;
+/** The task's project: its top-level ancestor, or the task itself when it
+ *  is a top-level task with subtasks. A single top-level step has none. */
+function projectOf(task: Task, byId: Map<string, Task>): Task | null {
+    const rootId = task.ancestor_ids?.[0];
+    if (rootId) return byId.get(rootId) ?? null;
+    return task.children_ids?.length ? task : null;
 }
 
 function layout(nodes: TaskFlowNode[], edges: Edge[]): TaskFlowNode[] {
@@ -59,12 +59,11 @@ function layout(nodes: TaskFlowNode[], edges: Edge[]): TaskFlowNode[] {
 export function buildFlowGraph(
     tasks: Task[],
     dependencies: Dependency[],
-    projects: Project[],
 ): { nodes: TaskFlowNode[]; edges: Edge[] } {
-    const byTask = projectLookup(projects);
+    const byId = new Map(tasks.map(task => [task.id, task]));
 
     const nodes: TaskFlowNode[] = tasks.map(task => {
-        const project = byTask.get(task.id) ?? null;
+        const project = projectOf(task, byId);
         return {
             id: task.id,
             type: 'task',
@@ -72,8 +71,8 @@ export function buildFlowGraph(
             data: {
                 header: task.header,
                 durationLabel: formatDuration(task.duration),
-                projectColor: project?.hex_color ?? null,
-                projectName: project?.name ?? null,
+                color: task.hex_color ?? null,
+                projectName: project?.header ?? null,
                 isDone: task.is_done,
             },
         };

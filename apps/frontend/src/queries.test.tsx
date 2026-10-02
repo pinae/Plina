@@ -17,6 +17,7 @@ import {
     useAcceptPlan,
     useComputeAlternatives,
     usePlan,
+    useSettings,
     useStartTracking,
 } from './queries';
 
@@ -186,5 +187,30 @@ describe('useStartTracking', () => {
 
         const payload = result.current.error!.response?.data;
         expect(payload?.predecessors?.[0].header).toBe('Design Schema');
+    });
+
+    it('takes the synced active project from the response (UI-3/UI-5)', async () => {
+        let settingsFetches = 0;
+        const path = [{ id: 'blog', header: 'Company Blog' }];
+        server.use(
+            http.get(`${API}/settings/`, () => {
+                settingsFetches += 1;
+                return HttpResponse.json({ default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '' });
+            }),
+            http.post(`${API}/tasks/task-3/track/start/`, () => HttpResponse.json({
+                task: { id: 'task-3' }, stopped_task_id: 'task-1',
+                settings: { default_duration: '01:00:00', active_task_id: 'blog', active_task_path: path },
+            })),
+        );
+        const { result } = renderHook(
+            () => ({ settings: useSettings(), start: useStartTracking() }), { wrapper },
+        );
+        await waitFor(() => expect(result.current.settings.isSuccess).toBe(true));
+
+        result.current.start.mutate('task-3');
+
+        await waitFor(() => expect(result.current.settings.data?.active_task_id).toBe('blog'));
+        expect(result.current.settings.data?.active_task_path).toEqual(path);
+        expect(settingsFetches).toBe(1);
     });
 });

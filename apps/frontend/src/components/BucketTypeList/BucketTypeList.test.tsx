@@ -49,11 +49,11 @@ function wrapper({ children }: { children: ReactNode }) {
 const sample: TimeBucketType[] = [
     {
         id: 1, name: 'Morning Focus', start_times: 'every weekday at 09:00',
-        duration: '04:00:00', tags: [], hex_color: '#4caf50',
+        duration: '04:00:00', tags: [], hex_color: '#4caf50', own_hex_color: '#4caf50', auto_hex_color: '#299fcd',
     },
     {
         id: 2, name: 'Evening Errands', start_times: 'every day at 18:00',
-        duration: '01:30:00', tags: [], hex_color: null,
+        duration: '01:30:00', tags: [], hex_color: null, own_hex_color: null, auto_hex_color: null,
     },
 ];
 

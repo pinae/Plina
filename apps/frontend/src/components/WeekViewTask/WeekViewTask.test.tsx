@@ -177,6 +177,51 @@ describe('WeekViewTask', () => {
         expect((start as Date).getHours()).toBe(10);
     });
 
+    it('moves an appointment purely sideways to the same time on another day', () => {
+        // Regression: only vertical movement counted, so this was a click.
+        const onChange = vi.fn();
+        const onEdit = vi.fn();
+        const resolveDay = vi.fn(() => new Date('2024-01-05T00:00:00'));
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} onEdit={onEdit} resolveDay={resolveDay} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 540, clientX: 900 });
+        fireEvent.mouseUp(window, { clientY: 540, clientX: 900 });
+
+        expect(onEdit).not.toHaveBeenCalled();
+        expect(onChange).toHaveBeenCalledTimes(1);
+        const [, start] = onChange.mock.calls[0];
+        expect((start as Date).getDate()).toBe(5);
+        expect([(start as Date).getHours(), (start as Date).getMinutes()]).toEqual([9, 0]);
+    });
+
+    it('still treats a press with a little sideways jitter as a click', () => {
+        const onChange = vi.fn();
+        const onEdit = vi.fn();
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} onEdit={onEdit} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 541, clientX: 102 });
+        fireEvent.mouseUp(window, { clientY: 541, clientX: 102 });
+
+        expect(onEdit).toHaveBeenCalledWith('a1');
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('ignores sideways movement on the resize handle (no live drag)', () => {
+        const onDragChange = vi.fn();
+        const task = createMockTask({ taskId: 't1', manuallySet: false, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={task} columnHeight={1440} onChange={vi.fn()} onDragChange={onDragChange} />);
+
+        fireEvent.mouseDown(screen.getByTestId('task-resize-bottom'), { clientY: 600, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600, clientX: 160 });
+        fireEvent.mouseUp(window, { clientY: 600, clientX: 160 });
+
+        expect(onDragChange.mock.calls.filter(([drag]) => drag !== null)).toHaveLength(0);
+    });
+
     it('resizes a non-appointment from the bottom handle, keeping the start', () => {
         const onChange = vi.fn();
         const task = createMockTask({ taskId: 't1', manuallySet: false, startTime: '2024-01-01T09:00:00', duration: 60 });
@@ -190,6 +235,60 @@ describe('WeekViewTask', () => {
         const [, start, duration] = onChange.mock.calls[0];
         expect((start as Date).getHours()).toBe(9);
         expect(duration).toBe(120);
+    });
+
+    it('keeps the action buttons above the resize handle on short cards', () => {
+        // A 30-minute card is shorter than title + buttons: the bottom handle
+        // then overlaps the buttons and must not swallow their clicks.
+        const actions = { trackingActive: false, onTrackStart: vi.fn(), onTrackStop: vi.fn(), onComplete: vi.fn() };
+        const task = createMockTask({ taskId: 't1', manuallySet: false, duration: 30 });
+        render(<WeekViewTask task={task} columnHeight={1440} onChange={vi.fn()} actions={actions} />);
+        const handleZ = Number(getComputedStyle(screen.getByTestId('task-resize-bottom')).zIndex);
+        const row = screen.getByTestId('task-actions');
+        expect(getComputedStyle(row).position).toBe('relative');
+        expect(Number(getComputedStyle(row).zIndex)).toBeGreaterThan(handleZ);
+    });
+});
+
+describe('WeekViewTask tracked over the estimate (UI-8)', () => {
+    afterEach(cleanup);
+
+    it('shows how far the tracked time exceeds the estimate', () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1', overEstimateMinutes: 80 })} columnHeight={1440} />);
+        expect(screen.getByTestId('over-estimate')).toHaveTextContent('+1h 20m over');
+    });
+
+    it('shows nothing within the estimate', () => {
+        render(<WeekViewTask task={createMockTask({ taskId: 't1' })} columnHeight={1440} />);
+        expect(screen.queryByTestId('over-estimate')).toBeNull();
+    });
+});
+
+describe('WeekViewTask Rest placeholder (UI-2)', () => {
+    afterEach(cleanup);
+
+    const actions = { trackingActive: false, onTrackStart: vi.fn(), onTrackStop: vi.fn(), onComplete: vi.fn() };
+    const rest = () => createMockTask({
+        taskId: 'hw', title: 'Rest of Hardware Design', manuallySet: false, isRest: true,
+    });
+
+    it('is hatched and cannot be resized — it is not a task of its own', () => {
+        render(<WeekViewTask task={rest()} columnHeight={1440} onChange={vi.fn()} />);
+        expect(screen.getByTestId('week-view-task')).toHaveAttribute('data-rest', 'true');
+        expect(screen.queryByTestId('task-resize-bottom')).toBeNull();
+    });
+
+    it('can be tracked (time on the parent) but not completed', () => {
+        render(<WeekViewTask task={rest()} columnHeight={1440} actions={actions} />);
+        expect(screen.getByLabelText('start tracking')).toBeInTheDocument();
+        expect(screen.queryByLabelText('complete')).toBeNull();
+    });
+
+    it('still opens the parent for editing on click', () => {
+        const onEdit = vi.fn();
+        render(<WeekViewTask task={rest()} columnHeight={1440} onEdit={onEdit} />);
+        fireEvent.click(screen.getByTestId('week-view-task'));
+        expect(onEdit).toHaveBeenCalledWith('hw');
     });
 });
 

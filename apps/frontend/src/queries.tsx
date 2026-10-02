@@ -6,22 +6,19 @@
  * Task/dependency mutations additionally invalidate their own lists.
  */
 import {
-    QueryClient,
-    QueryClientProvider,
     useMutation,
     useQuery,
     useQueryClient,
 } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
-import type { ReactNode } from 'react';
 
 import {
     acceptPlan,
     completeTask,
+    moveTask,
     computeAlternatives,
     createBucketType,
     createDependency,
-    createProject,
     createTag,
     createTask,
     deleteDependency,
@@ -29,29 +26,35 @@ import {
     fetchBucketTypes,
     fetchDependencies,
     fetchPlan,
-    fetchProjects,
+    fetchSettings,
     fetchTags,
     fetchTasks,
+    reopenTask,
+    splitTask,
     startTracking,
     stopTracking,
     updateBucketType,
-    updateProject,
+    updateSettings,
     updateTag,
     updateTask,
 } from './api';
 import type {
-    BucketTypeWrite, Dependency, DependencyCycleError, ProjectWrite,
-    TagWrite, TaskWrite, TrackingBlockedError,
+    BucketTypeWrite, Dependency, DependencyCycleError, SettingsWrite, SplitRequest,
+    TagWrite, Task, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
+import { applyMove } from './utils/treeDnd.ts';
 
 export const queryKeys = {
     plan: ['plan'] as const,
     tasks: ['tasks'] as const,
     dependencies: ['dependencies'] as const,
     tags: ['tags'] as const,
-    projects: ['projects'] as const,
     bucketTypes: ['bucketTypes'] as const,
+    settings: ['settings'] as const,
 };
+
+/** Other devices pick up a changed active project this often (§3.1). */
+export const SETTINGS_REFRESH_MS = 30_000;
 
 // ----------------------------------------------------------------- queries
 
@@ -67,11 +70,16 @@ export const useDependencies = () =>
 export const useTags = () =>
     useQuery({ queryKey: queryKeys.tags, queryFn: fetchTags });
 
-export const useProjects = () =>
-    useQuery({ queryKey: queryKeys.projects, queryFn: fetchProjects });
 
 export const useBucketTypes = () =>
     useQuery({ queryKey: queryKeys.bucketTypes, queryFn: fetchBucketTypes });
+
+/** UI-3 settings (active project, default duration), synced across devices. */
+export const useSettings = () =>
+    useQuery({
+        queryKey: queryKeys.settings, queryFn: fetchSettings,
+        refetchOnWindowFocus: true, refetchInterval: SETTINGS_REFRESH_MS,
+    });
 
 // --------------------------------------------------------------- mutations
 
@@ -94,15 +102,39 @@ export const useAcceptPlan = () => {
     });
 };
 
+/** Every start point (Week view ▶, header, shortcut T) goes through here:
+ *  the server switches the running session over and makes the task's
+ *  project active; the response carries the new settings. */
 export const useStartTracking = () => {
     const invalidate = useInvalidate();
+    const client = useQueryClient();
     return useMutation<
         Awaited<ReturnType<typeof startTracking>>,
         AxiosError<TrackingBlockedError>,
         string
     >({
         mutationFn: startTracking,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: data => {
+            if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
+            return invalidate(queryKeys.tasks, queryKeys.plan);
+        },
+    });
+};
+
+/** The split editor's atomic save (UI-3/UI-6). */
+export const useSplitTask = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ taskId, body }: { taskId: string; body: SplitRequest }) => splitTask(taskId, body),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.dependencies),
+    });
+};
+
+export const useUpdateSettings = () => {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: (patch: SettingsWrite) => updateSettings(patch),
+        onSuccess: data => client.setQueryData<UserSettings>(queryKeys.settings, data),
     });
 };
 
@@ -114,12 +146,22 @@ export const useStopTracking = () => {
     });
 };
 
-/** Completing may return fresh choices; consume them from `data.alternatives`. */
+/** Completing may return fresh choices; consume them from `data.alternatives`.
+ *  Parents may complete too, and a completed active project hands over. */
 export const useCompleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: completeTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
+    });
+};
+
+/** Undo a completion; completed ancestors reopen too (UI-2). */
+export const useReopenTask = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: reopenTask,
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
     });
 };
 
@@ -140,10 +182,55 @@ export const useUpdateTask = () => {
     });
 };
 
+/** T-5: set a task's priority — shown at once (optimistic), rolled back
+ *  if the server refuses; the plan follows after the save. */
+export const useSetPriority = () => {
+    const client = useQueryClient();
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ taskId, priority }: { taskId: string; priority: number }) =>
+            updateTask(taskId, { priority }),
+        onMutate: ({ taskId, priority }) => {
+            void client.cancelQueries({ queryKey: queryKeys.tasks });
+            const previous = client.getQueryData<Task[]>(queryKeys.tasks);
+            client.setQueryData<Task[]>(queryKeys.tasks,
+                list => list?.map(t => (t.id === taskId ? { ...t, priority } : t)));
+            return { previous };
+        },
+        onError: (_error, _variables, context) => {
+            if (context?.previous) client.setQueryData(queryKeys.tasks, context.previous);
+        },
+        onSettled: () => invalidate(queryKeys.tasks, queryKeys.plan),
+    });
+};
+
+/** T-6: move a task (drag and drop, Tab, Alt+↑/↓) — the tree changes at
+ *  once (optimistic) and is rolled back if the server refuses. */
+export const useMoveTask = () => {
+    const client = useQueryClient();
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ taskId, parentId, index }: { taskId: string; parentId: string | null; index: number }) =>
+            moveTask(taskId, parentId, index),
+        onMutate: ({ taskId, parentId, index }) => {
+            void client.cancelQueries({ queryKey: queryKeys.tasks });
+            const previous = client.getQueryData<Task[]>(queryKeys.tasks);
+            if (previous) client.setQueryData<Task[]>(queryKeys.tasks, applyMove(previous, taskId, parentId, index));
+            return { previous };
+        },
+        onError: (_error, _variables, context) => {
+            if (context?.previous) client.setQueryData(queryKeys.tasks, context.previous);
+        },
+        // The active project may hand over (T-1).
+        onSettled: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
+    });
+};
+
 export const useDeleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
-        mutationFn: deleteTask,
+        mutationFn: ({ taskId, children }: { taskId: string; children?: 'lift' | 'delete' }) =>
+            deleteTask(taskId, children),
         onSuccess: () =>
             invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan),
     });
@@ -192,26 +279,6 @@ export const useDeleteDependency = () => {
     });
 };
 
-// ---------------------------------------------------------------- provider
-
-export function createAppQueryClient() {
-    return new QueryClient({
-        defaultOptions: {
-            queries: { staleTime: 10_000, refetchOnWindowFocus: false },
-        },
-    });
-}
-
-const appQueryClient = createAppQueryClient();
-
-export function AppQueryProvider({ children }: { children: ReactNode }) {
-    return (
-        <QueryClientProvider client={appQueryClient}>
-            {children}
-        </QueryClientProvider>
-    );
-}
-
 export const useCreateTag = () => {
     const invalidate = useInvalidate();
     return useMutation({
@@ -227,24 +294,6 @@ export const useUpdateTag = () => {
             updateTag(id, patch),
         // Tag colour/affinity can influence planning, so refresh the plan too.
         onSuccess: () => invalidate(queryKeys.tags, queryKeys.plan),
-    });
-};
-
-export const useCreateProject = () => {
-    const invalidate = useInvalidate();
-    return useMutation({
-        mutationFn: createProject,
-        onSuccess: () => invalidate(queryKeys.projects),
-    });
-};
-
-export const useUpdateProject = () => {
-    const invalidate = useInvalidate();
-    return useMutation({
-        mutationFn: ({ id, patch }: { id: string; patch: Partial<ProjectWrite> }) =>
-            updateProject(id, patch),
-        // Priority/tags feed the scheduler, so the plan may change.
-        onSuccess: () => invalidate(queryKeys.projects, queryKeys.plan),
     });
 };
 

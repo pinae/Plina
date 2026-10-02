@@ -2,8 +2,8 @@
 
 Every top-level task is a project; tasks can be split indefinitely via
 ``parent``. These tests pin the API contract, the tree validation, deletion
-modes, estimate history, completion snapshots, the ``/api/projects/``
-compatibility view and the planner's handling of parents.
+modes, estimate history, completion snapshots, the removal of the
+``/api/projects/`` compatibility view and the planner's handling of parents.
 """
 from datetime import timedelta
 
@@ -219,6 +219,24 @@ class EstimateHistoryTest(TestCase):
         change = TaskEstimateChange.objects.get(task_id=created["id"])
         self.assertEqual((change.reason, change.new_duration), ("created", None))
 
+    def test_patch_can_name_the_reason_of_an_estimate_change(self):
+        # UI-5: "Raise estimate" in the over-budget snackbar.
+        created = self.client.post("/api/tasks/", {"header": "P", "duration": "02:00:00"},
+                                   format="json").data
+        response = self.client.patch(f"/api/tasks/{created['id']}/", {
+            "duration": "03:00:00", "estimate_reason": "raised_from_warning",
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(TaskEstimateChange.objects.filter(task_id=created["id"])
+                         .order_by("changed_at").last().reason, "raised_from_warning")
+
+    def test_unknown_estimate_reason_is_rejected(self):
+        created = self.client.post("/api/tasks/", {"header": "P"}, format="json").data
+        response = self.client.patch(f"/api/tasks/{created['id']}/", {
+            "duration": "03:00:00", "estimate_reason": "because",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+
     def test_edits_without_estimate_change_are_not_recorded(self):
         created = self.client.post("/api/tasks/", {"header": "Report", "duration": "02:00:00"},
                                    format="json").data
@@ -252,7 +270,9 @@ class CompletionSnapshotTest(TreeFixtureMixin, TestCase):
         self.cad.save()
         self.hardware.time_spent = hours(1)
         self.hardware.save()
-        self.client.post(f"/api/tasks/{self.hardware.id}/complete/")
+        # The parent completes automatically with its last child (UI-2).
+        self.client.post(f"/api/tasks/{self.cad.id}/complete/")
+        self.client.post(f"/api/tasks/{self.prints.id}/complete/")
         self.hardware.refresh_from_db()
         self.assertEqual(self.hardware.completion_time_spent, hours(1))
         self.assertEqual(self.hardware.completion_subtree_time_spent, hours(4))
@@ -268,67 +288,24 @@ class CompletionSnapshotTest(TreeFixtureMixin, TestCase):
         self.assertIsNone(self.prints.completion_estimate)
 
 
-class ProjectsCompatibilityTest(TreeFixtureMixin, TestCase):
-    """``/api/projects/`` keeps its old shape over top-level tasks until UI-8."""
+class OldProjectApiRemovedTest(TreeFixtureMixin, TestCase):
+    """UI-8: the ``/api/projects/`` compatibility view and the ``project_id``
+    alias are gone — projects are top-level tasks, membership is ``parent_id``."""
 
     def setUp(self):
         self.client = APIClient()
         self.make_tree()
-        self.milk = Task.objects.create(header="Buy milk", order=1)
 
-    def test_lists_top_level_tasks_with_all_descendants(self):
-        response = self.client.get("/api/projects/")
-        self.assertEqual(response.status_code, 200)
-        by_name = {project["name"]: project for project in response.data}
-        self.assertEqual(set(by_name), {"T250", "Buy milk"})
-        self.assertEqual(by_name["T250"]["id"], str(self.t250.id))
-        self.assertEqual(by_name["T250"]["task_ids"], [
-            self.hardware.id, self.cad.id, self.prints.id, self.firmware.id,
-        ])
-        self.assertEqual(by_name["Buy milk"]["task_ids"], [])
+    def test_projects_endpoint_is_gone(self):
+        self.assertEqual(self.client.get("/api/projects/").status_code, 404)
 
-    def test_creating_a_project_creates_a_top_level_task(self):
-        response = self.client.post("/api/projects/", {
-            "name": "Company Blog", "description": "", "priority": 6,
-        }, format="json")
-        self.assertEqual(response.status_code, 201, response.data)
-        task = Task.objects.get(id=response.data["id"])
-        self.assertEqual((task.header, task.parent_id, task.priority), ("Company Blog", None, 6))
+    def test_tasks_no_longer_carry_project_id(self):
+        self.assertNotIn("project_id", self.client.get(f"/api/tasks/{self.cad.id}/").data)
 
-    def test_renaming_a_project_renames_the_task(self):
-        response = self.client.patch(f"/api/projects/{self.t250.id}/", {"name": "T300"},
-                                     format="json")
-        self.assertEqual(response.status_code, 200, response.data)
-        self.t250.refresh_from_db()
-        self.assertEqual(self.t250.header, "T300")
-
-    def test_deleting_a_project_keeps_its_tasks(self):
-        response = self.client.delete(f"/api/projects/{self.t250.id}/")
-        self.assertEqual(response.status_code, 204)
-        self.hardware.refresh_from_db()
-        self.assertIsNone(self.hardware.parent_id)
-        self.assertTrue(Task.objects.filter(id=self.cad.id, parent=self.hardware).exists())
-
-    def test_task_project_id_is_the_top_level_ancestor(self):
-        self.assertEqual(self.client.get(f"/api/tasks/{self.cad.id}/").data["project_id"],
-                         self.t250.id)
-        self.assertIsNone(self.client.get(f"/api/tasks/{self.t250.id}/").data["project_id"])
-
-    def test_writing_project_id_moves_the_task(self):
-        response = self.client.patch(f"/api/tasks/{self.firmware.id}/",
-                                     {"project_id": str(self.milk.id)}, format="json")
-        self.assertEqual(response.status_code, 200, response.data)
-        self.firmware.refresh_from_db()
-        self.assertEqual(self.firmware.parent_id, self.milk.id)
-
-    def test_resending_the_same_project_keeps_a_nested_task_in_place(self):
-        # The old form sends the project it was shown back on every save.
-        response = self.client.patch(f"/api/tasks/{self.cad.id}/", {
-            "header": "CAD v2", "project_id": str(self.t250.id),
-        }, format="json")
-        self.assertEqual(response.status_code, 200, response.data)
-        self.cad.refresh_from_db()
-        self.assertEqual(self.cad.parent_id, self.hardware.id)
+    def test_the_old_models_are_gone(self):
+        import tasks.models as models
+        self.assertFalse(hasattr(models, "Project"))
+        self.assertFalse(hasattr(models, "ProjectTaskItem"))
 
 
 class PlannerTreeTest(TreeFixtureMixin, TestCase):
@@ -336,8 +313,9 @@ class PlannerTreeTest(TreeFixtureMixin, TestCase):
         self.make_tree()
 
     def test_parents_are_not_planned_as_blocks(self):
+        # Only their Rest is (UI-2, see test_planner_tree).
         from tasks.services.planner_service import build_planning_tasks
-        headers = {s.header for s in build_planning_tasks(Task.objects.all())}
+        headers = {s.header for s in build_planning_tasks(Task.objects.all()) if not s.is_rest}
         self.assertEqual(headers, {"CAD", "test prints", "Firmware"})
 
     def test_project_id_is_the_top_level_ancestor(self):

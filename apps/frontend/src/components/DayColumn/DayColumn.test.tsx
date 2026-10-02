@@ -39,6 +39,27 @@ describe('DayColumn', () => {
         columnHeight: 1000,
     };
 
+    it('keeps no stale cards when a task has two slices on one day (regression)', () => {
+        // Two slices of the same task (e.g. a morning and an afternoon bucket)
+        // shared a React key, so switching weeks left one card behind.
+        const slice = (startTime: string, title: string): ViewTask => ({
+            title, startTime, duration: 60, color: '#123456', manuallySet: false,
+            description: '', tags: [], continues: false, taskId: 'same-task',
+        });
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { rerender } = render(<DayColumn {...defaultProps} tasks={[
+            slice('2024-01-01T09:00:00', 'Design schema'), slice('2024-01-01T14:00:00', 'Design schema'),
+        ]} />);
+        expect(screen.getAllByTestId('week-view-task')).toHaveLength(2);
+
+        rerender(<DayColumn {...defaultProps} tasks={[slice('2024-01-01T10:00:00', 'Other')]} />);
+        rerender(<DayColumn {...defaultProps} tasks={[]} />);
+
+        expect(screen.queryAllByTestId('week-view-task')).toHaveLength(0);
+        const keyWarnings = consoleError.mock.calls.filter(call => String(call[0]).includes('same key'));
+        expect(keyWarnings).toHaveLength(0);
+    });
+
     it('renders tasks passed as children', () => {
         const tasks: ViewTask[] = [{
             title: 'Test Task',

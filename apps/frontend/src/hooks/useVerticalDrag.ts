@@ -7,7 +7,9 @@
  * start/duration for immediate visual feedback; on release `onCommit` fires
  * once (only if something actually changed).  A "move" press that never
  * exceeds the movement threshold is treated as a plain click (`onClick`),
- * so the same body serves both editing (click) and moving (drag).
+ * so the same body serves both editing (click) and moving (drag).  A move
+ * counts sideways movement too (to another day at the same time); a resize
+ * only counts vertical movement.
  */
 import { useCallback, useRef, useState } from 'react';
 import { applyDrag, pixelsToMinutes, type DragMode, type DragResult } from '../utils/weekDrag.ts';
@@ -41,6 +43,7 @@ export function useVerticalDrag({
 }: Args) {
     const [preview, setPreview] = useState<DragResult | null>(null);
     const origin = useRef(0);
+    const originX = useRef(0);
     const moved = useRef(false);
 
     const startDrag = useCallback((mode: DragMode) => (event: React.MouseEvent) => {
@@ -48,6 +51,7 @@ export function useVerticalDrag({
         event.preventDefault();
         event.stopPropagation();
         origin.current = event.clientY;
+        originX.current = event.clientX;
         moved.current = false;
         onActiveChange?.(true, mode);
 
@@ -57,7 +61,8 @@ export function useVerticalDrag({
         );
 
         const onMove = (ev: MouseEvent) => {
-            if (Math.abs(ev.clientY - origin.current) > MOVE_THRESHOLD_PX) moved.current = true;
+            const sideways = mode === 'move' ? Math.abs(ev.clientX - originX.current) : 0;
+            if (Math.max(Math.abs(ev.clientY - origin.current), sideways) > MOVE_THRESHOLD_PX) moved.current = true;
             const result = compute(ev.clientY);
             setPreview(result);
             if (moved.current) onPreview?.(result, { mode, clientX: ev.clientX, clientY: ev.clientY });

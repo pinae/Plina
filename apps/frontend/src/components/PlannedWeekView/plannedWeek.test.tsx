@@ -55,6 +55,24 @@ const planPayload: PlanResponse = {
 };
 
 describe('planToViewTasks', () => {
+    it('marks the Rest placeholder of a parent (UI-2)', () => {
+        const withRest: PlanResponse = {
+            ...planPayload,
+            buckets: [{
+                ...planPayload.buckets[0],
+                items: [{
+                    task_id: 'hw', header: 'Rest of Hardware Design', is_rest: true,
+                    start_time: '2026-07-08T11:00:00', duration: 7200,
+                    warnings: [], is_fixed: false, is_appointment: false, hex_color: null,
+                }],
+            }],
+        };
+        const rest = planToViewTasks(withRest).find(t => t.taskId === 'hw')!;
+        expect(rest.isRest).toBe(true);
+        expect(rest.title).toBe('Rest of Hardware Design');
+        expect(planToViewTasks(planPayload).every(t => !t.isRest)).toBe(true);
+    });
+
     it('maps plan items and appointments to ViewTasks', () => {
         const tasks = planToViewTasks(planPayload);
 
@@ -101,19 +119,16 @@ describe('dropTimeFromOffset', () => {
 });
 
 const API = 'http://localhost:8000/api';
-let planRequests = 0;
-
 const server = setupServer(
-    http.get(`${API}/plan/`, () => {
-        planRequests += 1;
-        return HttpResponse.json(planPayload);
-    }),
+    http.get(`${API}/plan/`, () => HttpResponse.json(planPayload)),
+    http.get(`${API}/settings/`, () => HttpResponse.json({
+        default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
+    })),
     http.get(`${API}/tasks/`, () => HttpResponse.json([] as Task[])),
-    http.get(`${API}/projects/`, () => HttpResponse.json([])),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-afterEach(() => { server.resetHandlers(); planRequests = 0; });
+afterEach(() => { server.resetHandlers(); });
 afterAll(() => server.close());
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -261,6 +276,92 @@ describe('PlannedWeekView', () => {
     });
 });
 
+describe('tracked time over the estimate (UI-8)', () => {
+    it('marks the card of a task whose tracked time exceeds its estimate', async () => {
+        const base = {
+            description: '', start_date: null, latest_finish_date: null, priority: 5, tags: [], hex_color: null,
+            is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
+        };
+        server.use(
+            http.get(`${API}/tasks/`, () => HttpResponse.json([
+                { ...base, id: 't1', header: 'Design Schema', duration: '01:00:00', time_spent: '01:20:00',
+                    active_tracking_start: null },
+                { ...base, id: 't2', header: 'Implement API', duration: '02:00:00', time_spent: '00:30:00',
+                    active_tracking_start: null },
+            ])),
+            http.get(`${API}/settings/`, () => HttpResponse.json({
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
+            })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        const over = await screen.findByTestId('over-estimate');
+        expect(over).toHaveTextContent('+20m over');
+        expect(screen.getAllByTestId('over-estimate')).toHaveLength(1);
+    });
+});
+
+describe('completion cascade (UI-8 acceptance)', () => {
+    it('completing the last child shows an undo snackbar; Undo reopens the parent', async () => {
+        const reopened: string[] = [];
+        server.use(
+            http.post(`${API}/tasks/t1/complete/`, () => HttpResponse.json({
+                task: { id: 't1', header: 'Design Schema', is_done: true }, alternatives: [],
+                auto_completed: [{ id: 'hw', header: 'Hardware Design' }],
+            })),
+            http.post(`${API}/tasks/hw/reopen/`, () => {
+                reopened.push('hw');
+                return HttpResponse.json({ task: { id: 'hw' }, reopened: ['hw'] });
+            }),
+            http.get(`${API}/settings/`, () => HttpResponse.json({
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
+            })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+
+        fireEvent.click(screen.getAllByRole('button', { name: /complete/i })[0]);
+
+        expect(await screen.findByText('“Hardware Design” completed too')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /undo/i }));
+        await waitFor(() => expect(reopened).toEqual(['hw']));
+    });
+});
+
+describe('Rest placeholder (UI-6)', () => {
+    it('opens the split editor of its parent when clicked', async () => {
+        const parent: Task = {
+            id: 'hw', header: 'Hardware Design', description: '', start_date: null, duration: '12:00:00',
+            latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null,
+            is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
+            active_tracking_start: null, ...treeDefaults, children_ids: ['cad'],
+        };
+        const child: Task = { ...parent, id: 'cad', header: 'CAD', duration: '03:00:00', children_ids: [], parent_id: 'hw', ancestor_ids: ['hw'] };
+        server.use(
+            http.get(`${API}/plan/`, () => HttpResponse.json({
+                ...planPayload,
+                buckets: [{
+                    ...planPayload.buckets[0],
+                    items: [{
+                        task_id: 'hw', header: 'Rest of Hardware Design', is_rest: true,
+                        start_time: '2026-07-08T10:00:00', duration: 7200, warnings: [],
+                        is_fixed: false, is_appointment: false, hex_color: null,
+                    }],
+                }],
+            })),
+            http.get(`${API}/tasks/`, () => HttpResponse.json([parent, child])),
+            http.get(`${API}/tags/`, () => HttpResponse.json([])),
+            http.get(`${API}/settings/`, () => HttpResponse.json({
+                default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
+            })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        const card = await screen.findByText('Rest of Hardware Design');
+        fireEvent.click(card);
+        expect(await screen.findByText('Split “Hardware Design”')).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('textbox', { name: /^part 1$/i })).toHaveValue('CAD'));
+    });
+});
+
 describe('dragging a task (regression: sticky + fades overlaps)', () => {
     it('keeps the dropped task in place and fades the auto task it now overlaps', async () => {
         const patched: Array<Record<string, unknown>> = [];
@@ -290,20 +391,21 @@ describe('dragging a task (regression: sticky + fades overlaps)', () => {
         render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
 
         const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
-        // Column fits 1440min in 600px (offsetHeight mock) -> 1px = 2.4min.
-        // Drag the appointment down 150px = 360min: 08:00 -> 14:00, over OtherAuto.
+        // jsdom has no clientHeight, so the column gets the fallback fit height:
+        // 1440min in 720px -> 1px = 2min.
+        // Drag the appointment down 180px = 360min: 08:00 -> 14:00, over OtherAuto.
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
-        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
-        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseMove(window, { clientY: 380, clientX: 400 });
+        fireEvent.mouseUp(window, { clientY: 380, clientX: 400 });
 
         // The placement was sent...
         await waitFor(() => expect(patched).toHaveLength(1));
         expect(patched[0]).toMatchObject({ is_fixed: true });
 
-        // ...the dropped appointment stuck at 14:00 (350px), not snapped back...
+        // ...the dropped appointment stuck at 14:00 (840min = 420px), not snapped back...
         await waitFor(() => {
             const moved = screen.getByText('MoveMe').closest('[data-testid="week-view-task"]')!;
-            expect(moved).toHaveStyle({ top: '350px' });
+            expect(moved).toHaveStyle({ top: '420px' });
         });
         // ...and the overlapped auto task is invalid (faded to 30%).
         const other = screen.getByText('OtherAuto').closest('[data-testid="week-view-task"]')!;
@@ -342,7 +444,7 @@ describe('dragging a task (regression: live feedback before release)', () => {
         const card = (await screen.findByText('MoveMe')).closest('[data-testid="week-view-task"]')!;
         // Press and drag the appointment down onto OtherAuto — but do NOT release.
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
-        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseMove(window, { clientY: 380, clientX: 400 });
 
         // Live: the overlapped auto task fades and the drag layer appears, before release.
         await waitFor(() => {
@@ -351,7 +453,7 @@ describe('dragging a task (regression: live feedback before release)', () => {
         });
         expect(screen.getByTestId('drag-layer')).toBeInTheDocument();
 
-        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 }); // release to end the drag
+        fireEvent.mouseUp(window, { clientY: 380, clientX: 400 }); // release to end the drag
         await waitFor(() => expect(patched).toHaveLength(1));
     });
 });
@@ -383,7 +485,7 @@ describe('dragging an appointment over another appointment', () => {
 
         const card = (await screen.findByText('DragAppt')).closest('[data-testid="week-view-task"]')!;
         fireEvent.mouseDown(card, { clientY: 200, clientX: 400, button: 0 });
-        fireEvent.mouseMove(window, { clientY: 350, clientX: 400 }); // onto 14:00
+        fireEvent.mouseMove(window, { clientY: 380, clientX: 400 }); // onto 14:00
 
         await waitFor(() => {
             const other = screen.getByText('OtherAppt').closest('[data-testid="week-view-task"]')!;
@@ -391,7 +493,7 @@ describe('dragging an appointment over another appointment', () => {
             expect(other).toHaveStyle({ opacity: '1' }); // appointments never fade
         });
 
-        fireEvent.mouseUp(window, { clientY: 350, clientX: 400 });
+        fireEvent.mouseUp(window, { clientY: 380, clientX: 400 });
         await waitFor(() => expect(patched).toHaveLength(1));
     });
 });
@@ -433,6 +535,7 @@ describe('moving a bucket (regression: no duplicate)', () => {
 
 import { firstFreeDay } from '../../utils/planToWeek.ts';
 import type { PlannedBucket } from '../../types.ts';
+import { treeDefaults } from '../../testing/treeFixtures.ts';
 
 function emptyBucket(id: string, day: string): PlannedBucket {
     return {

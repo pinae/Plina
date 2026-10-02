@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AxiosError } from 'axios';
 import {
-    Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent,
-    DialogTitle, FormControl, FormControlLabel, FormHelperText, InputLabel, MenuItem,
-    Select, Slider, TextField, Typography,
+    Alert, Autocomplete, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent,
+    DialogTitle, FormControl, FormControlLabel, FormHelperText, IconButton, InputLabel, MenuItem,
+    Select, Slider, TextField, Tooltip, Typography,
 } from '@mui/material';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 
-import { useCreateTask, useProjects, useTags, useUpdateTask } from '../../queries.tsx';
+import { useCreateTask, useSettings, useTags, useTasks, useUpdateTask } from '../../queries.tsx';
+import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
-import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
+import { inheritedColorFor } from '../../utils/taskColors.ts';
+import { ColorPicker } from '../ColorPicker/ColorPicker.tsx';
+import { formatDuration, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import {
     formatHoursInput, mapServerErrors, parseDurationInput, validateTaskForm,
     type TaskField, type TaskFormErrors,
 } from './taskFormValidation.ts';
+import { useIsMobile } from '../../hooks/useResponsive.ts';
 
 interface TaskFormDialogProps {
     open: boolean;
@@ -23,7 +29,14 @@ interface TaskFormDialogProps {
     initialStart?: Date;
     initialDurationMinutes?: number;
     defaultAppointment?: boolean;
+    /** T-4: walk to the previous (-1) / next (1) task without closing — the
+     *  caller swaps ``task``. Unsaved changes are saved first; an invalid
+     *  form refuses. Without it there are no arrows. */
+    onNavigate?: (direction: -1 | 1) => void;
+    canNavigate?: { previous: boolean; next: boolean };
 }
+
+type TaskFormProps = Omit<TaskFormDialogProps, 'open'> & { onSplit: () => void };
 
 const toLocalInput = (iso: string | null): string => {
     if (!iso) return '';
@@ -61,32 +74,60 @@ const invalidSx = (attempt: number) => {
     };
 };
 
-/** WP-12: the full task form, replacing the minimal WP-9 dialog. */
-export function TaskFormDialog({
-    open, onClose, task, initialStart, initialDurationMinutes, defaultAppointment,
-}: TaskFormDialogProps) {
+/** WP-12: the full task form, replacing the minimal WP-9 dialog. The dialog
+ *  stays open while the form inside is swapped per task (T-4 navigation). */
+export function TaskFormDialog({ open, ...props }: TaskFormDialogProps) {
+    const fullScreen = useIsMobile(); // phones (UI-9)
+    const [splitting, setSplitting] = useState(false);
+
+    // Splitting replaces this dialog; closing the split editor closes both.
+    if (splitting && props.task) {
+        return <SplitEditor open={open} task={props.task} onClose={props.onClose} />;
+    }
+    return (
+        <Dialog open={open} onClose={props.onClose} fullWidth maxWidth="sm" fullScreen={fullScreen}>
+            {/* A fresh form per task: its fields start from that task. */}
+            <TaskForm key={props.task?.id ?? 'new'} {...props} onSplit={() => setSplitting(true)} />
+        </Dialog>
+    );
+}
+
+function TaskForm({
+    onClose, task, initialStart, initialDurationMinutes, defaultAppointment, onNavigate, canNavigate, onSplit,
+}: TaskFormProps) {
     const editing = task !== undefined;
     const tags = useTags();
-    const projects = useProjects();
+    const tasks = useTasks();
+    const settings = useSettings();
     const create = useCreateTask();
     const update = useUpdateTask();
 
     const [header, setHeader] = useState(task?.header ?? '');
     const [description, setDescription] = useState(task?.description ?? '');
+    // Empty = the user's default duration (UI-8).
     const [hours, setHours] = useState(() => {
-        const minutes = task ? parseDurationMinutes(task.duration) ?? 60 : initialDurationMinutes ?? 60;
-        return formatHoursInput(minutes);
+        const minutes = task ? parseDurationMinutes(task.duration) : initialDurationMinutes ?? null;
+        return minutes !== null ? formatHoursInput(minutes) : '';
     });
+    const [estimateReason, setEstimateReason] = useState<'set_to_sum' | null>(null);
     const [deadline, setDeadline] = useState(toLocalInput(task?.latest_finish_date ?? null));
     const [deadlineIncomplete, setDeadlineIncomplete] = useState(false);
     const [priority, setPriority] = useState(task?.priority ?? 5);
     const [tagIds, setTagIds] = useState<string[]>(task?.tags.map(t => t.id) ?? []);
-    const [projectId, setProjectId] = useState<string>(task?.project_id ?? '');
+    // undefined = untouched: a new task starts in the active project (§6.2).
+    const [chosenParentId, setChosenParentId] = useState<string | null | undefined>(undefined);
+    // The chosen color (§4.4); null = from the parent / automatic.
+    const [ownColor, setOwnColor] = useState<string | null>(task?.own_hex_color ?? null);
     const [isAppointment, setIsAppointment] = useState(task?.is_appointment ?? defaultAppointment ?? false);
     const [start, setStart] = useState(
         toLocalInput(task?.start_date ?? (initialStart ? initialStart.toISOString() : null)),
     );
     const [startIncomplete, setStartIncomplete] = useState(false);
+    // Unsaved changes = the editable values differ from when the form opened.
+    const snapshot = JSON.stringify([header, description, hours, estimateReason, deadline, priority,
+        tagIds, chosenParentId, ownColor, isAppointment, start]);
+    const [initialSnapshot] = useState(snapshot);
+    const dirty = snapshot !== initialSnapshot;
 
     // Validation state: errors show for a field once it was left (touched) or
     // after the first save attempt, and then update live as the user types.
@@ -97,16 +138,40 @@ export function TaskFormDialog({
     const [generalError, setGeneralError] = useState<string | null>(null);
     const contentRef = useRef<HTMLDivElement>(null);
 
+    const taskList = tasks.data ?? [];
+    const parentId = chosenParentId !== undefined ? chosenParentId
+        : editing ? task.parent_id ?? null : settings.data?.active_task_id ?? null;
+    // Possible parents: open tasks, never the task itself or its subtasks.
+    const parentOptions = taskList
+        .filter(t => !t.is_done && t.id !== task?.id && !(task && t.ancestor_ids?.includes(task.id)))
+        .map(t => ({
+            id: t.id,
+            path: [...(t.ancestor_ids ?? []).map(id => taskList.find(a => a.id === id)?.header ?? ''), t.header].join(' › '),
+        }));
+    const parentOption = parentOptions.find(o => o.id === parentId) ?? null;
+    // The earliest deadline among the parent and its ancestors (UI-1 rule).
+    const parentDeadline = (() => {
+        const parent = taskList.find(t => t.id === parentId);
+        if (!parent) return null;
+        const chain = [...(parent.ancestor_ids ?? []), parent.id]
+            .map(id => taskList.find(t => t.id === id))
+            .filter(t => t?.latest_finish_date);
+        const earliest = chain.sort((a, b) => a!.latest_finish_date!.localeCompare(b!.latest_finish_date!))[0];
+        return earliest ? { header: earliest.header, date: new Date(earliest.latest_finish_date!) } : null;
+    })();
+    const defaultDuration = parseDurationMinutes(settings.data?.default_duration ?? null) ?? 60;
+
     const errors = validateTaskForm(
         {
             header, description, hours, deadline, deadlineIncomplete, priority,
-            tagIds, projectId, isAppointment, start, startIncomplete,
+            tagIds, parentId: parentId ?? '', isAppointment, start, startIncomplete,
         },
         {
             now,
             knownTagIds: tags.data?.map(t => t.id) ?? null,
-            knownProjectIds: projects.data?.map(p => p.id) ?? null,
+            knownParentIds: tasks.data ? parentOptions.map(o => o.id) : null,
             originalDeadline: task ? toLocalInput(task.latest_finish_date) : undefined,
+            parentDeadline,
         },
     );
     const shown = (field: TaskField): string | undefined =>
@@ -143,25 +208,28 @@ export function TaskFormDialog({
 
     const pending = create.isPending || update.isPending;
 
-    const submit = () => {
+    /** Save, then ``after`` (close by default, or switch to another task). */
+    const submit = (after: () => void = onClose) => {
         setAttempts(n => n + 1);
         setGeneralError(null);
         const duration = parseDurationInput(hours);
-        if (Object.keys(errors).length > 0 || duration.kind !== 'ok') return;
+        if (Object.keys(errors).length > 0 || duration.kind === 'invalid') return;
 
         const payload: TaskWrite = {
             header: header.trim(),
             description,
-            duration: minutesToDurationString(duration.minutes),
+            duration: duration.kind === 'ok' ? minutesToDurationString(duration.minutes) : null,
             latest_finish_date: deadline ? new Date(deadline).toISOString() : null,
             priority,
             tag_ids: tagIds,
-            project_id: projectId || null,
+            parent_id: parentId,
+            own_hex_color: ownColor,
             is_appointment: isAppointment,
             start_date: isAppointment && start ? new Date(start).toISOString() : task?.start_date ?? null,
         };
+        if (editing && estimateReason) payload.estimate_reason = estimateReason;
         const options = {
-            onSuccess: onClose,
+            onSuccess: after,
             onError: (error: Error) => {
                 const { fields, general } = mapServerErrors((error as AxiosError).response?.data);
                 setServerErrors(fields);
@@ -178,12 +246,50 @@ export function TaskFormDialog({
     };
 
     const tagsFeedback = shown('tags');
-    const projectFeedback = shown('project');
+    const parentFeedback = shown('parent');
+    const human = (minutes: number) => formatDuration(minutesToDurationString(minutes));
+    const partsMinutes = parseDurationMinutes(task?.parts_total ?? null);
+    const spentMinutes = parseDurationMinutes(task?.time_spent ?? null) ?? 0;
+    const estimateMinutes = parseDurationMinutes(task?.duration ?? null) ?? defaultDuration;
     const priorityFeedback = shown('priority');
 
+    const navigate = (direction: -1 | 1) => {
+        if (!onNavigate || !(direction === -1 ? canNavigate?.previous : canNavigate?.next)) return;
+        if (dirty) submit(() => onNavigate(direction));
+        else onNavigate(direction);
+    };
+
     return (
-        <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-            <DialogTitle>{editing ? `Edit “${task.header}”` : 'New task'}</DialogTitle>
+        // display: contents — only here to catch Alt+↑/↓ from any field.
+        <Box sx={{ display: 'contents' }} onKeyDown={event => {
+            if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && onNavigate) {
+                event.preventDefault();
+                navigate(event.key === 'ArrowUp' ? -1 : 1);
+            }
+        }}>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box component="span" sx={{ flex: 1, minWidth: 0 }}>{editing ? `Edit “${task.header}”` : 'New task'}</Box>
+                {editing && onNavigate && (
+                    <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                        <Tooltip title="Previous task (Alt+↑)">
+                            <span>
+                                <IconButton size="small" aria-label="previous task" disabled={!canNavigate?.previous || pending}
+                                    onClick={() => navigate(-1)}>
+                                    <KeyboardArrowUpIcon />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="Next task (Alt+↓)">
+                            <span>
+                                <IconButton size="small" aria-label="next task" disabled={!canNavigate?.next || pending}
+                                    onClick={() => navigate(1)}>
+                                    <KeyboardArrowDownIcon />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                    </Box>
+                )}
+            </DialogTitle>
             <DialogContent ref={contentRef} sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
                 <TextField
                     label="Header" value={header} autoFocus margin="dense" required
@@ -196,12 +302,34 @@ export function TaskFormDialog({
                     {...feedback('description', 'Optional')}
                 />
                 <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                    <TextField
-                        label="Duration (hours)" value={hours} fullWidth required
-                        slotProps={{ htmlInput: { inputMode: 'decimal' } }}
-                        onChange={event => { setHours(event.target.value); edited('hours'); }}
-                        {...feedback('hours', 'e.g. 1.5, 1:30 or 90m')}
-                    />
+                    <Box sx={{ width: '100%' }}>
+                        <TextField
+                            label="Duration (hours)" value={hours} fullWidth required={isAppointment}
+                            slotProps={{ htmlInput: { inputMode: 'decimal' } }}
+                            onChange={event => { setHours(event.target.value); setEstimateReason(null); edited('hours'); }}
+                            {...feedback('hours', hours.trim() ? 'e.g. 1.5, 1:30 or 90m' : `Empty = your default (${human(defaultDuration)})`)}
+                        />
+                        {partsMinutes !== null && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
+                                <Typography variant="body2" color={task?.over_budget ? 'warning.main' : 'text.secondary'}>
+                                    Σ parts {human(partsMinutes)} / {human(estimateMinutes)}
+                                </Typography>
+                                <Button size="small" onClick={() => {
+                                    setHours(formatHoursInput(partsMinutes + spentMinutes));
+                                    setEstimateReason('set_to_sum');
+                                    edited('hours');
+                                }}>
+                                    Set estimate to Σ parts ({human(partsMinutes + spentMinutes)})
+                                </Button>
+                            </Box>
+                        )}
+                        {editing && spentMinutes > 0 && (
+                            <Typography variant="body2" color={spentMinutes > estimateMinutes ? 'warning.main' : 'text.secondary'} sx={{ mt: 0.5 }}>
+                                Spent {human(spentMinutes)} of {human(estimateMinutes)}
+                                {spentMinutes > estimateMinutes ? ` (+${human(spentMinutes - estimateMinutes)})` : ''}
+                            </Typography>
+                        )}
+                    </Box>
                     <TextField
                         label="Deadline" type="datetime-local" value={deadline} fullWidth
                         slotProps={{ inputLabel: { shrink: true } }}
@@ -244,20 +372,27 @@ export function TaskFormDialog({
                     </Select>
                     {tagsFeedback && <FormHelperText>{tagsFeedback}</FormHelperText>}
                 </FormControl>
-                <FormControl error={Boolean(projectFeedback)} sx={projectFeedback ? invalidSx(attempts) : undefined}>
-                    <InputLabel id="task-project-label">Project</InputLabel>
-                    <Select
-                        labelId="task-project-label" label="Project" value={projectId}
-                        onChange={event => { setProjectId(event.target.value); edited('project'); }}
-                        onBlur={() => touch('project')}
-                    >
-                        <MenuItem value="">No project</MenuItem>
-                        {(projects.data ?? []).map(project => (
-                            <MenuItem key={project.id} value={project.id}>{project.name}</MenuItem>
-                        ))}
-                    </Select>
-                    {projectFeedback && <FormHelperText>{projectFeedback}</FormHelperText>}
-                </FormControl>
+                <Autocomplete
+                    options={parentOptions}
+                    value={parentOption}
+                    getOptionLabel={option => option.path}
+                    isOptionEqualToValue={(a, b) => a.id === b.id}
+                    onChange={(_event, option) => { setChosenParentId(option?.id ?? null); edited('parent'); }}
+                    // Emptying the text means "no parent" (a project of its own).
+                    onInputChange={(_event, value, reason) => {
+                        if (reason === 'input' && value === '') { setChosenParentId(null); edited('parent'); }
+                    }}
+                    onBlur={() => touch('parent')}
+                    renderInput={params => (
+                        <TextField {...params} label="Parent" error={Boolean(parentFeedback)}
+                            helperText={parentFeedback ?? (parentOption ? 'Part of this project' : 'Empty = a project of its own')}
+                            sx={parentFeedback ? invalidSx(attempts) : undefined} />
+                    )}
+                />
+                <ColorPicker
+                    value={ownColor} automatic={!parentId} onChange={setOwnColor}
+                    defaultColor={inheritedColorFor(task, parentId, taskList)}
+                />
                 <FormControlLabel
                     control={
                         <Checkbox
@@ -288,11 +423,16 @@ export function TaskFormDialog({
                 {generalError && <Alert severity="error">{generalError}</Alert>}
             </DialogContent>
             <DialogActions>
+                {editing && (
+                    <Button onClick={onSplit} sx={{ mr: 'auto' }}>
+                        {task.children_ids?.length ? `Edit parts (${task.children_ids.length})` : 'Split into subtasks'}
+                    </Button>
+                )}
                 <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" onClick={submit} disabled={pending}>
+                <Button variant="contained" onClick={() => submit()} disabled={pending}>
                     {editing ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
-        </Dialog>
+        </Box>
     );
 }

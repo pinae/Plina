@@ -11,12 +11,12 @@ import { TaskNodeCard } from '../TaskNode/TaskNode.tsx';
 import DependencyEditor from './DependencyEditor.tsx';
 
 describe('TaskNodeCard', () => {
-    it('shows header and duration chip with the project color bar', () => {
+    it('shows header and duration chip with the task color bar', () => {
         render(
             <TaskNodeCard
                 header="Design Schema"
                 durationLabel="3h"
-                projectColor="#3357ff"
+                color="#3357ff"
                 projectName="Webshop"
                 isDone={false}
             />,
@@ -24,7 +24,7 @@ describe('TaskNodeCard', () => {
 
         expect(screen.getByText('Design Schema')).toBeInTheDocument();
         expect(screen.getByText('3h')).toBeInTheDocument();
-        const bar = screen.getByTestId('project-color-bar');
+        const bar = screen.getByTestId('task-color-bar');
         expect(bar).toHaveStyle({ backgroundColor: '#3357ff' });
     });
 
@@ -32,7 +32,7 @@ describe('TaskNodeCard', () => {
         render(
             <TaskNodeCard
                 header="Old One" durationLabel="1h"
-                projectColor={null} projectName={null} isDone={true}
+                color={null} projectName={null} isDone={true}
             />,
         );
 
@@ -51,27 +51,19 @@ const server = setupServer(
                 start_date: null, duration: '02:00:00', latest_finish_date: null,
                 time_spent: '00:00:00', priority: 8, tags: [], hex_color: null,
                 is_fixed: false, is_appointment: false, completed_at: null,
-                is_done: false, active_tracking_start: null, project_id: null,
+                is_done: false, active_tracking_start: null,
             },
             {
                 id: 't2', header: 'Design Schema', description: '',
                 start_date: null, duration: '03:00:00', latest_finish_date: null,
                 time_spent: '00:00:00', priority: 9, tags: [], hex_color: null,
                 is_fixed: false, is_appointment: false, completed_at: null,
-                is_done: false, active_tracking_start: null, project_id: null,
+                is_done: false, active_tracking_start: null,
             },
         ]),
     ),
     http.get(`${API}/dependencies/`, () =>
         HttpResponse.json([{ id: 'd1', predecessor: 't1', successor: 't2' }]),
-    ),
-    http.get(`${API}/projects/`, () =>
-        HttpResponse.json([
-            {
-                id: 'p1', name: 'Refactor Backend', description: '', tags: [],
-                priority: 8, order: 0, task_ids: ['t1', 't2'], hex_color: '#3357ff',
-            },
-        ]),
     ),
 );
 
