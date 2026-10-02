@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from tasks.models import (Plan, Tag, Task, TaskDependency,
                           TimeBucket, TimeBucketType, TrackingSession)
+from tasks.services.colors import ensure_auto_colors
 from tasks.services.tree import TreeIndex, next_sibling_order
 
 
@@ -98,5 +99,8 @@ class Command(BaseCommand):
         )
         call.description = "Weekly sync with the webshop client."
         call.save()
+
+        # Every project gets a distinct automatic color; subtasks inherit it.
+        ensure_auto_colors()
 
         self.stdout.write(self.style.SUCCESS('Successfully populated demo data'))

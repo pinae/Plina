@@ -3,6 +3,7 @@ from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
+from .services.colors import FALLBACK_COLOR, ensure_auto_colors
 from .serializers import (TaskSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer)
@@ -35,6 +36,7 @@ class TaskViewSet(RecalculatingModelViewSet):
             delete_task(task, request.query_params.get("children"))
         except TreeError as error:
             return Response(error.payload, status=400)
+        ensure_auto_colors()  # lifted subtasks of a project become projects
         recalculate_accepted_plan()
         return Response(status=204)
 
@@ -107,6 +109,7 @@ class TaskViewSet(RecalculatingModelViewSet):
             )
         except SplitError as error:
             return Response(error.payload, status=400)
+        ensure_auto_colors()
         recalculate_accepted_plan()
         task.refresh_from_db()
         context = self.get_serializer_context()  # shared: one tree snapshot
@@ -128,6 +131,7 @@ class TaskViewSet(RecalculatingModelViewSet):
             task = move_task(task, body.validated_data["parent_id"], body.validated_data["index"])
         except MoveError as error:
             return Response(error.payload, status=400)
+        ensure_auto_colors()  # moved to the top level
         ensure_active_is_project()
         recalculate_accepted_plan()
         return Response({"task": TaskSerializer(task, context=self.get_serializer_context()).data})
@@ -222,7 +226,15 @@ from tasks.services.bucket_service import gather_time_buckets
 from tasks.services.plan_store import recalculate_accepted_plan
 from tasks.models import Task, TimeBucket, TaskDependency, Plan
 
-def _serialize_item(item):
+def _task_colors():
+    """Color each task shows (§4.4), from one snapshot of the tree; a Rest
+    unit is planned under its parent's id and shows the parent's color."""
+    from tasks.services.tree import TreeIndex
+    tree = TreeIndex.load()
+    return lambda task_id: tree.effective_color(task_id) if task_id in tree.nodes else FALLBACK_COLOR
+
+
+def _serialize_item(item, color_of):
     return {
         "task_id": item.task.id,
         "header": item.header,
@@ -232,7 +244,7 @@ def _serialize_item(item):
         "warnings": item.warnings,
         "is_fixed": item.task.is_fixed,
         "is_appointment": item.task.is_appointment,
-        "hex_color": item.task.hex_color,
+        "hex_color": color_of(item.task.id),
     }
 
 def _entry_warnings(entry):
@@ -242,7 +254,7 @@ def _entry_warnings(entry):
     return []
 
 
-def _serialize_entry(entry):
+def _serialize_entry(entry, color_of):
     return {
         "task_id": entry.task.id,
         "header": f"Rest of {entry.task.header}" if entry.is_rest else entry.task.header,
@@ -252,7 +264,7 @@ def _serialize_entry(entry):
         "warnings": _entry_warnings(entry),
         "is_fixed": entry.task.is_fixed,
         "is_appointment": entry.task.is_appointment,
-        "hex_color": entry.task.hex_color,
+        "hex_color": color_of(entry.task.id),
         "order": entry.order,
     }
 
@@ -260,6 +272,7 @@ def _serialize_entry(entry):
 class PlannerView(APIView):
     def _accepted_plan_response(self, plan):
         entries = list(plan.entries.select_related("task", "bucket__type").all())
+        color_of = _task_colors()
         appointments = sorted(
             (e for e in entries if e.bucket is None and e.task.is_appointment),
             key=lambda e: e.start,
@@ -291,7 +304,7 @@ class PlannerView(APIView):
         return Response({
             "accepted_plan_id": plan.id,
             "warnings": plan.warnings,
-            "appointments": [_serialize_entry(e) for e in appointments],
+            "appointments": [_serialize_entry(e, color_of) for e in appointments],
             "buckets": [
                 {
                     "id": bucket.id,
@@ -302,7 +315,7 @@ class PlannerView(APIView):
                     "hex_color": bucket.type.hex_color,
                     "persisted": True,
                     "items": [
-                        _serialize_entry(e)
+                        _serialize_entry(e, color_of)
                         for e in sorted(bucket_entries, key=lambda e: e.start)
                     ],
                 }
@@ -326,12 +339,13 @@ class PlannerView(APIView):
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
         plan = allocate_tasks(buckets, ranked_tasks, planning_edges(snapshots))
+        color_of = _task_colors()
 
         return Response({
             "accepted_plan_id": None,
             "warnings": [],
             "appointments": [
-                _serialize_item(item)
+                _serialize_item(item, color_of)
                 for item in sorted(plan[UNBUCKETED], key=lambda i: i.start_time)
             ],
             "buckets": [
@@ -343,7 +357,7 @@ class PlannerView(APIView):
                     "type_id": bucket.type_id,
                     "hex_color": bucket.type.hex_color,
                     "persisted": not bucket._state.adding,
-                    "items": [_serialize_item(item) for item in plan[bucket.id]],
+                    "items": [_serialize_item(item, color_of) for item in plan[bucket.id]],
                 }
                 for bucket in buckets
             ],
@@ -389,6 +403,7 @@ class PlanAlternativesView(APIView):
 def serialize_alternatives(alternatives, buckets, plan_ids=None):
     project_names = dict(Task.objects.filter(parent=None).values_list("id", "header"))
     buckets_by_id = {bucket.id: bucket for bucket in buckets}
+    color_of = _task_colors()
 
     def serialize_alternative(alternative):
         planned_buckets = [
@@ -398,7 +413,7 @@ def serialize_alternatives(alternatives, buckets, plan_ids=None):
                 "end_date": buckets_by_id[bucket_id].end_date,
                 "type_name": buckets_by_id[bucket_id].type.name,
                 "hex_color": buckets_by_id[bucket_id].type.hex_color,
-                "items": [_serialize_item(item) for item in items],
+                "items": [_serialize_item(item, color_of) for item in items],
             }
             for bucket_id, items in alternative.plan.items()
             if bucket_id is not UNBUCKETED and items
@@ -438,7 +453,7 @@ def serialize_alternatives(alternatives, buckets, plan_ids=None):
                 ],
             },
             "appointments": [
-                _serialize_item(item)
+                _serialize_item(item, color_of)
                 for item in sorted(
                     alternative.plan[UNBUCKETED], key=lambda i: i.start_time
                 )
