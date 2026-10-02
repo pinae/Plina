@@ -157,6 +157,37 @@ describe('BucketTypeFormDialog recurrence preview', () => {
         );
         expect(screen.queryAllByTestId('preview-occurrence')).toHaveLength(0);
     });
+
+    it('clears the preview and the error when the rule is emptied', async () => {
+        render(<BucketTypeFormDialog open onClose={() => { }} />, { wrapper });
+        const rule = screen.getByLabelText(/recurrence/i);
+
+        fireEvent.change(rule, { target: { value: 'every weekday at 09:00' } });
+        await waitFor(() => expect(screen.getAllByTestId('preview-occurrence')).toHaveLength(5));
+        fireEvent.change(rule, { target: { value: '' } });
+        expect(screen.queryAllByTestId('preview-occurrence')).toHaveLength(0);
+
+        fireEvent.change(rule, { target: { value: 'blorp glorp' } });
+        await screen.findByText(/not a recognizable recurrence rule/i);
+        fireEvent.change(rule, { target: { value: '  ' } });
+        expect(screen.queryByText(/not a recognizable recurrence rule/i)).not.toBeInTheDocument();
+    });
+
+    it('shows no stale preview when reopened after creating', async () => {
+        const view = render(<BucketTypeFormDialog open onClose={() => { }} />, { wrapper });
+        fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Morning Focus' } });
+        fireEvent.change(screen.getByLabelText(/recurrence/i), {
+            target: { value: 'every weekday at 09:00' },
+        });
+        await waitFor(() => expect(screen.getAllByTestId('preview-occurrence')).toHaveLength(5));
+        fireEvent.click(screen.getByRole('button', { name: /create/i }));
+        await waitFor(() => expect(created.buckettypes).toHaveLength(1));
+
+        view.rerender(<BucketTypeFormDialog open={false} onClose={() => { }} />);
+        view.rerender(<BucketTypeFormDialog open onClose={() => { }} />);
+        expect(await screen.findByLabelText(/recurrence/i)).toHaveValue('');
+        expect(screen.queryAllByTestId('preview-occurrence')).toHaveLength(0);
+    });
 });
 
 describe('TaskFormDialog', () => {

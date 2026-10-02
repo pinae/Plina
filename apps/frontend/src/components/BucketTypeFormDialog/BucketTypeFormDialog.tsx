@@ -112,14 +112,19 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
     const create = useCreateBucketType();
     const update = useUpdateBucketType();
 
+    const changeStartTimes = (value: string) => {
+        setStartTimes(value);
+        // An emptied rule has no preview (cleared here, not in the effect).
+        if (!value.trim()) {
+            setOccurrences([]);
+            setPreviewError(null);
+        }
+    };
+
     // Live preview: server-parsed occurrences, debounced while typing.
     useEffect(() => {
         clearTimeout(debounce.current);
-        if (!startTimes.trim()) {
-            setOccurrences([]);
-            setPreviewError(null);
-            return;
-        }
+        if (!startTimes.trim()) return;
         debounce.current = setTimeout(() => {
             previewRecurrence(startTimes)
                 .then(preview => {
@@ -145,7 +150,7 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
             duration: hoursToDuration(Number(hours)),
             tag_ids: tagIds,
         };
-        const done = { onSuccess: () => { setName(''); setStartTimes(''); onClose(); } };
+        const done = { onSuccess: () => { setName(''); changeStartTimes(''); onClose(); } };
         if (editing) {
             update.mutate({ id: bucketType.id, patch: payload }, done);
         } else {
@@ -165,7 +170,7 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
                     label="Recurrence" value={startTimes}
                     placeholder="every weekday at 09:00"
                     helperText="Plain language, e.g. “every day at 14:00”"
-                    onChange={event => setStartTimes(event.target.value)}
+                    onChange={event => changeStartTimes(event.target.value)}
                 />
                 {previewError && <Alert severity="error">{previewError}</Alert>}
                 {occurrences.length > 0 && (
