@@ -72,4 +72,20 @@ describe('BucketBlock', () => {
         expect((start as Date).getDate()).toBe(10); // landed on Jul 10
         expect((start as Date).getHours()).toBe(10); // time from the vertical drag
     });
+
+    it('moves the bucket purely sideways to the same time on another day', () => {
+        const onChange = vi.fn();
+        const onEdit = vi.fn();
+        const resolveDay = vi.fn(() => new Date('2026-07-10T00:00:00'));
+        render(<BucketBlock zone={zone} columnHeight={1440} onChange={onChange} onEdit={onEdit} resolveDay={resolveDay} />);
+        const block = screen.getByTestId('bucket-zone');
+        fireEvent.mouseDown(block, { clientY: 100, clientX: 50, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 100, clientX: 500 });
+        fireEvent.mouseUp(window, { clientY: 100, clientX: 500 });
+        expect(onEdit).not.toHaveBeenCalled();
+        expect(onChange).toHaveBeenCalledTimes(1);
+        const [, start] = onChange.mock.calls[0];
+        expect((start as Date).getDate()).toBe(10);
+        expect((start as Date).getHours()).toBe(9); // time unchanged
+    });
 });

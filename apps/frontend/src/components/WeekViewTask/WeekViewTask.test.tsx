@@ -177,6 +177,51 @@ describe('WeekViewTask', () => {
         expect((start as Date).getHours()).toBe(10);
     });
 
+    it('moves an appointment purely sideways to the same time on another day', () => {
+        // Regression: only vertical movement counted, so this was a click.
+        const onChange = vi.fn();
+        const onEdit = vi.fn();
+        const resolveDay = vi.fn(() => new Date('2024-01-05T00:00:00'));
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} onEdit={onEdit} resolveDay={resolveDay} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 540, clientX: 900 });
+        fireEvent.mouseUp(window, { clientY: 540, clientX: 900 });
+
+        expect(onEdit).not.toHaveBeenCalled();
+        expect(onChange).toHaveBeenCalledTimes(1);
+        const [, start] = onChange.mock.calls[0];
+        expect((start as Date).getDate()).toBe(5);
+        expect([(start as Date).getHours(), (start as Date).getMinutes()]).toEqual([9, 0]);
+    });
+
+    it('still treats a press with a little sideways jitter as a click', () => {
+        const onChange = vi.fn();
+        const onEdit = vi.fn();
+        const appt = createMockTask({ taskId: 'a1', isAppointment: true, manuallySet: true, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={appt} columnHeight={1440} onChange={onChange} onEdit={onEdit} />);
+
+        fireEvent.mouseDown(screen.getByTestId('week-view-task'), { clientY: 540, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 541, clientX: 102 });
+        fireEvent.mouseUp(window, { clientY: 541, clientX: 102 });
+
+        expect(onEdit).toHaveBeenCalledWith('a1');
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('ignores sideways movement on the resize handle (no live drag)', () => {
+        const onDragChange = vi.fn();
+        const task = createMockTask({ taskId: 't1', manuallySet: false, startTime: '2024-01-01T09:00:00', duration: 60 });
+        render(<WeekViewTask task={task} columnHeight={1440} onChange={vi.fn()} onDragChange={onDragChange} />);
+
+        fireEvent.mouseDown(screen.getByTestId('task-resize-bottom'), { clientY: 600, clientX: 100, button: 0 });
+        fireEvent.mouseMove(window, { clientY: 600, clientX: 160 });
+        fireEvent.mouseUp(window, { clientY: 600, clientX: 160 });
+
+        expect(onDragChange.mock.calls.filter(([drag]) => drag !== null)).toHaveLength(0);
+    });
+
     it('resizes a non-appointment from the bottom handle, keeping the start', () => {
         const onChange = vi.fn();
         const task = createMockTask({ taskId: 't1', manuallySet: false, startTime: '2024-01-01T09:00:00', duration: 60 });
