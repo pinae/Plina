@@ -154,7 +154,7 @@ describe('narrow screens (< 900 px, e.g. a 690 px window)', () => {
     let restore: () => void;
     afterEach(() => restore());
 
-    it('colors the titles instead of showing dots, hides the tags first and aligns estimates left', async () => {
+    it('colors the titles instead of showing dots, hides the tags first and lets titles reach the estimate', async () => {
         restore = fakeScreen({ width: 690 });
         renderOutline();
         await within(outline()).findByRole('treeitem', { name: 'CAD' });
@@ -163,7 +163,9 @@ describe('narrow screens (< 900 px, e.g. a 690 px window)', () => {
         expect(within(row('T250')).getByText('T250')).toHaveStyle({ color: '#ef568a' });
         expect(within(row('CAD')).getByText('CAD')).toHaveStyle({ color: '#ef568a' });
         expect(within(row('Hardware Design')).queryByText('#maker')).toBeNull();
-        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ textAlign: 'left' });
+        // Like on phones: the estimate column hugs its content, so the title
+        // gets all the room up to it (no fixed 130 px column).
+        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ width: 'auto', textAlign: 'right' });
     });
 
     it('marks the active project on phones by a bold, underlined name in its own color', async () => {
@@ -174,13 +176,13 @@ describe('narrow screens (< 900 px, e.g. a 690 px window)', () => {
         expect(name).toHaveStyle({ color: '#ef568a', fontWeight: 700, textDecoration: 'underline' });
     });
 
-    it('keeps dots, tags and right-aligned estimates on wide screens', async () => {
+    it('keeps dots, tags and the aligned estimate column on wide screens', async () => {
         restore = () => { };
         renderOutline();
         await within(outline()).findByRole('treeitem', { name: 'CAD' });
         expect(within(row('CAD')).getByTestId('task-color-dot')).toBeInTheDocument();
         expect(within(row('Hardware Design')).getByText('#maker')).toBeInTheDocument();
-        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ textAlign: 'right' });
+        expect(within(row('CAD')).getByTestId('estimate').parentElement).toHaveStyle({ width: '130px', textAlign: 'right' });
     });
 });
 

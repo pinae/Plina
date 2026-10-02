@@ -755,8 +755,8 @@ interface OutlineItemRowProps {
      *  gaps, and the active project marked by its name (no label). */
     compact: boolean;
     /** Below 900 px (phones too): the title gets the room — colored in the
-     *  task's color instead of a dot, no tags, estimates aligned left, the
-     *  active project marked by its name. */
+     *  task's color instead of a dot, no tags, the estimate only as wide as
+     *  it is, the active project marked by its name. */
     narrow: boolean;
     /** False for parents with open subtasks (they complete with the last one). */
     canComplete: boolean;
@@ -906,10 +906,10 @@ function OutlineItemRow({
                 )}
             </Box>
             {/* Aligned, muted details (Todoist/Wunderlist density). Below 900 px
-                the tags give way (the title comes first), on phones the
-                deadline too; estimates are then aligned left. */}
+                the title comes first: the tags give way and the estimate
+                column hugs its content (on phones the deadline goes too). */}
             <Box sx={{
-                width: { xs: 'auto', sm: 130 }, textAlign: narrow ? 'left' : 'right', flexShrink: 0, color: 'text.secondary',
+                width: narrow ? 'auto' : 130, textAlign: 'right', flexShrink: 0, color: 'text.secondary',
                 ...(compact ? { '& .MuiTypography-root': { fontSize: '0.75rem' } } : {}),
             }}>
                 {estimate}
