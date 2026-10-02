@@ -17,6 +17,7 @@ describe('WeekView', () => {
     afterEach(() => {
         cleanup();
         vi.clearAllMocks();
+        vi.unstubAllGlobals();
     });
 
     const defaultProps = {
@@ -109,6 +110,39 @@ describe('WeekView', () => {
         fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
         fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
         expect(height()).toBe(fit);
+    });
+
+    it('keeps the time under the cursor in place from the first zoom step on (regression)', () => {
+        // Regression: the new scroll position was set in an animation frame
+        // that could run before React rendered the taller grid, so the browser
+        // clamped it to the old (unscrollable) height and the view jumped.
+        // Here the frame runs at once, which makes that order deterministic.
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0; });
+        render(<WeekView {...defaultProps} />);
+        const scroll = screen.getByTestId('week-scroll');
+        const grid = screen.getByTestId('week-grid');
+        const HEADER = 70;
+        Object.defineProperty(screen.getByTestId('time-scale-corner').parentElement!, 'offsetHeight', {
+            configurable: true, get: () => HEADER,
+        });
+        const columnHeight = () => Number(grid.getAttribute('data-column-height'));
+        const viewport = columnHeight(); // zoom 1: the day fills the area below the headers
+        // Like a browser, clamp scrollTop to the content that exists right now.
+        let top = 0;
+        Object.defineProperty(scroll, 'scrollTop', {
+            configurable: true,
+            get: () => top,
+            set: (value: number) => { top = Math.max(0, Math.min(value, columnHeight() - viewport)); },
+        });
+        const pointerY = HEADER + viewport * 0.75; // the scroll area starts at clientY 0 in jsdom
+        const timeUnderCursor = () => ((top + pointerY - HEADER) / columnHeight()) * 1440;
+        const before = timeUnderCursor();
+
+        for (let step = 1; step <= 4; step++) {
+            fireEvent.wheel(scroll, { deltaY: -100, clientY: pointerY });
+            // Column heights are rounded to whole pixels: allow 1 px (2 min).
+            expect(Math.abs(timeUnderCursor() - before), `after step ${step}`).toBeLessThan(2);
+        }
     });
 
     it('shows a time scale left of Monday whose labels get denser when zoomed in', () => {

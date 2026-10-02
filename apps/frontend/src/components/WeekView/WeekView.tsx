@@ -65,6 +65,9 @@ export const WeekView: React.FC<WeekViewProps> = ({
     const gridRef = useRef<HTMLDivElement>(null);
     // The day headers stick to the top of the scroll area.
     const headerRef = useRef<HTMLDivElement>(null);
+    // Scroll position a zoom step wants, applied once the grid has its new
+    // height (earlier, the browser would clamp it to the old height).
+    const pendingScrollTop = useRef<number | null>(null);
 
     const columnHeight = Math.round(fitHeight * zoom);
 
@@ -97,23 +100,29 @@ export const WeekView: React.FC<WeekViewProps> = ({
             const next = Math.min(MAX_ZOOM, Math.max(1, prev * factor));
             if (next === prev) return;
             zoomRef.current = next;
-            setZoom(next);
             // Keep the time under the cursor stationary while zooming (the
-            // grid starts below the sticky day headers).
+            // grid starts below the sticky day headers).  Several wheel events
+            // can arrive before React renders: continue from the scroll
+            // position the previous one asked for.
             const rect = container.getBoundingClientRect();
             const pointerY = event.clientY - rect.top;
             const headerHeight = headerRef.current?.offsetHeight ?? 0;
-            const gridY = container.scrollTop + pointerY - headerHeight;
-            const newScrollTop = gridY * (next / prev) - pointerY + headerHeight;
-            if (typeof requestAnimationFrame === 'function') {
-                requestAnimationFrame(() => { container.scrollTop = newScrollTop; });
-            } else {
-                container.scrollTop = newScrollTop;
-            }
+            const scrollTop = pendingScrollTop.current ?? container.scrollTop;
+            const gridY = scrollTop + pointerY - headerHeight;
+            pendingScrollTop.current = gridY * (next / prev) - pointerY + headerHeight;
+            setZoom(next);
         };
         container.addEventListener('wheel', onWheel, { passive: false });
         return () => container.removeEventListener('wheel', onWheel);
     }, []);
+
+    // After a zoom step has rendered the new column height (before paint).
+    useLayoutEffect(() => {
+        const container = scrollRef.current;
+        if (!container || pendingScrollTop.current === null) return;
+        container.scrollTop = pendingScrollTop.current;
+        pendingScrollTop.current = null;
+    }, [zoom]);
 
     const weekStart = getMonday(currentDate);
     const weekEnd = addDays(weekStart, 6);
