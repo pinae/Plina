@@ -111,9 +111,11 @@ its own (`apps/backend/tasks/services/series.py`):
   ahead and block their time like any appointment; a past one completes
   itself when it ends, unless it is being tracked. The Tasks tab lists only
   the next one.
-* Any **other task** comes again when its next date is reached — also while
-  the one before is still open — and is planned like any other task from
-  then on, not before ("from Tue 06/10" in its row).
+* Any **other task** comes again when its next date is reached and is
+  planned like any other task from then on, not before ("from Tue 06/10" in
+  its row). They do not pile up: the new one replaces an open one nobody
+  worked on, and after weeks away there is one task, for the latest date.
+  An occurrence with tracked time stays until it is completed.
 * A new occurrence copies the latest one (title, description, estimate,
   priority, tags, color, project); a deadline moves along with the date.
 * Edits apply to "this occurrence" or "this and the following ones". A

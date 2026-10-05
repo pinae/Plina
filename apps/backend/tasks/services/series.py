@@ -6,9 +6,10 @@ tracked on its own.
 * An appointment's occurrences exist for the planning horizon ahead, so they
   block their time like any appointment. A past one completes itself when
   it ends, unless it is being tracked.
-* Any other task's next occurrence appears when its date is reached — also
-  while the one before is still open — and is planned like any other task
-  from then on.
+* Any other task's next occurrence appears when its date is reached and is
+  planned like any other task from then on. They do not pile up: only the
+  latest date that is due gets a task, and older open occurrences nobody
+  worked on go (one with tracked time stays, so the time is not lost).
 * A new occurrence copies the latest one (header, description, estimate,
   priority, tags, color, project); a deadline moves along with the date.
 * Deleting one occurrence skips its date; :func:`delete_series` deletes all.
@@ -214,14 +215,19 @@ def _update_series(series: TaskSeries, now: datetime) -> Tuple[List[Task], int]:
         until = now
     created = []
     skipped = set(series.skipped)
-    for moment in occurrences(rule, series.anchor, template.occurrence + timedelta(minutes=1), until):
-        if _key(moment) in skipped:
-            continue
+    due = [moment for moment in occurrences(rule, series.anchor, template.occurrence + timedelta(minutes=1), until)
+           if _key(moment) not in skipped]
+    if not template.is_appointment:
+        due = due[-1:]  # missed dates do not pile up: the latest one only
+    for moment in due:
         try:
             with transaction.atomic():
                 created.append(_copy(template, rule, moment))
         except IntegrityError:
             continue  # made meanwhile by another request
+    if created and not template.is_appointment:
+        # The new one replaces the open ones before it; worked-on ones stay.
+        _untouched(series).filter(occurrence__lt=created[-1].occurrence).delete()
     if created:
         from tasks.services.colors import ensure_auto_colors
         ensure_auto_colors()

@@ -2,7 +2,8 @@
 occurrence is a task of its own — completed and tracked on its own. An
 appointment's occurrences exist for the planning horizon ahead (they block
 their time); any other task's next occurrence appears when its date is
-reached and is planned like any other task from then on."""
+reached — replacing an open one nobody worked on, they do not pile up — and
+is planned like any other task from then on."""
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -56,13 +57,32 @@ class RecurringTaskTest(RecurringTestCase):
                          ("Water plants", timedelta(minutes=15), 4, at(13, 20)))
         self.assertEqual(list(second.tags.all()), [self.tag])
         self.assertEqual(spawn_occurrences(now=at(13, 21)), [])  # only once
-        # The first one is still open: each is a task of its own.
-        self.assertFalse(Task.objects.get(id=self.chore.id).is_done)
+
+    def test_they_do_not_pile_up(self):
+        # Not done by the next date: the new one replaces it.
+        [second] = spawn_occurrences(now=at(13, 20))
+        self.assertEqual(self.occurrences(self.series), [second])
+        # Weeks away: one task for the latest date, not one per missed date.
+        self.assertEqual([t.occurrence for t in spawn_occurrences(now=at(28, 12))], [at(27, 20)])
+        self.assertEqual([t.occurrence for t in self.occurrences(self.series)], [at(27, 20)])
+
+    def test_worked_on_or_done_ones_stay(self):
+        self.chore.time_spent = timedelta(minutes=5)  # begun: its time is kept
+        self.chore.save()
+        [second] = spawn_occurrences(now=at(13, 20))
+        TrackingSession.objects.create(task=second, start=at(13, 21))  # being tracked
+        [third] = spawn_occurrences(now=at(20, 20))
+        self.assertEqual(self.occurrences(self.series), [self.chore, second, third])
+        third.completed_at = at(20, 21)
+        third.save()
+        [fourth] = spawn_occurrences(now=at(27, 20))
+        self.assertEqual(self.occurrences(self.series), [self.chore, second, third, fourth])
 
     def test_completing_one_completes_only_that_one_and_each_has_its_own_time(self):
+        self.chore.time_spent = timedelta(minutes=20)
+        self.chore.save()
         spawn_occurrences(now=at(13, 20))
         first, second = self.occurrences(self.series)
-        first.time_spent = timedelta(minutes=20)
         first.completed_at = at(13, 21)
         first.save()
         second.refresh_from_db()
@@ -70,9 +90,7 @@ class RecurringTaskTest(RecurringTestCase):
         self.assertEqual(second.time_spent, timedelta(0))
         [third] = spawn_occurrences(now=at(20, 20))
         self.assertEqual(third.occurrence, at(20, 20))
-
-    def test_missed_dates_each_get_their_occurrence(self):
-        self.assertEqual([t.occurrence for t in spawn_occurrences(now=at(28, 12))], [at(13, 20), at(20, 20), at(27, 20)])
+        self.assertEqual(self.occurrences(self.series), [first, third])  # the open, untouched second went
 
     def test_new_occurrences_copy_the_latest_one(self):
         self.chore.header = "Water all plants"
@@ -86,6 +104,8 @@ class RecurringTaskTest(RecurringTestCase):
         self.chore.save()
         [second] = spawn_occurrences(now=at(13, 20))
         self.assertEqual(second.latest_finish_date, at(15, 18))
+        [fifth] = spawn_occurrences(now=at(34, 20))  # from the latest, also when dates were missed
+        self.assertEqual(fifth.latest_finish_date, at(36, 18))
 
     def test_a_rule_without_a_time_is_due_from_the_start_of_the_day(self):
         task = Task.objects.create(header="Bins out")
@@ -97,6 +117,8 @@ class RecurringTaskTest(RecurringTestCase):
         self.assertEqual(task.occurrence, at(5))
 
     def test_deleting_one_keeps_the_series_and_it_does_not_come_back(self):
+        self.chore.completed_at = at(6, 21)
+        self.chore.save()
         [second] = spawn_occurrences(now=at(13, 20))
         delete_occurrence(second)
         self.assertEqual(spawn_occurrences(now=at(14)), [])
@@ -104,24 +126,14 @@ class RecurringTaskTest(RecurringTestCase):
         self.assertEqual([t.occurrence for t in spawn_occurrences(now=at(20, 20))], [at(20, 20)])
 
     def test_deleting_all_occurrences(self):
+        self.chore.completed_at = at(7)
+        self.chore.save()
         spawn_occurrences(now=at(20, 20))
-        first = Task.objects.get(id=self.chore.id)
-        first.completed_at = at(7)
-        first.save()
-        delete_series(first)
+        self.assertEqual(len(self.occurrences(self.series)), 2)
+        delete_series(self.chore)
         self.assertFalse(Task.objects.filter(header="Water plants").exists())
         self.assertFalse(TaskSeries.objects.exists())
         self.assertEqual(spawn_occurrences(now=at(30)), [])
-
-    def test_changes_can_apply_to_the_following_open_occurrences(self):
-        spawn_occurrences(now=at(20, 20))
-        first, second, third = self.occurrences(self.series)
-        first.completed_at = at(7)
-        first.save()
-        apply_to_following(second, {"header": "Water the plants", "duration": timedelta(minutes=10)})
-        self.assertEqual([(t.header, t.duration) for t in self.occurrences(self.series)],
-                         [("Water plants", timedelta(minutes=15)), ("Water plants", timedelta(minutes=15)),
-                          ("Water the plants", timedelta(minutes=10))])
 
     def test_a_task_with_subtasks_cannot_repeat(self):
         parent = Task.objects.create(header="Party")
@@ -198,6 +210,15 @@ class RecurringAppointmentTest(RecurringTestCase):
         starts = [t.start_date for t in self.occurrences(self.series)][:4]
         self.assertEqual(starts, [at(6, 20), at(15, 18), at(20, 20), at(22, 18)])
         self.assertEqual(spawn_occurrences(now=MONDAY), [])
+
+    def test_changes_can_apply_to_the_following_open_occurrences(self):
+        first, second, third = self.occurrences(self.series)[:3]
+        first.completed_at = at(6, 21)
+        first.save()
+        apply_to_following(second, {"header": "Team meeting", "duration": timedelta(minutes=45)})
+        self.assertEqual([(t.header, t.duration) for t in self.occurrences(self.series)[:4]],
+                         [("Jour fixe", timedelta(hours=1)), ("Jour fixe", timedelta(hours=1)),
+                          ("Team meeting", timedelta(minutes=45)), ("Team meeting", timedelta(minutes=45))])
 
     def test_stopping_the_repetition(self):
         spawn_occurrences(now=MONDAY)

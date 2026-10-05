@@ -122,15 +122,23 @@ class OccurrencesTest(RecurringApiTestCase):
 
     def test_the_next_one_appears_when_its_date_is_reached(self):
         self.at_time(at(13, 19))
-        self.assertEqual(len(self.tasks("Water plants")), 1)
+        [first] = self.tasks("Water plants")
         self.at_time(at(13, 20, 30))
-        first, second = self.tasks("Water plants")
-        self.assertEqual((moment(second["occurrence"]), second["is_done"]), (at(13, 20), False))
-        self.assertEqual(first["occurrence_count"], 2)
+        # Not done in time: the new one takes its place, they do not pile up.
+        [second] = self.tasks("Water plants")
+        self.assertEqual((moment(second["occurrence"]), second["is_done"], second["occurrence_count"]),
+                         (at(13, 20), False, 1))
+        self.assertNotEqual(second["id"], first["id"])
+        # Weeks later: one task, for the latest date.
+        self.at_time(at(34, 21))
+        self.assertEqual([moment(task["occurrence"]) for task in self.tasks("Water plants")], [at(34, 20)])
 
     def test_completing_one_completes_only_that_one(self):
+        self.request("post", f"/api/tasks/{self.chore['id']}/track/start/")
+        self.at_time(MONDAY + timedelta(minutes=5))
+        self.request("post", f"/api/tasks/{self.chore['id']}/track/stop/")
         self.at_time(at(13, 20, 30))
-        first, second = self.tasks("Water plants")
+        first, second = self.tasks("Water plants")  # worked on: the first stays
         response = self.request("post", f"/api/tasks/{first['id']}/complete/")
         self.assertEqual(response.status_code, 200, response.data)
         self.request("post", f"/api/tasks/{second['id']}/track/start/")
@@ -138,22 +146,7 @@ class OccurrencesTest(RecurringApiTestCase):
         self.request("post", f"/api/tasks/{second['id']}/track/stop/")
         first, second = self.tasks("Water plants")
         self.assertEqual((first["is_done"], second["is_done"]), (True, False))
-        self.assertEqual((first["time_spent"], second["time_spent"]), ("00:00:00", "00:10:00"))
-
-    def test_changes_to_this_and_the_following(self):
-        self.at_time(at(27, 21))
-        first, second, third, fourth = self.tasks("Water plants")
-        response = self.request("patch", f"/api/tasks/{second['id']}/", {"description": "Only this one"})
-        self.assertEqual(response.status_code, 200)
-        response = self.request("patch", f"/api/tasks/{third['id']}/",
-                                {"header": "Water all plants", "duration": "00:20:00", "scope": "following"})
-        self.assertEqual(response.status_code, 200, response.data)
-        tasks = sorted(Task.objects.filter(series_id=self.chore["series_id"]), key=lambda task: task.occurrence)
-        self.assertEqual([(task.header, task.duration.seconds // 60, task.description) for task in tasks],
-                         [("Water plants", 15, ""), ("Water plants", 15, "Only this one"),
-                          ("Water all plants", 20, ""), ("Water all plants", 20, "")])
-        self.at_time(at(34, 21))
-        self.assertEqual(self.tasks()[-1]["header"], "Water all plants")  # the next one copies the latest
+        self.assertEqual((first["time_spent"], second["time_spent"]), ("00:05:00", "00:10:00"))
 
     def test_changing_the_rule(self):
         response = self.request("patch", f"/api/tasks/{self.chore['id']}/", {"recurrence": "every thursday 18:00"})
@@ -173,12 +166,13 @@ class OccurrencesTest(RecurringApiTestCase):
         self.assertEqual(len(self.tasks("Water plants")), 1)
 
     def test_deleting_one_or_all(self):
-        self.at_time(at(20, 21))
-        first, second, third = self.tasks("Water plants")
+        self.request("post", f"/api/tasks/{self.chore['id']}/complete/")
+        self.at_time(at(13, 21))
+        first, second = self.tasks("Water plants")
         self.assertEqual(self.request("delete", f"/api/tasks/{second['id']}/").status_code, 204)
-        self.assertEqual(len(self.tasks("Water plants")), 2)  # the 13th does not come back
-        self.at_time(at(27, 21))
-        self.assertEqual(len(self.tasks("Water plants")), 3)
+        self.assertEqual(len(self.tasks("Water plants")), 1)  # the 13th does not come back
+        self.at_time(at(20, 21))
+        self.assertEqual(len(self.tasks("Water plants")), 2)
         response = self.request("delete", f"/api/tasks/{first['id']}/?occurrences=all")
         self.assertEqual(response.status_code, 204)
         self.assertEqual(self.tasks("Water plants"), [])
@@ -188,6 +182,25 @@ class OccurrencesTest(RecurringApiTestCase):
         self.assertEqual(self.request("delete", f"/api/tasks/{self.chore['id']}/").status_code, 204)
         [following] = self.tasks("Water plants")
         self.assertEqual(moment(following["occurrence"]), at(13, 20))
+
+
+class FollowingOccurrencesTest(RecurringApiTestCase):
+    def test_changes_to_this_and_the_following(self):
+        self.create(header="Jour fixe", is_appointment=True, duration="01:00:00",
+                    start_date=at(6, 20).isoformat(), recurrence="every tuesday 20:00")
+        first, second, third, fourth = self.tasks("Jour fixe")[:4]
+        response = self.request("patch", f"/api/tasks/{second['id']}/", {"description": "Only this one"})
+        self.assertEqual(response.status_code, 200)
+        response = self.request("patch", f"/api/tasks/{third['id']}/",
+                                {"header": "Team meeting", "duration": "00:45:00", "scope": "following"})
+        self.assertEqual(response.status_code, 200, response.data)
+        tasks = sorted(Task.objects.filter(series_id=first["series_id"]), key=lambda task: task.occurrence)
+        self.assertEqual([(task.header, task.duration.seconds // 60, task.description) for task in tasks][:4],
+                         [("Jour fixe", 60, ""), ("Jour fixe", 60, "Only this one"),
+                          ("Team meeting", 45, ""), ("Team meeting", 45, "")])
+        self.assertEqual({task.header for task in tasks[2:]}, {"Team meeting"})
+        self.at_time(at(13, 9))
+        self.assertEqual(self.tasks()[-1]["header"], "Team meeting")  # the next one copies the latest
 
 
 class PlanTest(RecurringApiTestCase):
@@ -225,5 +238,5 @@ class IsolationTest(RecurringApiTestCase):
         self.now = at(9, 9)
         with mock.patch("django.utils.timezone.now", side_effect=lambda: self.now):
             self.assertEqual(bob.get("/api/tasks/").data, [])
-        self.assertEqual(len(self.tasks("Water plants")), 4)
+        self.assertEqual([moment(task["occurrence"]) for task in self.tasks("Water plants")], [at(9, 8)])
         self.assertEqual(Task.all_objects.filter(owner__username="bob").count(), 0)
