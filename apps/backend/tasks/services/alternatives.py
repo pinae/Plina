@@ -101,10 +101,12 @@ def _preset_ranking(snapshots: List[PlanningTask], preset: str,
     return rank_tasks(list(snapshots), now)  # EDF, priority tie-break
 
 
-def _preset_config(preset: str) -> AllocationConfig:
+def _preset_config(preset: str,
+                   focus_task_ids: frozenset = frozenset()) -> AllocationConfig:
     if preset == "flow":
-        return AllocationConfig(min_task_slice=FLOW_MIN_SLICE, project_stickiness=True)
-    return AllocationConfig()
+        return AllocationConfig(min_task_slice=FLOW_MIN_SLICE, project_stickiness=True,
+                                focus_task_ids=focus_task_ids)
+    return AllocationConfig(focus_task_ids=focus_task_ids)
 
 
 def _apply_focus(ranked: List[PlanningTask],
@@ -286,7 +288,8 @@ def generate_alternatives(snapshots: List[PlanningTask], buckets: List,
             candidate.focus_task_ids,
         )
         plan = allocate_tasks(buckets, ranked, edge_list,
-                              config=_preset_config(candidate.preset))
+                              config=_preset_config(candidate.preset,
+                                                    candidate.focus_task_ids))
         ordering = _ordering_of(plan)
         if ordering in seen_orderings:
             continue

@@ -295,3 +295,47 @@ class AllocationConfigQuantumTest(TestCase):
 
         self.assertEqual(len(default_plan[bucket.id]), 1)  # 20m slice allowed
         self.assertEqual(flow_plan[bucket.id], [])         # too small for flow
+
+
+class FocusBeatsStickinessTest(TestCase):
+    """A focus alternative starts with its branch. A task that only filled a
+    bucket the branch could not use (another tag) must not keep the next
+    bucket by stickiness — otherwise "Start with the blog" silently equals
+    the default plan and is dropped as a duplicate."""
+
+    def setUp(self):
+        from tasks.models import Tag
+        now = timezone.now().replace(minute=0, second=0, microsecond=0)
+        deep = Tag.objects.create(name="deep-work")
+        writing = Tag.objects.create(name="writing")
+        deep_type = TimeBucketType.objects.create(name="Mornings", duration=timedelta(hours=4))
+        deep_type.tags.add(deep)
+        open_type = TimeBucketType.objects.create(name="Afternoons", duration=timedelta(hours=3))
+        # The rest of a morning that is almost over, then an open afternoon.
+        self.morning = TimeBucket.objects.create(
+            start_date=now + timedelta(hours=1), duration=timedelta(minutes=30), type=deep_type)
+        self.afternoon = TimeBucket.objects.create(
+            start_date=now + timedelta(hours=3), duration=timedelta(hours=3), type=open_type)
+        self.schema = Task.objects.create(header="Design schema", duration=timedelta(hours=4))
+        self.schema.tags.add(deep)
+        self.research = Task.objects.create(header="Research CMS", duration=timedelta(hours=3))
+        self.research.tags.add(writing)
+
+    def allocate(self, config):
+        from tasks.services.planner_service import allocate_tasks
+        tasks = Task.objects.prefetch_related("tags")
+        ranked = [tasks.get(id=self.research.id), tasks.get(id=self.schema.id)]
+        return allocate_tasks([self.morning, self.afternoon], ranked, config=config)
+
+    def test_focus_task_takes_the_next_bucket(self):
+        from tasks.services.planner_service import AllocationConfig
+        plan = self.allocate(AllocationConfig(focus_task_ids=frozenset({self.research.id})))
+
+        self.assertEqual([i.task for i in plan[self.morning.id]], [self.schema])
+        self.assertEqual([i.task for i in plan[self.afternoon.id]], [self.research])
+
+    def test_without_focus_stickiness_still_continues_the_task(self):
+        from tasks.services.planner_service import AllocationConfig
+        plan = self.allocate(AllocationConfig())
+
+        self.assertEqual([i.task for i in plan[self.afternoon.id]], [self.schema])
