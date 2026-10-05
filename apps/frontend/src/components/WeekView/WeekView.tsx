@@ -29,6 +29,11 @@ const addDays = (date: Date, days: number) => {
 const ZOOM_STEP = 1.15;
 const MAX_ZOOM = 6;
 const FALLBACK_HEIGHT = 720;
+// Pixels per wheel step for wheels that count in lines / pages (deltaMode).
+const LINE_PX = 16;
+// The opening time frame starts this far below the day headers, so the label
+// at its start (centered on its line) is not cut off.
+const FRAME_MARGIN = 8;
 // Below this width the week scrolls sideways.  Header and grid rows share it,
 // so their columns line up; the time scale takes its width from the days, so
 // the week needs no more room than before it had one.
@@ -48,12 +53,15 @@ interface WeekViewProps {
     onTaskDragChange?: (drag: ActiveDrag | null) => void;
     /** Live drag state; the moved appointment is rendered as a floating card. */
     activeDrag?: ActiveDrag | null;
+    /** The time frame the view opens on (the user's usual work hours, minutes
+     *  after midnight): zoomed to fill the visible height, scrolled to it. */
+    viewRange?: { startMinutes: number; endMinutes: number };
 }
 
 export const WeekView: React.FC<WeekViewProps> = ({
     tasks, initialDate = new Date(), zones = [], actions,
     onZoneClick, onZoneChange, onCreateTask, onTaskEdit, onTaskChange,
-    onTaskDragChange, activeDrag,
+    onTaskDragChange, activeDrag, viewRange,
 }) => {
     const [currentDate, setCurrentDate] = useState(initialDate);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -65,9 +73,13 @@ export const WeekView: React.FC<WeekViewProps> = ({
     const gridRef = useRef<HTMLDivElement>(null);
     // The day headers stick to the top of the scroll area.
     const headerRef = useRef<HTMLDivElement>(null);
-    // Scroll position a zoom step wants, applied once the grid has its new
-    // height (earlier, the browser would clamp it to the old height).
-    const pendingScrollTop = useRef<number | null>(null);
+    // Scroll position a zoom step wants, applied once the grid has been
+    // rendered at that zoom (earlier, the browser would clamp it to the old
+    // height).
+    const pendingScroll = useRef<{ top: number; zoom: number } | null>(null);
+    // Set once the user zooms or scrolls with the wheel: the view is theirs,
+    // a resize or a changed time frame no longer refits it.
+    const adjusted = useRef(false);
 
     const columnHeight = Math.round(fitHeight * zoom);
 
@@ -87,14 +99,38 @@ export const WeekView: React.FC<WeekViewProps> = ({
         return () => observer.disconnect();
     }, []);
 
-    // Mouse wheel adjusts the zoom factor, anchored on the cursor.  Attached
-    // natively so the page scroll can be prevented (Shift+wheel still scrolls).
+    // Open on the time frame from the settings: zoom so it fills the visible
+    // height (at most MAX_ZOOM), its start just below the headers.  Again on a
+    // resize or a changed frame, until the user has zoomed or wheel-scrolled.
+    const rangeStart = viewRange?.startMinutes;
+    const rangeEnd = viewRange?.endMinutes;
+    useLayoutEffect(() => {
+        if (adjusted.current || rangeStart === undefined || rangeEnd === undefined || rangeEnd <= rangeStart) return;
+        const filled = ((fitHeight - FRAME_MARGIN) / (rangeEnd - rangeStart)) * 1440; // day height
+        const next = Math.min(MAX_ZOOM, Math.max(1, filled / fitHeight));
+        const height = Math.round(fitHeight * next);
+        zoomRef.current = next;
+        pendingScroll.current = { top: Math.max(0, (rangeStart / 1440) * height - FRAME_MARGIN), zoom: next };
+        setZoom(next);
+    }, [fitHeight, rangeStart, rangeEnd]);
+
+    // Mouse wheel adjusts the zoom factor, anchored on the cursor; Ctrl+wheel
+    // scrolls.  Attached natively so the page scroll (and with Ctrl the
+    // browser's page zoom) can be prevented; Shift+wheel stays native.
     useEffect(() => {
         const container = scrollRef.current;
         if (!container) return;
         const onWheel = (event: WheelEvent) => {
             if (event.shiftKey) return; // escape hatch: native scroll
             event.preventDefault();
+            adjusted.current = true;
+            if (event.ctrlKey) {
+                const delta = event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE ? LINE_PX
+                    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? container.clientHeight : 1);
+                if (pendingScroll.current) pendingScroll.current.top += delta; // a zoom not yet rendered
+                else container.scrollTop += delta;
+                return;
+            }
             const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
             const prev = zoomRef.current;
             const next = Math.min(MAX_ZOOM, Math.max(1, prev * factor));
@@ -107,22 +143,24 @@ export const WeekView: React.FC<WeekViewProps> = ({
             const rect = container.getBoundingClientRect();
             const pointerY = event.clientY - rect.top;
             const headerHeight = headerRef.current?.offsetHeight ?? 0;
-            const scrollTop = pendingScrollTop.current ?? container.scrollTop;
+            const scrollTop = pendingScroll.current?.top ?? container.scrollTop;
             const gridY = scrollTop + pointerY - headerHeight;
-            pendingScrollTop.current = gridY * (next / prev) - pointerY + headerHeight;
+            pendingScroll.current = { top: gridY * (next / prev) - pointerY + headerHeight, zoom: next };
             setZoom(next);
         };
         container.addEventListener('wheel', onWheel, { passive: false });
         return () => container.removeEventListener('wheel', onWheel);
     }, []);
 
-    // After a zoom step has rendered the new column height (before paint).
+    // Apply a pending scroll once the grid has been rendered at its zoom
+    // (after the render, before paint).
     useLayoutEffect(() => {
         const container = scrollRef.current;
-        if (!container || pendingScrollTop.current === null) return;
-        container.scrollTop = pendingScrollTop.current;
-        pendingScrollTop.current = null;
-    }, [zoom]);
+        const pending = pendingScroll.current;
+        if (!container || !pending || pending.zoom !== zoom) return;
+        container.scrollTop = pending.top;
+        pendingScroll.current = null;
+    });
 
     const weekStart = getMonday(currentDate);
     const weekEnd = addDays(weekStart, 6);

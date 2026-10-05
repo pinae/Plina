@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import List
 from django.db import models
 from django.utils import timezone
-from datetime import timedelta, datetime
+from datetime import time, timedelta, datetime
 from parsedatetime import Constants as pdtConstants
 from recurrent.event_parser import RecurringEvent
 from dateutil import rrule
@@ -313,6 +313,10 @@ class UserSettings(models.Model):
     #: IANA name (e.g. "Europe/Berlin"), sent by the browser; recurrence
     #: rules ("every day at 14:00") and messages use it. Empty = server zone.
     time_zone = models.CharField(max_length=64, blank=True, default="")
+    #: The time frame the Week view opens on, filling the screen: the user's
+    #: usual work hours.
+    week_view_start = models.TimeField(default=time(8, 0))
+    week_view_end = models.TimeField(default=time(16, 45))
 
     class Meta:
         verbose_name_plural = "user settings"

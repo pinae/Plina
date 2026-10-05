@@ -384,6 +384,7 @@ all projects) and selects the first row. The user walks the list with
 |---|---|---|
 | Default duration | 1h | used for unestimated tasks in planning, Σ parts and ghosts |
 | Time zone | the device's | recurring bucket rules ("every day at 14:00") and times in messages mean this zone's wall-clock time; set automatically by the browser (added 2026-09-30 — before, the server's UTC shifted the buckets) |
+| Week view time frame | 08:00–16:45 | the usual work hours: the Week view opens zoomed so this frame fills the visible height, scrolled to its start (zoom at most 6×; the end must be after the start). It refits on resize until the user zooms (wheel, anchored on the cursor) or scrolls; **Ctrl + wheel scrolls** vertically instead of zooming the page, Shift + wheel scrolls sideways (added 2026-10-05) |
 
 Stored in the server-side `UserSettings` together with the active project.
 More settings can be added later.

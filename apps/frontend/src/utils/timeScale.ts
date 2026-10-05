@@ -40,3 +40,11 @@ export function timeScaleLabels(columnHeight: number): TimeLabel[] {
     }
     return labels;
 }
+
+/** Minutes after midnight of a time of day ("08:00", "16:45:00"), or null. */
+export function clockMinutes(value: string | null | undefined): number | null {
+    const match = value?.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return null;
+    const [hours, minutes] = [Number(match[1]), Number(match[2])];
+    return hours < 24 && minutes < 60 ? hours * 60 + minutes : null;
+}

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { WeekView } from './WeekView.tsx';
 import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
 
@@ -143,6 +143,78 @@ describe('WeekView', () => {
             // Column heights are rounded to whole pixels: allow 1 px (2 min).
             expect(Math.abs(timeUnderCursor() - before), `after step ${step}`).toBeLessThan(2);
         }
+    });
+
+    describe('opening on the usual work hours (settings)', () => {
+        // Like a browser, clamp scrollTop to the content that exists right now
+        // (the fit height is the 720 px fallback in jsdom), so a scroll set
+        // before the grid has its new height would be lost.
+        const tops = new WeakMap<Element, number>();
+        beforeEach(() => {
+            Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
+                configurable: true,
+                get() { return tops.get(this) ?? 0; },
+                set(value: number) {
+                    const grid = (this as HTMLElement).querySelector('[data-testid="week-grid"]');
+                    const height = grid ? Number(grid.getAttribute('data-column-height')) : 0;
+                    tops.set(this, Math.max(0, Math.min(value, height - 720)));
+                },
+            });
+        });
+        afterEach(() => { delete (HTMLElement.prototype as { scrollTop?: number }).scrollTop; });
+
+        const height = () => Number(screen.getByTestId('week-grid').getAttribute('data-column-height'));
+        const scrollTop = () => screen.getByTestId('week-scroll').scrollTop;
+        // The frame starts this far below the top edge, so its first label
+        // (centered on its line) is not cut off by the day headers.
+        const MARGIN = 8;
+        const filled = (frameMinutes: number) => Math.round((720 - MARGIN) * 1440 / frameMinutes);
+        const pxBelowTop = (minutes: number) => (minutes / 1440) * height() - scrollTop();
+
+        it('fills the view with the time frame, its start just below the top', () => {
+            render(<WeekView {...defaultProps} viewRange={{ startMinutes: 480, endMinutes: 1005 }} />);
+            // 8:00–16:45 is 8.75 h of 24: the day is about 24/8.75 times the visible height.
+            expect(height()).toBe(filled(525));
+            expect(pxBelowTop(480)).toBeCloseTo(MARGIN, 0);
+            // The frame's end is at the bottom of the visible area.
+            expect(pxBelowTop(1005)).toBeCloseTo(720, 0);
+        });
+
+        it('zooms in at most 6× for a short frame, and not at all for the whole day', () => {
+            const { unmount } = render(<WeekView {...defaultProps} viewRange={{ startMinutes: 600, endMinutes: 660 }} />);
+            expect(height()).toBe(720 * 6);
+            expect(pxBelowTop(600)).toBeCloseTo(MARGIN, 0);
+            unmount();
+            render(<WeekView {...defaultProps} viewRange={{ startMinutes: 0, endMinutes: 1440 }} />);
+            expect(height()).toBe(720);
+            expect(scrollTop()).toBe(0);
+        });
+
+        it('follows a changed frame until the user zooms', () => {
+            const { rerender } = render(<WeekView {...defaultProps} viewRange={{ startMinutes: 480, endMinutes: 1005 }} />);
+            rerender(<WeekView {...defaultProps} viewRange={{ startMinutes: 540, endMinutes: 1020 }} />);
+            expect(height()).toBe(filled(480)); // 9:00–17:00 = 8 h
+            expect(pxBelowTop(540)).toBeCloseTo(MARGIN, 0);
+
+            fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100 });
+            const zoomed = height();
+            rerender(<WeekView {...defaultProps} viewRange={{ startMinutes: 600, endMinutes: 720 }} />);
+            expect(height()).toBe(zoomed); // the user's own view stays
+        });
+
+        it('scrolls with Ctrl + wheel instead of zooming (and keeps the browser from zooming the page)', () => {
+            render(<WeekView {...defaultProps} viewRange={{ startMinutes: 480, endMinutes: 1005 }} />);
+            const scroll = screen.getByTestId('week-scroll');
+            const [before, top] = [height(), scrollTop()];
+
+            expect(fireEvent.wheel(scroll, { deltaY: 100, ctrlKey: true })).toBe(false); // prevented
+            expect(height()).toBe(before);
+            expect(scrollTop()).toBeCloseTo(top + 100, 0);
+
+            // A wheel that counts in lines (Firefox) moves 16 px per line.
+            fireEvent.wheel(scroll, { deltaY: -3, deltaMode: 1, ctrlKey: true });
+            expect(scrollTop()).toBeCloseTo(top + 100 - 48, 0);
+        });
     });
 
     it('shows a time scale left of Monday whose labels get denser when zoomed in', () => {

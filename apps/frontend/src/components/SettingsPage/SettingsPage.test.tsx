@@ -39,7 +39,7 @@ describe('SettingsPage', () => {
         renderPage();
         await waitFor(() => expect(field()).toHaveValue('1h'));
         fireEvent.change(field(), { target: { value: '30m' } });
-        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
         await waitFor(() => expect(patches).toEqual([{ default_duration: '00:30:00' }]));
         expect(await screen.findByText(/saved/i)).toBeInTheDocument();
     });
@@ -49,7 +49,7 @@ describe('SettingsPage', () => {
         await waitFor(() => expect(field()).toHaveValue('1h'));
         fireEvent.change(field(), { target: { value: 'soon' } });
         expect(screen.getByText(/“soon” is not a duration/)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+        expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
         fireEvent.change(field(), { target: { value: '0' } });
         expect(screen.getByText(/longer than 0 minutes/)).toBeInTheDocument();
         expect(patches).toEqual([]);
@@ -61,7 +61,54 @@ describe('SettingsPage', () => {
         renderPage();
         await waitFor(() => expect(field()).toHaveValue('1h'));
         fireEvent.change(field(), { target: { value: '999h' } });
-        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
         expect(await screen.findByText(/at most 1000 hours/)).toBeInTheDocument();
+    });
+});
+
+describe('SettingsPage — the Week view\'s time frame', () => {
+    const from = () => screen.getByLabelText(/^from$/i);
+    const to = () => screen.getByLabelText(/^to$/i);
+    const saveFrame = () => fireEvent.click(screen.getByRole('button', { name: /save time frame/i }));
+    const serveSettings = (start = '08:00:00', end = '16:45:00') => server.use(
+        http.get(`${API}/settings/`, () => HttpResponse.json({
+            default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
+            week_view_start: start, week_view_end: end,
+        })),
+        http.patch(`${API}/settings/`, async ({ request }) => {
+            const body = await request.json() as Record<string, string>;
+            patches.push(body);
+            return HttpResponse.json({ default_duration: '01:00:00', active_task_id: null, active_task_path: [],
+                time_zone: '', week_view_start: start, week_view_end: end, ...body });
+        }),
+    );
+
+    it('shows the usual work hours, 08:00 to 16:45 by default', async () => {
+        serveSettings();
+        renderPage();
+        await waitFor(() => expect(from()).toHaveValue('08:00'));
+        expect(to()).toHaveValue('16:45');
+        expect(screen.getByText(/week view opens/i)).toBeInTheDocument();
+    });
+
+    it('saves a new time frame', async () => {
+        serveSettings();
+        renderPage();
+        await waitFor(() => expect(from()).toHaveValue('08:00'));
+        fireEvent.change(from(), { target: { value: '07:30' } });
+        fireEvent.change(to(), { target: { value: '18:00' } });
+        saveFrame();
+        await waitFor(() => expect(patches).toEqual([{ week_view_start: '07:30', week_view_end: '18:00' }]));
+        expect(await screen.findByText(/saved — the week view opens on 07:30–18:00/i)).toBeInTheDocument();
+    });
+
+    it('refuses an end before the start', async () => {
+        serveSettings();
+        renderPage();
+        await waitFor(() => expect(from()).toHaveValue('08:00'));
+        fireEvent.change(to(), { target: { value: '07:00' } });
+        expect(screen.getByText(/the end must be after the start/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /save time frame/i })).toBeDisabled();
+        expect(patches).toEqual([]);
     });
 });

@@ -26,6 +26,7 @@ afterAll(() => server.close());
 
 const settings = (time_zone: string): UserSettings => ({
     default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone,
+    week_view_start: '08:00:00', week_view_end: '16:45:00',
 });
 function wrapper({ children }: { children: ReactNode }) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

@@ -18,5 +18,6 @@ const meta: Meta<typeof Page> = { title: 'Settings/SettingsPage', component: Pag
 export default meta;
 type Story = StoryObj<typeof Page>;
 
-/** ⚙ in the header: the default duration for unestimated tasks. */
+/** ⚙ in the header: the default duration for unestimated tasks and the
+ *  time frame the Week view opens on (08:00–16:45 by default). */
 export const Default: Story = {};

@@ -259,12 +259,19 @@ export interface UserSettings {
     /** IANA zone of the user's device ("Europe/Berlin"); recurring buckets
      *  ("every day at 14:00") follow it. Empty = the server's zone. */
     time_zone: string;
+    /** The time frame the Week view opens on ("08:00:00" to "16:45:00"):
+     *  the user's usual work hours. */
+    week_view_start: string;
+    week_view_end: string;
 }
 
 export interface SettingsWrite {
     default_duration?: string;
     active_task_id?: string | null;
     time_zone?: string;
+    /** "HH:MM"; the end must be after the start. */
+    week_view_start?: string;
+    week_view_end?: string;
 }
 
 // ----------------------------------------------------------------- split

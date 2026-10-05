@@ -9,6 +9,7 @@ import { useCompleteTask, useSettings, usePlan, useStartTracking, useStopTrackin
 import { usePlacement } from '../../hooks/usePlacement.ts';
 import { bucketsToZones, firstFreeDay, overlapsAutoTask, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
 import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
+import { clockMinutes } from '../../utils/timeScale.ts';
 import { useNow } from '../../hooks/useNow.ts';
 import type { PlanAlternative } from '../../types.ts';
 import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
@@ -158,6 +159,11 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
         }
         return result;
     }, [tasks.data, settings.data, now]);
+    // The Week view opens on the usual work hours (settings), filling the screen.
+    const frameStart = clockMinutes(settings.data?.week_view_start);
+    const frameEnd = clockMinutes(settings.data?.week_view_end);
+    const viewRange = frameStart !== null && frameEnd !== null && frameEnd > frameStart
+        ? { startMinutes: frameStart, endMinutes: frameEnd } : undefined;
 
     if (plan.isPending) {
         return (
@@ -246,6 +252,7 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                     overEstimateMinutes: task.isRest ? undefined : overEstimate.get(task.taskId),
                 }))}
                 initialDate={weekAnchor}
+                viewRange={viewRange}
                 zones={zones}
                 actions={actions}
                 onZoneClick={setEditingZone}

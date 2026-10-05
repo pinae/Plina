@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { LABEL_STEPS, MIN_LABEL_GAP_PX, labelStepMinutes, timeScaleLabels } from './timeScale.ts';
+import { LABEL_STEPS, MIN_LABEL_GAP_PX, clockMinutes, labelStepMinutes, timeScaleLabels } from './timeScale.ts';
 
 const heightFor = (pxPerHour: number) => pxPerHour * 24;
 
@@ -46,5 +46,14 @@ describe('timeScaleLabels', () => {
                 expect((finer / 1440) * height, `height ${height}`).toBeLessThan(MIN_LABEL_GAP_PX);
             }
         }
+    });
+});
+
+describe('clockMinutes', () => {
+    it.each([
+        ['08:00:00', 480], ['16:45:00', 1005], ['7:30', 450], ['00:00', 0], ['23:59:59', 1439],
+        ['24:00', null], ['12:60', null], ['', null], [null, null], ['8 Uhr', null],
+    ])('%j -> %j', (value, minutes) => {
+        expect(clockMinutes(value)).toBe(minutes);
     });
 });

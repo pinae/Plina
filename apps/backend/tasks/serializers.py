@@ -287,6 +287,17 @@ class UserSettingsSerializer(serializers.ModelSerializer):
                     f'“{value}” is not a known time zone. Use a name like “Europe/Berlin”.')
         return value
 
+    def validate(self, attrs):
+        """The Week view's time frame must not be empty (one end may come
+        alone; it is checked against the stored other one)."""
+        start = attrs.get('week_view_start', self.instance.week_view_start if self.instance else None)
+        end = attrs.get('week_view_end', self.instance.week_view_end if self.instance else None)
+        if start is not None and end is not None and end <= start:
+            raise serializers.ValidationError({'week_view_end': [
+                f'The end must be after the start ({start:%H:%M}), e.g. 08:00 to 16:45.'
+            ]})
+        return attrs
+
     def validate_active_task_id(self, task):
         from .services.settings import is_project
         if task is None:
@@ -302,7 +313,8 @@ class UserSettingsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserSettings
-        fields = ['default_duration', 'active_task_id', 'active_task_path', 'time_zone']
+        fields = ['default_duration', 'active_task_id', 'active_task_path', 'time_zone',
+                  'week_view_start', 'week_view_end']
 
 
 class MoveSerializer(serializers.Serializer):

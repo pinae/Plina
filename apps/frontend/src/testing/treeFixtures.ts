@@ -44,7 +44,10 @@ export const settingsFor = (tasks: Task[], activeId: string | null): UserSetting
     const path = active
         ? [...(active.ancestor_ids ?? []), active.id].map(id => ({ id, header: byId.get(id)!.header }))
         : [];
-    return { default_duration: '01:00:00', active_task_id: activeId, active_task_path: path, time_zone: '' };
+    return {
+        default_duration: '01:00:00', active_task_id: activeId, active_task_path: path, time_zone: '',
+        week_view_start: '08:00:00', week_view_end: '16:45:00',
+    };
 };
 
 export const makeAlternative = (id: string, label: string): PlanAlternative => ({

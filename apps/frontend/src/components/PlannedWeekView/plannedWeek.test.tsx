@@ -274,6 +274,18 @@ describe('PlannedWeekView', () => {
         );
         expect(screen.getByText('Start with “Implement API”')).toBeInTheDocument();
     });
+
+    it('opens on the time frame from the settings, filling the view', async () => {
+        server.use(http.get(`${API}/settings/`, () => HttpResponse.json({
+            default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
+            week_view_start: '08:00:00', week_view_end: '16:45:00',
+        })));
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        const grid = await screen.findByTestId('week-grid');
+        // 8:00–16:45 (8.75 h) fills the 720 px jsdom fallback height (less the
+        // 8 px margin above the frame's start).
+        await waitFor(() => expect(grid).toHaveAttribute('data-column-height', String(Math.round(712 * 1440 / 525))));
+    });
 });
 
 describe('tracked time over the estimate (UI-8)', () => {
