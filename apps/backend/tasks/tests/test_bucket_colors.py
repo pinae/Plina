@@ -95,12 +95,14 @@ class BucketTypeColorApiTest(TestCase):
         self.assertIn("#3357ff", str(response.data["own_hex_color"]))
 
     def test_buckets_in_the_plan_show_their_types_color(self):
-        mornings = self.post(name="Mornings", start_times="every day at 09:00", own_hex_color=BLUE)
+        self.post(name="Mornings", start_times="every day at 09:00", own_hex_color=BLUE)
         evenings = self.post(name="Evenings", start_times="every day at 19:00")
         colors = {b["type_name"]: b["hex_color"] for b in self.client.get("/api/plan/").data["buckets"]}
         self.assertEqual(colors["Mornings"], BLUE)
         self.assertEqual(colors["Evenings"], evenings["hex_color"])
-        self.assertNotEqual(colors["Evenings"], mornings["auto_hex_color"])
+        # Unlike the color Mornings shows; its unshown automatic color isn't
+        # reserved, so Evenings may get the same one.
+        self.assertGreater(oklab_distance(colors["Evenings"], BLUE), 0.07)
 
 
 class HexColorSetterTest(TestCase):
