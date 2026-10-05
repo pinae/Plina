@@ -207,9 +207,12 @@ class AllocationConfig:
     ``min_task_slice``: minimum quantum for starting a task in a leftover gap.
     ``project_stickiness``: after finishing a task, prefer tasks of the same
     project before switching, on top of regular task stickiness.
+    ``focus_task_ids``: the branch a focus alternative starts with; its tasks
+    win over stickiness to a task outside it.
     """
     min_task_slice: timedelta = MIN_TASK_SLICE
     project_stickiness: bool = False
+    focus_task_ids: frozenset = frozenset()
 
 
 DEFAULT_CONFIG = AllocationConfig()
@@ -345,7 +348,10 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
                config: AllocationConfig) -> PlanningTask | None:
     """First candidate in ranked order; the previously worked-on task wins
     ties to avoid context switches (stickiness).  With project stickiness,
-    same-project candidates win before other projects get a turn."""
+    same-project candidates win before other projects get a turn.  With a
+    focus branch, its tasks win before stickiness to any other task: one that
+    only filled time the branch could not use (a bucket of another tag) must
+    not keep the next bucket and push the branch back."""
     free = segment.end - at
 
     def is_candidate(snapshot: PlanningTask) -> bool:
@@ -361,6 +367,10 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
         return run.is_eligible(snapshot, at)
 
     last = run.last_task
+    if config.focus_task_ids and (last is None or last.id not in config.focus_task_ids):
+        for snapshot in queue:
+            if snapshot.id in config.focus_task_ids and is_candidate(snapshot):
+                return snapshot
     if last is not None and last in queue and is_candidate(last):
         return last
     if config.project_stickiness and last is not None and last.project_id is not None:

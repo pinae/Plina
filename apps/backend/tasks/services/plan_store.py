@@ -177,7 +177,7 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
     preset = plan.config.get("preset", "deadline_safe")
     focus = frozenset(UUID(t) for t in plan.config.get("focus_task_ids", []))
     ranked = _apply_focus(_preset_ranking(snapshots, preset, now), focus)
-    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset))
+    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset, focus))
 
     anchored_ids = _anchored_task_ids()
     plan.entries.exclude(task_id__in=anchored_ids).delete()

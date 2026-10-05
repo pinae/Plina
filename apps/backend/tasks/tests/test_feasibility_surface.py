@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+from unittest import mock
 
 from django.core.management import call_command
 from tasks.tests.support import TestCase
@@ -75,13 +76,24 @@ class MaraDemoDataTest(TestCase):
         self.assertEqual(appointment.start_date.weekday(), 3)  # Thursday
 
     def test_demo_plan_offers_a_real_choice(self):
-        client = APIClient()
-        alternatives = client.post("/api/plan/alternatives/").data["alternatives"]
-        self.assertGreaterEqual(len(alternatives), 2)
-        labels = " | ".join(a["label"] for a in alternatives)
-        self.assertTrue("Design schema" in labels or "Research CMS" in labels,
-                        f"expected focus labels, got: {labels}")
-        Plan.objects.all().delete()
+        # The demo data and the planner work relative to "now", so check
+        # pinned times across a week: start of the deep-work morning, its
+        # last half hour (Mon–Wed; Tuesday also has the writing evening),
+        # the Thursday call, afternoons, evenings and the weekend.
+        monday = datetime(2026, 10, 5, tzinfo=dt_timezone.utc)
+        for day, hour, minute in [(0, 8, 0), (0, 9, 30), (0, 12, 30), (0, 13, 30),
+                                  (1, 12, 30), (1, 19, 30), (2, 12, 30), (3, 10, 30),
+                                  (4, 16, 30), (5, 12, 0), (6, 23, 30)]:
+            now = monday + timedelta(days=day, hours=hour, minutes=minute)
+            with self.subTest(now=now.strftime("%a %H:%M")), \
+                    mock.patch("django.utils.timezone.now", return_value=now):
+                call_command("populate_demo_data", verbosity=0)
+                alternatives = APIClient().post("/api/plan/alternatives/").data["alternatives"]
+                self.assertGreaterEqual(len(alternatives), 2)
+                labels = " | ".join(a["label"] for a in alternatives)
+                self.assertTrue("Design schema" in labels or "Research CMS" in labels,
+                                f"expected focus labels, got: {labels}")
+                Plan.objects.all().delete()
 
 
 class AcceptedPlanIncludesFreeCapacityTest(TestCase):
