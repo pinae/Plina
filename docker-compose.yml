@@ -1,0 +1,77 @@
+# Example deployment of Plina (README: Deployment with Docker):
+#
+#   cp .env.example .env     # fill in the secrets and host names
+#   docker run --rm httpd:2.4-alpine htpasswd -nbB <user> '<password>' > htpasswd
+#   docker compose up -d --build
+#
+# PostgreSQL, the Django backend (only reachable inside this project's
+# network) and nginx (the frontend, the API proxy, the login), published on
+# PLINA_HTTP_BIND:PLINA_HTTP_PORT for the reverse proxy that terminates TLS.
+name: plina
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-plina}
+      POSTGRES_USER: ${DB_USER:-plina}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      DEBUG: "False"
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      SECURE_COOKIES: ${SECURE_COOKIES:-True}
+      DB_ENGINE: django.db.backends.postgresql
+      DB_NAME: ${DB_NAME:-plina}
+      DB_USER: ${DB_USER:-plina}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DB_HOST: db
+      DB_PORT: 5432
+    volumes:
+      # Filled by the backend at start (collectstatic), served by nginx.
+      - static:/app/static
+      - media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+
+  nginx:
+    build:
+      context: .
+      dockerfile: apps/frontend/nginx/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${PLINA_HTTP_BIND:-127.0.0.1}:${PLINA_HTTP_PORT:-8080}:80"
+    volumes:
+      - static:/app/static:ro
+      - media:/app/media:ro
+      # The users who may log in. Must exist (it is not created empty).
+      - type: bind
+        source: ${PLINA_HTPASSWD:-./htpasswd}
+        target: /etc/nginx/htpasswd
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres:
+  static:
+  media:

@@ -1,0 +1,21 @@
+# Build context of both images (apps/backend/Dockerfile,
+# apps/frontend/nginx/Dockerfile): the repository root. Only the root
+# .dockerignore counts with the classic builder (Ansible).
+.git
+.turbo
+.env
+htpasswd
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/dist
+**/storybook-static
+apps/backend/db.sqlite3*
+apps/backend/test_e2e_db.sqlite3
+apps/backend/static
+apps/backend/media
+apps/backend/.coverage
+apps/frontend/coverage
+apps/frontend/playwright-report
+apps/frontend/test-results

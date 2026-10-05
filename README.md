@@ -256,8 +256,10 @@ VITE_BACKEND_URL=http://localhost:8001 yarn run dev    # in apps/frontend
 ```
 Vite reads the variable when the dev server starts and writes it into the
 bundle on `yarn build`, so restart or rebuild after changing it. The tests
-always use the default (pinned in `vite.config.ts`). A backend on another
-host must list that host in Django's `ALLOWED_HOSTS`.
+always use the default (pinned in `vite.config.ts`). `/` means the page's
+own origin (the Docker image, where nginx proxies `/api/`). A backend on
+another host must list that host in the environment variable
+`ALLOWED_HOSTS` (see [Settings](#settings)).
 
 The backend accepts browser requests only from the origins in the
 environment variable `CORS_ALLOWED_ORIGINS` (comma-separated
@@ -276,12 +278,152 @@ If the frontend's port is taken, Vite moves to the next free one and every
 API call fails with a CORS error; start Vite with `--strictPort` to get an
 error instead.
 
+## Deployment with Docker
+
+Three containers (`docker-compose.yml` is a complete example):
+
+* **db**: PostgreSQL 17.
+* **backend** (`apps/backend/Dockerfile`): Django behind gunicorn on port
+  5000, only reachable inside the Compose network. On every start it brings
+  the database up to date (`migrate`) and copies the admin's static files
+  into the `/app/static` volume (`collectstatic`), then runs as an
+  unprivileged user.
+* **nginx** (`apps/frontend/nginx/Dockerfile`): the built frontend; `/api/`
+  and `/django/` (the admin) proxied to the backend; `/static/` and `/media/`
+  served from the volumes the backend fills; and the login. Its
+  configuration is `apps/frontend/nginx/nginx.conf`, copied into the image
+  when it is built.
+
+TLS is the job of a reverse proxy in front (Traefik, Caddy, nginx, …), which
+must send `X-Forwarded-Proto`; the example publishes nginx on
+`127.0.0.1:8080` for it.
+
+> **Plina has no user accounts yet: whoever reaches it can read and change
+> everything.** Keep it behind the login nginx asks for (HTTP basic auth,
+> users in an `htpasswd` file) or behind one at the reverse proxy, and only
+> over HTTPS: basic auth sends the password with every request.
+
+### First start
+
+```bash
+git clone https://github.com/pinae/Plina.git && cd Plina
+cp .env.example .env    # git ignores .env
+```
+
+Create the secrets and put the first two into `.env` (`SECRET_KEY`,
+`DB_PASSWORD`):
+
+```bash
+# The Django secret key: letters, digits, - and _ only (Compose would expand a $)
+python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+# … or without Python on the server:
+docker run --rm python:3.14-slim python -c "import secrets; print(secrets.token_urlsafe(50))"
+
+# The database password
+openssl rand -hex 32
+
+# The login: the file ./htpasswd with one user (>> instead of > adds another)
+docker run --rm httpd:2.4-alpine htpasswd -nbB pina 'a-long-password' > htpasswd
+# … or, with apache2-utils installed, asking for the password (not in the shell history):
+htpasswd -cB htpasswd pina
+```
+
+In `.env`, set `ALLOWED_HOSTS` to the host name Plina is reached under (for
+example `plina.example.com`) and `CSRF_TRUSTED_ORIGINS` to its HTTPS origin
+(`https://plina.example.com`). Then build and start:
+
+```bash
+docker compose up -d --build
+docker compose ps                # after about a minute all three are "healthy"
+docker compose logs -f backend   # migrations, then gunicorn's workers
+```
+
+Point the reverse proxy at `http://127.0.0.1:8080`; with Caddy, for example:
+```
+plina.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+With Traefik, put the nginx container into Traefik's network with router
+labels (port 80) instead of publishing a port. `/healthz` needs no login and
+answers `ok` while the backend reaches its database; the images' Docker
+health checks use it (also for autoheal).
+
+To try it before TLS is set up, set `PLINA_HTTP_BIND=0.0.0.0`, add the
+server's address to `ALLOWED_HOSTS`, set `SECURE_COOKIES=False` (for the
+admin's login) and open `http://<server>:8080`, knowing that the password
+then travels unencrypted.
+
+Optionally, a user for the Django admin at `/django/admin/` (to look at the
+raw data):
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
+
+### Updates and backups
+
+```bash
+git pull && docker compose up -d --build    # migrations run on start
+```
+
+Back up before updating:
+```bash
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' \
+  > plina-$(date +%F).sql
+```
+Restore a backup (it replaces everything in the database):
+```bash
+docker compose stop backend
+docker compose exec -T db sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < plina-2026-10-05.sql
+docker compose start backend
+```
+
+### Ansible
+
+The images build with Ansible's `community.docker.docker_image` (its
+classic builder works) with the repository root as build path and the
+Dockerfiles `apps/backend/Dockerfile` and `apps/frontend/nginx/Dockerfile`.
+A templated `nginx.conf` can replace `apps/frontend/nginx/nginx.conf` before
+the nginx image is built; keep the login (`auth_basic`) in it unless the
+reverse proxy asks for one. `community.general.htpasswd` writes the
+`htpasswd` file (it needs passlib on the server). The build argument
+`VITE_BACKEND_URL` of the nginx image is `/` by default (the API on the
+page's own origin); a full URL such as `https://plina.example.com` works too.
+
+### Settings
+
+The backend reads its settings from the environment. Without any, it runs
+as for development (`DEBUG` on, SQLite in `apps/backend/db.sqlite3`); the
+Docker image sets `DEBUG=False`.
+
+| Variable | Meaning |
+|---|---|
+| `DEBUG` | `True`/`False` (also 1/0, yes/no, on/off). Never on with real data. |
+| `SECRET_KEY` | Required without `DEBUG`. Or `SECRET_KEY_FILE`: a file with the key (Docker secrets). |
+| `ALLOWED_HOSTS` | Required without `DEBUG`: the host names, comma-separated. |
+| `CSRF_TRUSTED_ORIGINS` | The HTTPS origins that may post forms (the admin), e.g. `https://plina.example.com`. |
+| `SECURE_COOKIES` | Cookies only over HTTPS; default: on without `DEBUG`. |
+| `CORS_ALLOWED_ORIGINS` | Only for a frontend on another origin ([above](#backend-url-and-ports)). |
+| `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | The database, e.g. `django.db.backends.postgresql`, `plina`, …, `db`, `5432`. Without `DB_ENGINE`: SQLite at `DB_NAME` (default `db.sqlite3`). `DB_PASSWORD_FILE` instead of `DB_PASSWORD` works too. |
+| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM` | Mail, only for Django's password reset under `/django/accounts/`. |
+| `WEB_CONCURRENCY` | gunicorn's workers (image default 3). |
+| `LOG_LEVEL` | Default `INFO`; everything goes to the container log, errors with their traceback. |
+| `PLINA_MIGRATE`, `PLINA_COLLECTSTATIC` | `0` skips that step when the container starts. |
+
 ## Testing
 
 ### Backend Tests
 Run Django tests from the `apps/backend/` directory:
 ```bash
 uv run python manage.py test tasks
+```
+
+They use SQLite. Against PostgreSQL, as deployed (the migrations differ in
+places):
+```bash
+docker run -d --name plina-test-db -e POSTGRES_PASSWORD=pw -p 127.0.0.1:55432:5432 postgres:17-alpine
+DB_ENGINE=django.db.backends.postgresql DB_USER=postgres DB_PASSWORD=pw DB_HOST=127.0.0.1 DB_PORT=55432 \
+  uv run python manage.py test tasks --noinput
 ```
 
 ### Frontend Tests

@@ -2,6 +2,27 @@
 
 import uuid
 from django.db import migrations, models
+from django.db.migrations.exceptions import IrreversibleError
+
+
+class AlterIdToUuid(migrations.AlterField):
+    """The AlterField below, also on PostgreSQL: there the integer id is an
+    identity column and bigint cannot be cast to uuid, so the identity is
+    dropped first and the (just emptied) column gets its new type. SQLite
+    rebuilds the table as before."""
+
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.vendor != 'postgresql':
+            return super().database_forwards(app_label, schema_editor, from_state, to_state)
+        table = schema_editor.quote_name(to_state.apps.get_model(app_label, self.model_name)._meta.db_table)
+        schema_editor.execute(f'ALTER TABLE {table} ALTER COLUMN "id" DROP IDENTITY IF EXISTS')
+        schema_editor.execute(f'ALTER TABLE {table} ALTER COLUMN "id" TYPE uuid '
+                              "USING lpad(to_hex(\"id\"), 32, '0')::uuid")
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.vendor == 'postgresql':
+            raise IrreversibleError('Time bucket ids cannot go back from uuid to integers on PostgreSQL.')
+        return super().database_backwards(app_label, schema_editor, from_state, to_state)
 
 
 class Migration(migrations.Migration):
@@ -20,7 +41,7 @@ class Migration(migrations.Migration):
             name='is_appointment',
             field=models.BooleanField(default=False),
         ),
-        migrations.AlterField(
+        AlterIdToUuid(
             model_name='timebucket',
             name='id',
             field=models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False),

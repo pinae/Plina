@@ -25,9 +25,12 @@ import type {
 const DEFAULT_BACKEND_URL = 'http://localhost:8000';
 
 /** The API root of a backend given by its root URL (``VITE_BACKEND_URL``,
- *  without ``/api``); unset or empty means the local dev server. */
-export const apiBaseUrl = (backendUrl?: string) =>
-    `${backendUrl?.trim().replace(/\/+$/, '') || DEFAULT_BACKEND_URL}/api/`;
+ *  without ``/api``); unset or empty means the local dev server, ``/`` the
+ *  page's own origin (the Docker image, where nginx proxies ``/api/``). */
+export const apiBaseUrl = (backendUrl?: string) => {
+    const root = backendUrl?.trim();
+    return `${root ? root.replace(/\/+$/, '') : DEFAULT_BACKEND_URL}/api/`;
+};
 
 const api = axios.create({
     baseURL: apiBaseUrl(import.meta.env.VITE_BACKEND_URL),

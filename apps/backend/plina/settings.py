@@ -10,24 +10,45 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
-from plina.env import origins_from_env
+from django.core.exceptions import ImproperlyConfigured
+
+from plina.env import bool_from_env, database_from_env, list_from_env, origins_from_env, secret_from_env
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ji(%q7xuu4=^#f33(uu6q1dx9f&f^fqjp^=vy^3@$*2&(+van*'
+# Development settings unless the environment says otherwise; the Docker
+# image runs with DEBUG=False (README: Deployment with Docker).
+# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = bool_from_env('DEBUG', default=True)
 
-ALLOWED_HOSTS = []
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = secret_from_env('SECRET_KEY')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured(
+            'Set SECRET_KEY (or SECRET_KEY_FILE) when DEBUG is off; README: Deployment with Docker.')
+    SECRET_KEY = 'django-insecure-ji(%q7xuu4=^#f33(uu6q1dx9f&f^fqjp^=vy^3@$*2&(+van*'
+
+# The host names Plina is reached under, comma-separated (e.g. plina.example.com).
+ALLOWED_HOSTS = list_from_env('ALLOWED_HOSTS', default=[])
+if not DEBUG and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        'Set ALLOWED_HOSTS to the host name(s) Plina is reached under, e.g. plina.example.com.')
+# The origins of HTTPS pages that may post forms (the Django admin), e.g.
+# https://plina.example.com.
+CSRF_TRUSTED_ORIGINS = origins_from_env('CSRF_TRUSTED_ORIGINS', default=[])
+
+# Behind a reverse proxy that terminates TLS and says so in X-Forwarded-Proto
+# (nginx passes it on); cookies only over HTTPS in production.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = bool_from_env('SECURE_COOKIES', default=not DEBUG)
 
 
 # Application definition
@@ -45,6 +66,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'plina.health.HealthCheckMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -80,11 +102,9 @@ WSGI_APPLICATION = 'plina.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+# SQLite (db.sqlite3) unless DB_ENGINE, DB_NAME, DB_USER, … say otherwise.
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': database_from_env(BASE_DIR),
 }
 
 
@@ -123,6 +143,41 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
+# collectstatic puts the admin's files here; in Docker a volume nginx serves.
+STATIC_ROOT = BASE_DIR / 'static'
+# Uploads (none yet); in Docker a volume nginx serves.
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Mail (only Django's own password reset under /django/accounts/ sends any).
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT') or 25)
+EMAIL_USE_TLS = bool_from_env('EMAIL_USE_TLS', default=False)
+EMAIL_HOST_USER = os.environ.get('EMAIL_USER', '')
+EMAIL_HOST_PASSWORD = secret_from_env('EMAIL_PASSWORD') or ''
+DEFAULT_FROM_EMAIL = SERVER_EMAIL = os.environ.get('EMAIL_FROM') or 'webmaster@localhost'
+
+# Plina has no login of its own yet: access is protected in front of Django
+# (basic auth in nginx or the reverse proxy). The API ignores Django sessions — a
+# login to the admin would otherwise make it demand CSRF tokens — and the
+# proxy's Authorization header.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+}
+
+# Everything to stdout/stderr, where `docker compose logs` finds it; errors
+# with their traceback (Django would only mail them without DEBUG).
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': os.environ.get('LOG_LEVEL', 'INFO')},
+    'loggers': {
+        'django': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        # 4xx are in the access log; tracebacks of 5xx here.
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

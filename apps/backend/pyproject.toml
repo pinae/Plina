@@ -11,4 +11,6 @@ dependencies = [
     "recurrent>=0.4",
     "parsedatetime>=2.6",
     "python-dateutil>=2.9",
+    "gunicorn>=26.2.0",
+    "psycopg[binary]>=3.3.6",
 ]

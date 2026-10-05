@@ -11,6 +11,9 @@ describe('apiBaseUrl', () => {
         ['http://localhost:8001/', 'http://localhost:8001/api/'],
         [' https://plina.example.com// ', 'https://plina.example.com/api/'],
         ['https://example.com/plina', 'https://example.com/plina/api/'],
+        // The Docker image: the API on the page's own origin (nginx proxies it).
+        ['/', '/api/'],
+        ['/plina', '/plina/api/'],
     ])('backend %j -> %s', (backendUrl, expected) => {
         expect(apiBaseUrl(backendUrl)).toBe(expected);
     });
