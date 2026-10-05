@@ -5,10 +5,14 @@ nearest ancestor's (``TreeIndex.effective_color``).  A top-level task without
 one shows its automatic color (``Task.auto_color``): assigned once, as
 different as possible from the colors the open tasks show, and kept while the
 task is nested (it then follows its new parent) so it comes back when the
-task is a project again.
+task is a project again.  Only shown colors count as in use: the automatic
+color of a project with a chosen color is not reserved, so another project
+may get the same one (and share it if "Automatic" is chosen again).
 
 Bucket types work like projects: the chosen color (``TimeBucketType.color``),
-else an automatic one (``auto_color``) unlike the other bucket types' colors.
+else an automatic one (``auto_color``) unlike the colors the other bucket
+types show — again not reserving the automatic colors of types with a chosen
+color.
 
 Distances are measured in OKLab, where equal distances look about equally
 different (0.02 is roughly the smallest visible difference).
@@ -121,7 +125,7 @@ def distinct_color(used: Iterable[str], rng: Optional[random.Random] = None) -> 
 def colors_in_use() -> List[str]:
     """The colors the open tasks show of their own: chosen ones, and the
     automatic ones of projects without a chosen color (inherited colors
-    repeat these)."""
+    repeat these).  Automatic colors that are not shown don't count."""
     used: List[str] = []
     rows = Task.objects.filter(completed_at=None).values_list("parent_id", "color", "auto_color")
     for parent_id, color, auto_color in rows:
@@ -152,7 +156,8 @@ def ensure_auto_colors(rng: Optional[random.Random] = None) -> int:
 
 
 def bucket_colors_in_use() -> List[str]:
-    """The colors the bucket types show: chosen, else automatic."""
+    """The colors the bucket types show: chosen, else automatic.  The
+    automatic color of a type with a chosen color doesn't count."""
     return [to_hex(color if color is not None else auto)
             for color, auto in TimeBucketType.objects.values_list("color", "auto_color")
             if color is not None or auto is not None]
