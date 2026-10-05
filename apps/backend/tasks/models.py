@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import List
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from datetime import time, timedelta, datetime
@@ -8,6 +9,8 @@ from recurrent.event_parser import RecurringEvent
 from dateutil import rrule
 from uuid import uuid4
 import re
+
+from plina.scoping import Owned
 
 
 def minutely_str(duration):
@@ -19,10 +22,14 @@ def minutely_str(duration):
     return f"{hours}h {minutes}m"
 
 
-class OptionallyColored(models.Model):
+# Every model below holds a user's data (Owned, plina.scoping): queries see
+# only the rows of the logged-in user, new rows belong to them.
+
+
+class OptionallyColored(Owned):
     color = models.BinaryField(max_length=3, default=b"\x53\x9d\xad", blank=True, null=True)  # byte order: rgb
 
-    class Meta:
+    class Meta(Owned.Meta):
         abstract = True
 
     @property
@@ -75,10 +82,11 @@ class Task(OptionallyColored):
     is_appointment = models.BooleanField(default=False)
     completed_at = models.DateTimeField("completed at", blank=True, null=True, default=None)
     #: Task tree (UI-1): every top-level task is a project; tasks can be split
-    #: indefinitely. PROTECT so children are never deleted by accident — the
-    #: API decides whether they are lifted or deleted (services.tree).
+    #: indefinitely. RESTRICT so children are never deleted by accident — the
+    #: API decides whether they are lifted or deleted (services.tree) — but
+    #: the whole tree goes with its owner when a user is deleted.
     parent = models.ForeignKey(to="self", related_name="children", null=True, blank=True,
-                               default=None, on_delete=models.PROTECT)
+                               default=None, on_delete=models.RESTRICT)
     #: Position among the siblings (the top-level order is the project order).
     order = models.PositiveIntegerField(default=0)
     #: Colors (§4.4, services.colors): the chosen color (None = inherit from
@@ -101,7 +109,7 @@ class Task(OptionallyColored):
         return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
 
 
-class TaskEstimateChange(models.Model):
+class TaskEstimateChange(Owned):
     """One change of a task's estimate (§4.6) — the history is kept so
     estimates can be compared with tracked time when analyzing projects."""
     REASONS = [
@@ -126,7 +134,7 @@ class TaskEstimateChange(models.Model):
         return f"{self.task.header}: {self.old_duration} → {self.new_duration} ({self.reason})"
 
 
-class TaskDependency(models.Model):
+class TaskDependency(Owned):
     """A finish-to-start edge: ``successor`` may not start before ``predecessor`` is done.
 
     The dependency graph must stay acyclic; cycle checks live in the service
@@ -151,7 +159,7 @@ class TaskDependency(models.Model):
         return f"{self.predecessor.header} -> {self.successor.header}"
 
 
-class TimeBucketType(models.Model):
+class TimeBucketType(Owned):
     name = models.CharField(max_length=512)
     #: Colors like a project's (§4.4, services.colors): the chosen color
     #: (None = automatic) and the automatic one, assigned once.
@@ -203,7 +211,7 @@ class TimeBucketType(models.Model):
         return buckets
 
 
-class TimeBucket(models.Model):
+class TimeBucket(Owned):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     start_date = models.DateTimeField("start date", default=timezone.now)
     duration = models.DurationField(default=timedelta(hours=4))
@@ -225,7 +233,7 @@ class TimeBucket(models.Model):
         self.duration = new_end_date - self.start_date
 
 
-class TrackingSession(models.Model):
+class TrackingSession(Owned):
     """One stretch of actually working on a task.
 
     An open session (``end`` is null) means the user is working right now;
@@ -246,7 +254,7 @@ class TrackingSession(models.Model):
         return f"{self.task.header}: {self.start:%Y-%m-%d %H:%M} {state}"
 
 
-class Plan(models.Model):
+class Plan(Owned):
     """One stored schedule: a valid topological ordering packed into buckets.
 
     Several unaccepted candidate plans coexist while the user chooses; on
@@ -273,7 +281,7 @@ class Plan(models.Model):
         return f"{marker}{self.label} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
-class PlanEntry(models.Model):
+class PlanEntry(Owned):
     """One contiguous slice of a task inside the plan.
 
     ``bucket`` is null for appointments (calendar-level) and for slices in
@@ -300,10 +308,11 @@ class PlanEntry(models.Model):
         return f"[{self.order}] {self.task.header} at {self.start}"
 
 
-class UserSettings(models.Model):
-    """Per-user preferences (UI-3). Plina is single-user for now, so there is
-    one row (pk=1, see ``services.settings.get_settings``); it becomes
-    per-user together with authentication."""
+class UserSettings(Owned):
+    """Per-user preferences (UI-3): one row per user
+    (``services.settings.get_settings``)."""
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, related_name="plina_settings",
+                                 on_delete=models.CASCADE, editable=False)
     #: Planning estimate for tasks without an own estimate.
     default_duration = models.DurationField(default=timedelta(hours=1))
     #: The project (top-level task or task with subtasks) the user works in;

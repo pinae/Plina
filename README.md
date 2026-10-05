@@ -52,11 +52,12 @@ offers fresh choices. Feasibility warnings ("Project X can't finish by ...")
 surface as a banner with remedy shortcuts, and the Week view can jump to
 the first day with free capacity.
 
-Try it: `uv run python manage.py populate_demo_data` (in `apps/backend`,
-after `migrate`, see [Development Setup](#development-setup)) sets up the
-full demo (two projects, a dependency diamond, tagged recurring buckets, one
-fixed appointment), then use "Plan my week" in the frontend. The command
-replaces all tasks, tags, time buckets and plans in the database.
+Try it: `uv run python manage.py populate_demo_data --user <name>` (in
+`apps/backend`, after `migrate` and `createsuperuser`, see
+[Development Setup](#development-setup)) sets up the full demo (two
+projects, a dependency diamond, tagged recurring buckets, one fixed
+appointment), then use "Plan my week" in the frontend. The command replaces
+that user's tasks, tags, time buckets and plans.
 
 ### Working with tasks
 
@@ -215,13 +216,17 @@ architectural guidelines:
    ```
    Without it every request, the admin included, fails with
    `no such table: tasks_usersettings`.
-4. Optional: load the demo data (the story above).
-   **It deletes all tasks (with their tracked time and dependencies), tags,
-   time buckets and plans in the database first.**
+4. Create your account: the app asks for a login ([Accounts](#accounts)).
    ```bash
-   uv run python manage.py populate_demo_data
+   uv run python manage.py createsuperuser
    ```
-5. Start the development server:
+5. Optional: load the demo data (the story above) for that user.
+   **It deletes that user's tasks (with their tracked time and
+   dependencies), tags, time buckets and plans first** — nobody else's.
+   ```bash
+   uv run python manage.py populate_demo_data --user <name>
+   ```
+6. Start the development server:
    ```bash
    uv run python manage.py runserver
    ```
@@ -243,7 +248,10 @@ architectural guidelines:
    ```bash
    yarn run dev
    ```
-   The frontend will be available at `http://localhost:5173`.
+   The frontend will be available at `http://localhost:5173`. Open it
+   there, not at `127.0.0.1:5173`: the login's session cookie belongs to the
+   backend at `localhost:8000`, and the browser only sends it from the same
+   site.
 
 ### Backend URL and ports
 
@@ -276,7 +284,57 @@ yarn run dev --port 5174               # in apps/frontend
 ```
 If the frontend's port is taken, Vite moves to the next free one and every
 API call fails with a CORS error; start Vite with `--strictPort` to get an
-error instead.
+error instead. The listed origins may also send the session cookie and make
+changes (`CSRF_TRUSTED_ORIGINS` defaults to them).
+
+## Accounts
+
+Every user has their own data: tasks, tags, time buckets, dependencies,
+plans and settings. Every API endpoint needs a login (401 without one),
+and the data layer makes sure nobody reaches anybody else's rows:
+`plina/scoping.py` gives every model an owner, queries only ever see the
+logged-in user's rows, new rows belong to them, and a query without a user
+fails instead of seeing everything. The app logs in with Django's session;
+changes carry its CSRF token.
+
+**Local accounts** always work. The first one comes from
+`manage.py createsuperuser`; superusers add more in the Django admin
+(`/django/admin/` → Users). Everybody changes their password in ⚙ Settings
+→ Account. With mail configured (`EMAIL_HOST`, [Settings](#settings)), the
+login page offers "Forgot your password?" (Django's reset by mail).
+
+**Single sign-on** with OpenID Connect (e.g. Authentik, Keycloak) when the
+`OIDC_` variables are set — all six required ones, or none for local
+accounts only (some but not all is an error at startup):
+
+| Variable | Authentik, for example |
+|---|---|
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | from the provider (confidential client) |
+| `OIDC_AUTHORIZATION_ENDPOINT` | `https://auth.example.com/application/o/authorize/` |
+| `OIDC_TOKEN_ENDPOINT` | `https://auth.example.com/application/o/token/` |
+| `OIDC_USER_ENDPOINT` | `https://auth.example.com/application/o/userinfo/` |
+| `OIDC_JWKS_ENDPOINT` | `https://auth.example.com/application/o/<slug>/jwks/` |
+| `OIDC_LOGOUT_ENDPOINT` (optional) | `https://auth.example.com/application/o/<slug>/end-session/`: logging out of Plina logs out there too |
+| `OIDC_PROVIDER_NAME` (optional) | the button says "Log in with …" (default: the provider's host name) |
+| `OIDC_REDIRECT_URL` (optional) | where the app opens after logging in (default `/`; during development e.g. `http://localhost:5173/`) |
+| `OIDC_SCOPES`, `OIDC_SIGN_ALGO` (optional) | default `openid email profile`, `RS256` |
+
+Register the redirect URI **`https://<your host>/django/oidc/callback/`** at
+the provider. The login uses PKCE; ID tokens are checked for signature,
+expiry, nonce and audience. A user is created on their first login, named
+after the provider's `preferred_username`, and found again by the
+provider's stable subject (`sub`) — never by name or email, so a local
+account with the same name (which gets `-2` appended) is never taken over.
+They have no password in Plina and log in through the provider only; local
+accounts keep working next to it (e.g. the superuser).
+
+Data from before accounts existed belongs, after `migrate`, to the first
+superuser, or else to a new user `plina` without a password
+(`manage.py changepassword plina` sets one).
+
+There is no protection against guessing passwords yet: limit the rate of
+`POST /api/auth/login/` at the reverse proxy (e.g. Traefik's `ratelimit`
+middleware) when local accounts are reachable from the internet.
 
 ## Deployment with Docker
 
@@ -289,19 +347,15 @@ Three containers (`docker-compose.yml` is a complete example):
   into the `/app/static` volume (`collectstatic`), then runs as an
   unprivileged user.
 * **nginx** (`apps/frontend/nginx/Dockerfile`): the built frontend; `/api/`
-  and `/django/` (the admin) proxied to the backend; `/static/` and `/media/`
-  served from the volumes the backend fills; and the login. Its
+  and `/django/` (single sign-on, the admin) proxied to the backend;
+  `/static/` and `/media/` served from the volumes the backend fills. Its
   configuration is `apps/frontend/nginx/nginx.conf`, copied into the image
   when it is built.
 
 TLS is the job of a reverse proxy in front (Traefik, Caddy, nginx, …), which
 must send `X-Forwarded-Proto`; the example publishes nginx on
-`127.0.0.1:8080` for it.
-
-> **Plina has no user accounts yet: whoever reaches it can read and change
-> everything.** Keep it behind the login nginx asks for (HTTP basic auth,
-> users in an `htpasswd` file) or behind one at the reverse proxy, and only
-> over HTTPS: basic auth sends the password with every request.
+`127.0.0.1:8080` for it. Logging in is Plina's own ([Accounts](#accounts)):
+local accounts, and single sign-on when the `OIDC_` variables are set.
 
 ### First start
 
@@ -310,8 +364,7 @@ git clone https://github.com/pinae/Plina.git && cd Plina
 cp .env.example .env    # git ignores .env
 ```
 
-Create the secrets and put the first two into `.env` (`SECRET_KEY`,
-`DB_PASSWORD`):
+Create the secrets and put them into `.env` (`SECRET_KEY`, `DB_PASSWORD`):
 
 ```bash
 # The Django secret key: letters, digits, - and _ only (Compose would expand a $)
@@ -321,21 +374,19 @@ docker run --rm python:3.14-slim python -c "import secrets; print(secrets.token_
 
 # The database password
 openssl rand -hex 32
-
-# The login: the file ./htpasswd with one user (>> instead of > adds another)
-docker run --rm httpd:2.4-alpine htpasswd -nbB pina 'a-long-password' > htpasswd
-# … or, with apache2-utils installed, asking for the password (not in the shell history):
-htpasswd -cB htpasswd pina
 ```
 
 In `.env`, set `ALLOWED_HOSTS` to the host name Plina is reached under (for
 example `plina.example.com`) and `CSRF_TRUSTED_ORIGINS` to its HTTPS origin
-(`https://plina.example.com`). Then build and start:
+(`https://plina.example.com`); for single sign-on also the `OIDC_` variables
+([Accounts](#accounts)). Then build, start, and create the first account
+(it asks for a password):
 
 ```bash
 docker compose up -d --build
 docker compose ps                # after about a minute all three are "healthy"
 docker compose logs -f backend   # migrations, then gunicorn's workers
+docker compose exec backend python manage.py createsuperuser
 ```
 
 Point the reverse proxy at `http://127.0.0.1:8080`; with Caddy, for example:
@@ -350,15 +401,13 @@ answers `ok` while the backend reaches its database; the images' Docker
 health checks use it (also for autoheal).
 
 To try it before TLS is set up, set `PLINA_HTTP_BIND=0.0.0.0`, add the
-server's address to `ALLOWED_HOSTS`, set `SECURE_COOKIES=False` (for the
-admin's login) and open `http://<server>:8080`, knowing that the password
-then travels unencrypted.
+server's address to `ALLOWED_HOSTS` and `http://<server>:8080` to
+`CSRF_TRUSTED_ORIGINS`, set `SECURE_COOKIES=False` (else the browser keeps
+the login cookie for HTTPS only) and open `http://<server>:8080`, knowing
+that passwords then travel unencrypted.
 
-Optionally, a user for the Django admin at `/django/admin/` (to look at the
-raw data):
-```bash
-docker compose exec backend python manage.py createsuperuser
-```
+The Django admin at `/django/admin/` shows superusers their own data, and
+all users.
 
 ### Updates and backups
 
@@ -383,12 +432,11 @@ docker compose start backend
 The images build with Ansible's `community.docker.docker_image` (its
 classic builder works) with the repository root as build path and the
 Dockerfiles `apps/backend/Dockerfile` and `apps/frontend/nginx/Dockerfile`.
-A templated `nginx.conf` can replace `apps/frontend/nginx/nginx.conf` before
-the nginx image is built; keep the login (`auth_basic`) in it unless the
-reverse proxy asks for one. `community.general.htpasswd` writes the
-`htpasswd` file (it needs passlib on the server). The build argument
-`VITE_BACKEND_URL` of the nginx image is `/` by default (the API on the
-page's own origin); a full URL such as `https://plina.example.com` works too.
+The repository's `apps/frontend/nginx/nginx.conf` needs no template (it
+answers any host name and expects the backend service to be called
+`backend`). The build argument `VITE_BACKEND_URL` of the nginx image is `/`
+by default (the API on the page's own origin); a full URL such as
+`https://plina.example.com` works too.
 
 ### Settings
 
@@ -401,11 +449,12 @@ Docker image sets `DEBUG=False`.
 | `DEBUG` | `True`/`False` (also 1/0, yes/no, on/off). Never on with real data. |
 | `SECRET_KEY` | Required without `DEBUG`. Or `SECRET_KEY_FILE`: a file with the key (Docker secrets). |
 | `ALLOWED_HOSTS` | Required without `DEBUG`: the host names, comma-separated. |
-| `CSRF_TRUSTED_ORIGINS` | The HTTPS origins that may post forms (the admin), e.g. `https://plina.example.com`. |
+| `CSRF_TRUSTED_ORIGINS` | The origins that may make changes, e.g. `https://plina.example.com` behind a TLS proxy; default: the `CORS_ALLOWED_ORIGINS`. |
 | `SECURE_COOKIES` | Cookies only over HTTPS; default: on without `DEBUG`. |
 | `CORS_ALLOWED_ORIGINS` | Only for a frontend on another origin ([above](#backend-url-and-ports)). |
-| `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | The database, e.g. `django.db.backends.postgresql`, `plina`, …, `db`, `5432`. Without `DB_ENGINE`: SQLite at `DB_NAME` (default `db.sqlite3`). `DB_PASSWORD_FILE` instead of `DB_PASSWORD` works too. |
-| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM` | Mail, only for Django's password reset under `/django/accounts/`. |
+| `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | The database, e.g. `postgresql` (or `django.db.backends.postgresql`), `plina`, …, `db`, `5432`. Without `DB_ENGINE`: SQLite at `DB_NAME` (default `db.sqlite3`). `DB_PASSWORD_FILE` instead of `DB_PASSWORD` works too. |
+| `OIDC_…` | Single sign-on ([Accounts](#accounts)); `OIDC_CLIENT_SECRET_FILE` works too. |
+| `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_USE_SSL`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM` | Mail for "Forgot your password?", offered when `EMAIL_HOST` is set. Port 587 means STARTTLS and 465 TLS unless `EMAIL_USE_TLS` / `EMAIL_USE_SSL` say otherwise. |
 | `WEB_CONCURRENCY` | gunicorn's workers (image default 3). |
 | `LOG_LEVEL` | Default `INFO`; everything goes to the container log, errors with their traceback. |
 | `PLINA_MIGRATE`, `PLINA_COLLECTSTATIC` | `0` skips that step when the container starts. |
@@ -415,15 +464,15 @@ Docker image sets `DEBUG=False`.
 ### Backend Tests
 Run Django tests from the `apps/backend/` directory:
 ```bash
-uv run python manage.py test tasks
+uv run python manage.py test tasks accounts
 ```
 
 They use SQLite. Against PostgreSQL, as deployed (the migrations differ in
 places):
 ```bash
 docker run -d --name plina-test-db -e POSTGRES_PASSWORD=pw -p 127.0.0.1:55432:5432 postgres:17-alpine
-DB_ENGINE=django.db.backends.postgresql DB_USER=postgres DB_PASSWORD=pw DB_HOST=127.0.0.1 DB_PORT=55432 \
-  uv run python manage.py test tasks --noinput
+DB_ENGINE=postgresql DB_USER=postgres DB_PASSWORD=pw DB_HOST=127.0.0.1 DB_PORT=55432 \
+  uv run python manage.py test tasks accounts --noinput
 ```
 
 ### Frontend Tests

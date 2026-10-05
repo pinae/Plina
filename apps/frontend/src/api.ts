@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type {
     AlternativesResponse,
     BucketTypeWrite,
@@ -20,6 +20,9 @@ import type {
     TimeBucketType,
     TrackingResponse,
     UserSettings,
+    LoginRequest,
+    PasswordChange,
+    Session,
 } from './types';
 
 const DEFAULT_BACKEND_URL = 'http://localhost:8000';
@@ -37,9 +40,67 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
+    // The session cookie (the login), also for a backend on another port.
+    withCredentials: true,
 });
 
 export default api;
+
+/** A page of the backend itself (e.g. the single sign-on), as a URL. */
+export const backendUrl = (path: string) =>
+    apiBaseUrl(import.meta.env.VITE_BACKEND_URL).replace(/api\/$/, '') + path.replace(/^\//, '');
+
+// ---------------------------------------------------------------- session
+
+// Every change sends the CSRF token the last session response carried.
+let csrfToken: string | null = null;
+const SAFE_METHODS = new Set(['get', 'head', 'options']);
+const unauthorizedListeners = new Set<() => void>();
+
+/** Called whenever the server answers 401: nobody is logged in (any more). */
+export const onUnauthorized = (listener: () => void) => {
+    unauthorizedListeners.add(listener);
+    return () => { unauthorizedListeners.delete(listener); };
+};
+
+api.interceptors.request.use(config => {
+    if (csrfToken && !SAFE_METHODS.has((config.method ?? 'get').toLowerCase())) {
+        config.headers.set('X-CSRFToken', csrfToken);
+    }
+    return config;
+});
+
+api.interceptors.response.use(undefined, async (error: AxiosError<{ detail?: unknown }>) => {
+    const config = error.config as (InternalAxiosRequestConfig & { csrfRetried?: boolean }) | undefined;
+    const status = error.response?.status;
+    if (status === 401) unauthorizedListeners.forEach(listener => listener());
+    // A token rotated meanwhile (a login in another tab): fetch the current
+    // one and try once more.
+    if (status === 403 && config && !config.csrfRetried && /CSRF/i.test(String(error.response?.data?.detail ?? ''))) {
+        config.csrfRetried = true;
+        await fetchSession();
+        return api.request(config);
+    }
+    throw error;
+});
+
+const remember = (session: Session) => {
+    csrfToken = session.csrf_token;
+    return session;
+};
+
+export const fetchSession = () =>
+    api.get<Session>('auth/session/').then(r => remember(r.data));
+
+export const login = (credentials: LoginRequest) =>
+    api.post<Session>('auth/login/', credentials).then(r => remember(r.data));
+
+/** ``redirect``: where to go to log out at the single sign-on, too. */
+export const logout = () =>
+    api.post<{ redirect: string | null }>('auth/logout/').then(r => r.data);
+
+export const changePassword = (change: PasswordChange) =>
+    api.post<Session>('auth/password/', change).then(r => remember(r.data));
 
 // ------------------------------------------------------------------- plan
 

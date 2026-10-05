@@ -6,15 +6,14 @@ import os
 import subprocess
 import sys
 import tempfile
-from base64 import b64encode
 from pathlib import Path
 from unittest import mock
 
 from django.conf import settings
-from django.contrib.auth.models import User
 from django.core.exceptions import ImproperlyConfigured
 from django.db import OperationalError
-from django.test import Client, SimpleTestCase, TestCase
+from django.test import SimpleTestCase
+from tasks.tests.support import TestCase
 
 from plina.env import bool_from_env, database_from_env, list_from_env, secret_from_env
 
@@ -75,6 +74,11 @@ class EnvHelpersTest(SimpleTestCase):
         self.assertEqual(database["ENGINE"], "django.db.backends.postgresql")
         self.assertEqual((database["NAME"], database["USER"], database["PASSWORD"], database["HOST"], database["PORT"]),
                          ("plina", "plina_user", "pw", "db", "5432"))
+        # Short names as in the Ansible host variables.
+        with self.env(**{**POSTGRES, "DB_ENGINE": "postgresql"}):
+            self.assertEqual(database_from_env(Path("/app"))["ENGINE"], "django.db.backends.postgresql")
+        with self.env(DB_ENGINE="sqlite3"):
+            self.assertEqual(database_from_env(Path("/app"))["ENGINE"], "django.db.backends.sqlite3")
 
 
 class SettingsFromTheEnvironmentTest(SimpleTestCase):
@@ -124,6 +128,10 @@ class SettingsFromTheEnvironmentTest(SimpleTestCase):
                              EMAIL_USER="plina@example.com", EMAIL_PASSWORD="mail-pw", EMAIL_FROM="plina@example.com")
         self.assertEqual(loaded["EMAIL"], ["smtp.example.com", 587, True, "plina@example.com", "mail-pw",
                                            "plina@example.com", "plina@example.com"])
+        # Port 587 means STARTTLS unless EMAIL_USE_TLS says otherwise.
+        loaded = self.loaded(**PRODUCTION, EMAIL_HOST="smtp.example.com", EMAIL_PORT="587")
+        self.assertTrue(loaded["EMAIL"][2])
+        self.assertFalse(self.loaded(**PRODUCTION, EMAIL_HOST="smtp.example.com", EMAIL_PORT="25")["EMAIL"][2])
 
     def test_secure_cookies_can_be_turned_off_to_test_without_tls(self):
         self.assertFalse(self.loaded(**PRODUCTION, SECURE_COOKIES="0")["SESSION_COOKIE_SECURE"])
@@ -149,21 +157,3 @@ class HealthCheckTest(TestCase):
                 self.assertLogs("django.request", "ERROR"):
             response = self.client.get("/healthz")
         self.assertEqual(response.status_code, 503)
-
-
-class ApiNeedsNoDjangoLoginTest(TestCase):
-    """Access is protected in front of Django (basic auth in the web
-    container); the API ignores Django logins and Authorization headers."""
-
-    def test_a_logged_in_admin_can_still_use_the_app(self):
-        # Before: the admin's session made DRF demand a CSRF token the app never sends.
-        user = User.objects.create_superuser("admin", password="pw")
-        client = Client(enforce_csrf_checks=True)
-        client.force_login(user)
-        response = client.patch("/api/settings/", {"week_view_start": "07:00"}, content_type="application/json")
-        self.assertEqual(response.status_code, 200, response.content)
-
-    def test_a_basic_auth_header_for_the_proxy_is_ignored(self):
-        credentials = b64encode(b"pina:proxy-password").decode()
-        response = self.client.get("/api/settings/", HTTP_AUTHORIZATION=f"Basic {credentials}")
-        self.assertEqual(response.status_code, 200)

@@ -10,7 +10,8 @@ import sys
 from unittest import mock
 
 from django.conf import settings
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import SimpleTestCase, override_settings
+from tasks.tests.support import TestCase
 
 from plina.env import origins_from_env
 

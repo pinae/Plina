@@ -2,8 +2,8 @@ from datetime import timedelta
 
 from django.core.management import call_command
 from django.db import IntegrityError, transaction
-from django.test import TestCase
-from rest_framework.test import APIClient
+from tasks.tests.support import TestCase
+from tasks.tests.support import APIClient
 
 from tasks.models import Task, TaskDependency
 from tasks.services.graph import would_create_cycle
@@ -130,7 +130,7 @@ class ProjectTaskIdsSerializationTest(TestCase):
     of the top-level task."""
 
     def test_project_payload_contains_ordered_children(self):
-        from rest_framework.test import APIClient
+        from tasks.tests.support import APIClient
 
         project = Task.objects.create(header="P")  # projects are top-level tasks
         first = Task.objects.create(header="First", parent=project, order=0)

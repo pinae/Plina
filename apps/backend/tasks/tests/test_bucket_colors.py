@@ -9,8 +9,8 @@ bucket shows its type's color.
 import random
 from datetime import timedelta
 
-from django.test import TestCase
-from rest_framework.test import APIClient
+from tasks.tests.support import TestCase
+from tasks.tests.support import APIClient
 
 from tasks.models import TimeBucketType
 from tasks.services.colors import (bucket_colors_in_use, ensure_bucket_type_colors,

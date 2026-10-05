@@ -173,8 +173,6 @@ apps/frontend/coverage/
 .idea/
 apps/backend/media/
 apps/backend/static/
-# Deployment secrets (README: Deployment with Docker)
-/htpasswd
 desc.txt
 
 # Container & Atelier isolation state

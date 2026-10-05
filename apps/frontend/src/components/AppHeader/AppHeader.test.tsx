@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { AppHeader } from './AppHeader.tsx';
 import PlannedWeekView from '../PlannedWeekView/PlannedWeekView.tsx';
-import { API, makeTask, makerTag, settingsFor, treeTasks } from '../../testing/treeFixtures.ts';
+import { API, loggedInSession, makeTask, makerTag, settingsFor, treeTasks } from '../../testing/treeFixtures.ts';
 import { projectFor } from '../../utils/projects.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 import type { PlanResponse, SettingsWrite, Task, TaskWrite } from '../../types.ts';
@@ -47,6 +47,7 @@ const server = setupServer(
     http.get(`${API}/tasks/`, () => HttpResponse.json(withTracking())),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),
     http.get(`${API}/settings/`, () => HttpResponse.json(settingsFor(tasks, activeId))),
+    http.get(`${API}/auth/session/`, () => HttpResponse.json(loggedInSession())),
     http.patch(`${API}/settings/`, async ({ request }) => {
         const patch = await request.json() as SettingsWrite;
         requests.push(`PATCH settings ${patch.active_task_id}`);

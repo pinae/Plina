@@ -12,10 +12,12 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 
-from plina.env import bool_from_env, database_from_env, list_from_env, origins_from_env, secret_from_env
+from plina.env import (bool_from_env, database_from_env, list_from_env, oidc_from_env, origins_from_env,
+                       secret_from_env)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,9 +43,6 @@ ALLOWED_HOSTS = list_from_env('ALLOWED_HOSTS', default=[])
 if not DEBUG and not ALLOWED_HOSTS:
     raise ImproperlyConfigured(
         'Set ALLOWED_HOSTS to the host name(s) Plina is reached under, e.g. plina.example.com.')
-# The origins of HTTPS pages that may post forms (the Django admin), e.g.
-# https://plina.example.com.
-CSRF_TRUSTED_ORIGINS = origins_from_env('CSRF_TRUSTED_ORIGINS', default=[])
 
 # Behind a reverse proxy that terminates TLS and says so in X-Forwarded-Proto
 # (nginx passes it on); cookies only over HTTPS in production.
@@ -63,6 +62,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'tasks.apps.TasksConfig',
+    'accounts.apps.AccountsConfig',
 ]
 
 MIDDLEWARE = [
@@ -73,6 +73,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Queries see only the logged-in user's data (plina.scoping).
+    'plina.scoping.OwnerScopeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'tasks.middleware.UserTimeZoneMiddleware',
@@ -149,21 +151,41 @@ STATIC_ROOT = BASE_DIR / 'static'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Mail (only Django's own password reset under /django/accounts/ sends any).
+# Mail: for "Forgot your password?" (Django's password reset under
+# /django/accounts/), offered when EMAIL_HOST is set. Port 587 means STARTTLS,
+# 465 TLS, unless EMAIL_USE_TLS / EMAIL_USE_SSL say otherwise.
+PASSWORD_RESET_ENABLED = bool(os.environ.get('EMAIL_HOST'))
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT') or 25)
-EMAIL_USE_TLS = bool_from_env('EMAIL_USE_TLS', default=False)
+EMAIL_USE_TLS = bool_from_env('EMAIL_USE_TLS', default=EMAIL_PORT == 587)
+EMAIL_USE_SSL = bool_from_env('EMAIL_USE_SSL', default=EMAIL_PORT == 465)
 EMAIL_HOST_USER = os.environ.get('EMAIL_USER', '')
 EMAIL_HOST_PASSWORD = secret_from_env('EMAIL_PASSWORD') or ''
 DEFAULT_FROM_EMAIL = SERVER_EMAIL = os.environ.get('EMAIL_FROM') or 'webmaster@localhost'
 
-# Plina has no login of its own yet: access is protected in front of Django
-# (basic auth in nginx or the reverse proxy). The API ignores Django sessions — a
-# login to the admin would otherwise make it demand CSRF tokens — and the
-# proxy's Authorization header.
+# Every endpoint needs a logged-in user (README: Accounts), who sees only
+# their own data (plina.scoping). The session comes from the login API or
+# the single sign-on; changes need the CSRF token (the app sends it).
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_AUTHENTICATION_CLASSES': ['accounts.authentication.SessionAuthentication'],
+    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
 }
+
+# Local accounts always (created with createsuperuser or in the admin);
+# single sign-on with OpenID Connect when the OIDC_ variables are set
+# (plina.env.oidc_from_env: the mozilla-django-oidc settings).
+# Django's own pages (the password reset) send you to the app's login page.
+LOGIN_URL = '/'
+LOGIN_REDIRECT_URL = '/'
+# A failed single sign-on comes back to the app's login page, which says so.
+LOGIN_REDIRECT_URL_FAILURE = '/?login=failed'
+globals().update(oidc_from_env())
+OIDC_ENABLED = 'OIDC_RP_CLIENT_ID' in globals()
+AUTHENTICATION_BACKENDS = ['django.contrib.auth.backends.ModelBackend'] + (
+    ['accounts.oidc.PlinaOIDCBackend'] if OIDC_ENABLED else [])
+OIDC_USE_PKCE = True
+OIDC_STORE_ID_TOKEN = True  # for logging out at the provider too
+OIDC_TIMEOUT = 15
 
 # Everything to stdout/stderr, where `docker compose logs` finds it; errors
 # with their traceback (Django would only mail them without DEBUG).
@@ -185,10 +207,19 @@ LOGGING = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Pages that may call the API: the Vite dev server unless the environment
-# variable CORS_ALLOWED_ORIGINS lists others, comma-separated (README).
+# variable CORS_ALLOWED_ORIGINS lists others, comma-separated (README) — with
+# the session cookie (the login).
 CORS_ALLOWED_ORIGINS = origins_from_env("CORS_ALLOWED_ORIGINS", default=[
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ])
+CORS_ALLOW_CREDENTIALS = True
+# Pages on other origins that may make changes (CSRF): those allowed to call
+# the API unless CSRF_TRUSTED_ORIGINS says otherwise, e.g.
+# https://plina.example.com behind a TLS proxy.
+CSRF_TRUSTED_ORIGINS = origins_from_env('CSRF_TRUSTED_ORIGINS', default=CORS_ALLOWED_ORIGINS)
+# After the provider, back to the app's page — also on the origins allowed
+# to call the API (the Vite dev server during development).
+OIDC_REDIRECT_ALLOWED_HOSTS = [urlparse(origin).netloc for origin in CORS_ALLOWED_ORIGINS]
 PLANNING_HORIZON_DAYS = 60  # planning window for generated buckets (A9); tune freely
 MAX_PLAN_ALTERNATIVES = 4  # chooser cap (A11); expected to be tuned after real-world use

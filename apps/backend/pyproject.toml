@@ -13,4 +13,5 @@ dependencies = [
     "python-dateutil>=2.9",
     "gunicorn>=26.2.0",
     "psycopg[binary]>=3.3.6",
+    "mozilla-django-oidc>=5.0.2",
 ]

@@ -8,9 +8,9 @@ from datetime import datetime, timedelta
 from unittest import mock
 from zoneinfo import ZoneInfo
 
-from django.test import TestCase
+from tasks.tests.support import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
+from tasks.tests.support import APIClient
 
 from tasks.models import Task, TimeBucketType
 from tasks.services.settings import get_settings

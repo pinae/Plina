@@ -1,5 +1,6 @@
 """User settings (UI-3): the default duration for unestimated tasks and the
-server-synced active project (docs/task-entry-ui.md §2, §3.1, §6.1)."""
+server-synced active project (docs/task-entry-ui.md §2, §3.1, §6.1) — one
+row per user, the current one (plina.scoping)."""
 from __future__ import annotations
 
 from datetime import timedelta, tzinfo
@@ -12,19 +13,19 @@ FALLBACK_DEFAULT_DURATION = timedelta(hours=1)
 
 
 def get_settings() -> UserSettings:
-    settings, _ = UserSettings.objects.get_or_create(pk=1)
+    settings, _ = UserSettings.objects.get_or_create()
     return settings
 
 
 def default_duration() -> timedelta:
     """The user's default, without creating the row as a side effect."""
-    value = UserSettings.objects.filter(pk=1).values_list("default_duration", flat=True).first()
+    value = UserSettings.objects.values_list("default_duration", flat=True).first()
     return value or FALLBACK_DEFAULT_DURATION
 
 
 def user_time_zone() -> Optional[tzinfo]:
     """The user's zone, or None to keep the server's (unset or unknown)."""
-    name = UserSettings.objects.filter(pk=1).values_list("time_zone", flat=True).first()
+    name = UserSettings.objects.values_list("time_zone", flat=True).first()
     if not name:
         return None
     try:

@@ -1,7 +1,7 @@
 from datetime import timedelta
 from uuid import uuid4
 
-from django.test import TestCase
+from tasks.tests.support import TestCase
 from django.utils import timezone
 
 from tasks.models import Tag, Task, TimeBucket, TimeBucketType

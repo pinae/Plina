@@ -1,6 +1,7 @@
 /**
  * UI-8: the settings page (docs/task-entry-ui.md §6.1), opened with ⚙ in the
- * header: the default duration used for tasks without an own estimate
+ * header: the account (who is logged in, logging out, the password), the
+ * default duration used for tasks without an own estimate
  * (planning, Σ parts, split editor ghosts; changing it re-plans the accepted
  * plan on the server) and the time frame the Week view opens on, filling the
  * screen — usually the work hours.
@@ -11,6 +12,7 @@ import type { AxiosError } from 'axios';
 
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { useSettings, useUpdateSettings } from '../../queries.tsx';
+import { AccountSettings } from '../AccountSettings/AccountSettings.tsx';
 import { minutesToText } from '../../utils/outline.ts';
 import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import { clockMinutes } from '../../utils/timeScale.ts';
@@ -130,8 +132,10 @@ export function SettingsPage() {
     const settings = useSettings();
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="h6">Account</Typography>
+            <AccountSettings />
             {settings.isSuccess ? <>
-                <Typography variant="h6">Planning</Typography>
+                <Typography variant="h6" sx={{ mt: 2 }}>Planning</Typography>
                 <DefaultDurationForm initial={settings.data.default_duration} />
                 <Typography variant="h6" sx={{ mt: 2 }}>Week view</Typography>
                 <WeekViewFrameForm start={settings.data.week_view_start} end={settings.data.week_view_end} />

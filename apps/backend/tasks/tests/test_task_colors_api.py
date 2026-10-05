@@ -8,8 +8,8 @@ the colors in use, and keeps it when nested and moved back out.
 """
 from datetime import timedelta
 
-from django.test import TestCase
-from rest_framework.test import APIClient
+from tasks.tests.support import TestCase
+from tasks.tests.support import APIClient
 
 from tasks.models import Task, TimeBucketType
 

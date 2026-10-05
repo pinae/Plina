@@ -1,9 +1,9 @@
 """UI-3: starting a task while another one runs switches over (§3.2)."""
 from datetime import timedelta
 
-from django.test import TestCase
+from tasks.tests.support import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
+from tasks.tests.support import APIClient
 
 from tasks.models import Task, TrackingSession
 from tasks.services.settings import get_settings

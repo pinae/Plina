@@ -3,11 +3,13 @@
 > **Status (2026-10-02):** target scenarios, not automated yet. The
 > repository has no end-to-end runner and no CI; the scripts behind the
 > end-to-end checks reported in the work packages (e.g. docs/tasks-tab.md,
-> T-7) are not part of the repository. Both scenarios also need features
-> that do not exist yet: logging in (the app is single-user, without
-> authentication), assigning tasks to other users (Alice), and in Pina's
-> scenario an "Add Dependency" field in the task details and a dependency
-> view filtered to one project (docs/task-hirachy.md).
+> T-7) are not part of the repository. Logging in exists since 2026-10-05
+> (README: Accounts — local accounts and single sign-on with OpenID Connect,
+> e.g. the Digisoul account), every user with their own data. Both scenarios
+> also need features that do not exist yet: assigning tasks to other users
+> (Alice), and in Pina's scenario an "Add Dependency" field in the task
+> details and a dependency view filtered to one project
+> (docs/task-hirachy.md).
 
 ## Alice
 

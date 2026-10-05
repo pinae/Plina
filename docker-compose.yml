@@ -1,12 +1,13 @@
 # Example deployment of Plina (README: Deployment with Docker):
 #
 #   cp .env.example .env     # fill in the secrets and host names
-#   docker run --rm httpd:2.4-alpine htpasswd -nbB <user> '<password>' > htpasswd
 #   docker compose up -d --build
+#   docker compose exec backend python manage.py createsuperuser
 #
 # PostgreSQL, the Django backend (only reachable inside this project's
-# network) and nginx (the frontend, the API proxy, the login), published on
+# network) and nginx (the frontend and the API proxy), published on
 # PLINA_HTTP_BIND:PLINA_HTTP_PORT for the reverse proxy that terminates TLS.
+# Logging in: local accounts, and single sign-on when OIDC_ is set (README).
 name: plina
 
 services:
@@ -42,6 +43,15 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       DB_HOST: db
       DB_PORT: 5432
+      # Single sign-on (OpenID Connect): all or none of the first six.
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_AUTHORIZATION_ENDPOINT: ${OIDC_AUTHORIZATION_ENDPOINT:-}
+      OIDC_TOKEN_ENDPOINT: ${OIDC_TOKEN_ENDPOINT:-}
+      OIDC_USER_ENDPOINT: ${OIDC_USER_ENDPOINT:-}
+      OIDC_JWKS_ENDPOINT: ${OIDC_JWKS_ENDPOINT:-}
+      OIDC_LOGOUT_ENDPOINT: ${OIDC_LOGOUT_ENDPOINT:-}
+      OIDC_PROVIDER_NAME: ${OIDC_PROVIDER_NAME:-}
     volumes:
       # Filled by the backend at start (collectstatic), served by nginx.
       - static:/app/static
@@ -60,13 +70,6 @@ services:
     volumes:
       - static:/app/static:ro
       - media:/app/media:ro
-      # The users who may log in. Must exist (it is not created empty).
-      - type: bind
-        source: ${PLINA_HTPASSWD:-./htpasswd}
-        target: /etc/nginx/htpasswd
-        read_only: true
-        bind:
-          create_host_path: false
     depends_on:
       backend:
         condition: service_healthy

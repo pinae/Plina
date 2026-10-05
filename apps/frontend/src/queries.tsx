@@ -18,6 +18,7 @@ import {
     moveTask,
     computeAlternatives,
     createBucketType,
+    changePassword,
     createDependency,
     createTag,
     createTask,
@@ -25,6 +26,9 @@ import {
     deleteTask,
     fetchBucketTypes,
     fetchDependencies,
+    fetchSession,
+    login,
+    logout,
     fetchPlan,
     fetchSettings,
     fetchTags,
@@ -43,6 +47,7 @@ import type {
     TagWrite, Task, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
 import { applyMove } from './utils/treeDnd.ts';
+import { goTo } from './utils/navigation.ts';
 
 export const queryKeys = {
     plan: ['plan'] as const,
@@ -51,10 +56,55 @@ export const queryKeys = {
     tags: ['tags'] as const,
     bucketTypes: ['bucketTypes'] as const,
     settings: ['settings'] as const,
+    session: ['session'] as const,
 };
 
 /** Other devices pick up a changed active project this often (§3.1). */
 export const SETTINGS_REFRESH_MS = 30_000;
+
+// ----------------------------------------------------------------- session
+
+/** Who is logged in (README: Accounts); fetched once, then kept up to date
+ *  by the login, the logout and every 401 (AuthGate). */
+export const useSession = () =>
+    useQuery({ queryKey: queryKeys.session, queryFn: fetchSession, staleTime: Infinity, retry: 1 });
+
+/** Another user may log in on this device: nothing of the previous one's
+ *  data may stay in the cache. */
+const forgetEverythingButTheSession = (client: ReturnType<typeof useQueryClient>) =>
+    client.removeQueries({ predicate: query => query.queryKey[0] !== queryKeys.session[0] });
+
+export const useLogin = () => {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: login,
+        onSuccess: session => {
+            forgetEverythingButTheSession(client);
+            client.setQueryData(queryKeys.session, session);
+        },
+    });
+};
+
+export const useLogout = () => {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: logout,
+        onSuccess: async ({ redirect }) => {
+            forgetEverythingButTheSession(client);
+            // Logged in with the single sign-on: log out there too.
+            if (redirect) goTo(redirect);
+            else await client.refetchQueries({ queryKey: queryKeys.session });
+        },
+    });
+};
+
+export const useChangePassword = () => {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: changePassword,
+        onSuccess: session => client.setQueryData(queryKeys.session, session),
+    });
+};
 
 // ----------------------------------------------------------------- queries
 

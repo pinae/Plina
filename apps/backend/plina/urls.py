@@ -21,6 +21,7 @@ from tasks.api import (TaskViewSet, TagViewSet, TimeBucketViewSet, SettingsView,
                        TimeBucketTypeViewSet, RecurrencePreviewView,
                        DependencyViewSet, PlannerView, PlanAlternativesView, PlanViewSet)
 from plina.django_views import forbidden_error_view, not_found_error_view, internal_error_view
+from accounts import urls as accounts_urls
 
 router = routers.DefaultRouter()
 router.register(r'tasks', TaskViewSet)
@@ -31,6 +32,9 @@ router.register(r'dependencies', DependencyViewSet)
 router.register(r'plans', PlanViewSet)
 
 urlpatterns = [
+    # Logging in (README: Accounts); everything else needs a login.
+    path('api/auth/', include(accounts_urls.api_urls)),
+    path('django/oidc/', include(accounts_urls.oidc_urls)),
     path('api/', include(router.urls)),
     path('api/plan/alternatives/', PlanAlternativesView.as_view(), name='plan-alternatives'),
     path('api/recurrence-preview/', RecurrencePreviewView.as_view(), name='recurrence-preview'),

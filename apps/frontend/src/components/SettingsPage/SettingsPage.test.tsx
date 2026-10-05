@@ -5,10 +5,11 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { SettingsPage } from './SettingsPage.tsx';
-import { API } from '../../testing/treeFixtures.ts';
+import { API, loggedInSession } from '../../testing/treeFixtures.ts';
 
 let patches: unknown[] = [];
 const server = setupServer(
+    http.get(`${API}/auth/session/`, () => HttpResponse.json(loggedInSession())),
     http.get(`${API}/settings/`, () => HttpResponse.json({
         default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
     })),

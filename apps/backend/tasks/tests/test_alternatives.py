@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.conf import settings
-from django.test import TestCase
+from tasks.tests.support import TestCase
 from django.utils import timezone
 
 from tasks.models import Task, TimeBucket, TimeBucketType
@@ -157,7 +157,7 @@ class AlternativesEngineTest(TestCase):
 
 class AlternativesApiTest(TestCase):
     def setUp(self):
-        from rest_framework.test import APIClient
+        from tasks.tests.support import APIClient
         self.client = APIClient()
         self.now = timezone.now()
         TimeBucketType.objects.create(

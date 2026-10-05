@@ -1,7 +1,7 @@
 /** Test/story fixtures for the task tree (UI-5+): a Task factory and the
  *  T250 › Hardware Design › CAD / Company Blog example from the spec. */
 import { QueryClient } from '@tanstack/react-query';
-import type { PlanAlternative, Tag, Task, UserSettings } from '../types.ts';
+import type { PlanAlternative, Session, Tag, Task, UserSettings } from '../types.ts';
 
 export const API = 'http://localhost:8000/api';
 
@@ -50,6 +50,18 @@ export const settingsFor = (tasks: Task[], activeId: string | null): UserSetting
     };
 };
 
+/** The session of a logged-in local user (README: Accounts). */
+export const loggedInSession = (over: Partial<Session> = {}): Session => ({
+    authenticated: true,
+    user: { username: 'pina', name: 'Pina Merkert', email: 'pina@example.com', single_sign_on: false,
+        can_change_password: true, is_staff: false },
+    csrf_token: 'token-1', single_sign_on: null, password_reset_url: null, ...over,
+});
+
+export const loggedOutSession = (over: Partial<Session> = {}): Session => ({
+    authenticated: false, user: null, csrf_token: 'token-0', single_sign_on: null, password_reset_url: null, ...over,
+});
+
 export const makeAlternative = (id: string, label: string): PlanAlternative => ({
     id, label, feasible: true, warnings: [],
     metrics: {
@@ -69,6 +81,7 @@ export function seededClient(options: { activeId?: string | null; trackedId?: st
     client.setQueryData(['tasks'], tasks);
     client.setQueryData(['tags'], [makerTag]);
     client.setQueryData(['settings'], settingsFor(tasks, activeId));
+    client.setQueryData(['session'], loggedInSession());
     client.setQueryData(['plan'], { accepted_plan_id: null, warnings: [], appointments: [], buckets: [] });
     return client;
 }

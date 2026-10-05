@@ -4,8 +4,8 @@ Regression: a task with an empty description could not be saved — the model's
 TextField had no ``blank=True``, so DRF rejected ``description: ""`` with
 "This field may not be blank." The description is optional.
 """
-from django.test import TestCase
-from rest_framework.test import APIClient
+from tasks.tests.support import TestCase
+from tasks.tests.support import APIClient
 
 from tasks.models import Task
 

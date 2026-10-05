@@ -19,6 +19,6 @@ FROM nginx:1.29-alpine
 COPY apps/frontend/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/apps/frontend/dist /usr/share/nginx/html
 RUN mkdir -p /app/static /app/media
-# Healthy when nginx answers at all (a 401 from the login counts).
+# Healthy when nginx answers at all (also while the backend restarts).
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -q -S -O /dev/null http://127.0.0.1/healthz 2>&1 | grep -q 'HTTP/' || exit 1

@@ -7,9 +7,9 @@ transaction: any validation error leaves the tree untouched.
 """
 from datetime import timedelta
 
-from django.test import TestCase
+from tasks.tests.support import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
+from tasks.tests.support import APIClient
 
 from tasks.models import Tag, Task, TaskDependency, TaskEstimateChange
 

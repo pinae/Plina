@@ -4,11 +4,16 @@ Two projects — the deadline-driven "Webshop Relaunch" chain (with a diamond)
 and the loosely coupled "Company Blog" — plus tagged recurring buckets and a
 fixed Thursday client call.  Running this on a fresh database sets the stage
 for the full walkthrough: plan → choose → track → complete → choose again.
+
+For one user (``--user``): it replaces that user's data, nobody else's.
 """
 from datetime import timedelta
 
-from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
+
+from plina.scoping import has_owner, owner_scope
 
 from tasks.models import (Plan, Tag, Task, TaskDependency,
                           TimeBucket, TimeBucketType, TrackingSession)
@@ -17,9 +22,24 @@ from tasks.services.tree import TreeIndex, next_sibling_order
 
 
 class Command(BaseCommand):
-    help = 'Populates the database with the Mara-story demo data'
+    help = "Replaces a user's data with the Mara-story demo data"
+
+    def add_arguments(self, parser):
+        parser.add_argument("--user", help="the user name whose data is replaced")
 
     def handle(self, *args, **kwargs):
+        username = kwargs.get("user")
+        if username is None:
+            if not has_owner():
+                raise CommandError("Name the user whose data is replaced: --user <name>.")
+            return self.populate()
+        user = get_user_model().objects.filter(username=username).first()
+        if user is None:
+            raise CommandError(f"There is no user named {username!r} (manage.py createsuperuser makes one).")
+        with owner_scope(user):
+            self.populate()
+
+    def populate(self):
         self.stdout.write("Populating demo data...")
 
         for model in (TrackingSession, Plan, TaskDependency,

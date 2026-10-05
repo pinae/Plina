@@ -7,7 +7,7 @@ nothing is scheduled in the past, and tasks fill the earliest one first.
 """
 from datetime import timedelta
 
-from django.test import TestCase
+from tasks.tests.support import TestCase
 from django.utils import timezone
 
 from tasks.models import Task, TimeBucket, TimeBucketType

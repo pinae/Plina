@@ -3,7 +3,8 @@ its nearest ancestor's; a top-level task without one shows an automatic
 color, chosen once to be as different as possible from the colors in use."""
 import random
 
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase
+from tasks.tests.support import TestCase
 
 from tasks.models import Tag, Task
 from tasks.services.colors import (CANDIDATES, colors_in_use, contrast_with_white,

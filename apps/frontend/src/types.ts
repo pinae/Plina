@@ -322,3 +322,39 @@ export interface TrackingBlockedError {
     detail: string;
     predecessors?: { id: string; header: string }[];
 }
+
+// ---------------------------------------------------------------- accounts
+
+/** The logged-in user (README: Accounts). */
+export interface SessionUser {
+    username: string;
+    /** Full name, else the user name. */
+    name: string;
+    email: string;
+    /** Logged in with the single sign-on (no password of their own). */
+    single_sign_on: boolean;
+    can_change_password: boolean;
+    is_staff: boolean;
+}
+
+/** GET /api/auth/session/: who is logged in, how one logs in, and the CSRF
+ *  token every change must send (X-CSRFToken). */
+export interface Session {
+    authenticated: boolean;
+    user: SessionUser | null;
+    csrf_token: string;
+    /** Offered when the server has OpenID Connect configured. */
+    single_sign_on: { name: string; login_url: string } | null;
+    /** "Forgot your password?" (Django's reset by mail), when it can send mail. */
+    password_reset_url: string | null;
+}
+
+export interface LoginRequest {
+    username: string;
+    password: string;
+}
+
+export interface PasswordChange {
+    old_password: string;
+    new_password: string;
+}

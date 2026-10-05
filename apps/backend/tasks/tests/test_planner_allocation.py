@@ -1,4 +1,4 @@
-from django.test import TestCase
+from tasks.tests.support import TestCase
 from django.utils import timezone
 from datetime import timedelta
 from tasks.models import Task, TimeBucket, TimeBucketType, Tag

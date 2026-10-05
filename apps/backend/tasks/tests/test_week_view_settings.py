@@ -2,8 +2,8 @@
 08:00 to 16:45 unless set otherwise in the settings."""
 from datetime import time
 
-from django.test import TestCase
-from rest_framework.test import APIClient
+from tasks.tests.support import TestCase
+from tasks.tests.support import APIClient
 
 from tasks.services.settings import get_settings
 
