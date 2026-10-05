@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { WeekView } from './WeekView.tsx';
 import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
@@ -98,17 +98,17 @@ describe('WeekView', () => {
         expect(screen.queryByTestId('drag-layer')).toBeNull();
     });
 
-    it('zooms in with the mouse wheel and never shrinks below the fit height', () => {
+    it('zooms in with Ctrl + wheel and never shrinks below the fit height', () => {
         render(<WeekView {...defaultProps} />);
         const height = () => Number(screen.getByTestId('week-grid').getAttribute('data-column-height'));
         const fit = height();
 
-        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100 });
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100, ctrlKey: true });
         expect(height()).toBeGreaterThan(fit);
 
         // Zooming back out is clamped at the fit height (zoom >= 1).
-        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
-        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 });
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100, ctrlKey: true });
+        fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100, ctrlKey: true });
         expect(height()).toBe(fit);
     });
 
@@ -139,7 +139,7 @@ describe('WeekView', () => {
         const before = timeUnderCursor();
 
         for (let step = 1; step <= 4; step++) {
-            fireEvent.wheel(scroll, { deltaY: -100, clientY: pointerY });
+            fireEvent.wheel(scroll, { deltaY: -100, clientY: pointerY, ctrlKey: true });
             // Column heights are rounded to whole pixels: allow 1 px (2 min).
             expect(Math.abs(timeUnderCursor() - before), `after step ${step}`).toBeLessThan(2);
         }
@@ -196,24 +196,47 @@ describe('WeekView', () => {
             expect(height()).toBe(filled(480)); // 9:00–17:00 = 8 h
             expect(pxBelowTop(540)).toBeCloseTo(MARGIN, 0);
 
-            fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100 });
+            fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100, ctrlKey: true });
             const zoomed = height();
             rerender(<WeekView {...defaultProps} viewRange={{ startMinutes: 600, endMinutes: 720 }} />);
             expect(height()).toBe(zoomed); // the user's own view stays
         });
 
-        it('scrolls with Ctrl + wheel instead of zooming (and keeps the browser from zooming the page)', () => {
-            render(<WeekView {...defaultProps} viewRange={{ startMinutes: 480, endMinutes: 1005 }} />);
-            const scroll = screen.getByTestId('week-scroll');
-            const [before, top] = [height(), scrollTop()];
-
-            expect(fireEvent.wheel(scroll, { deltaY: 100, ctrlKey: true })).toBe(false); // prevented
+        it('scrolls natively with the plain wheel, and the view is the user\'s from then on', () => {
+            const { rerender } = render(<WeekView {...defaultProps} viewRange={{ startMinutes: 480, endMinutes: 1005 }} />);
+            const before = height();
+            expect(fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: 100 })).toBe(true); // not prevented
             expect(height()).toBe(before);
-            expect(scrollTop()).toBeCloseTo(top + 100, 0);
+            rerender(<WeekView {...defaultProps} viewRange={{ startMinutes: 540, endMinutes: 1020 }} />);
+            expect(height()).toBe(before); // no refit after the user scrolled
+        });
 
-            // A wheel that counts in lines (Firefox) moves 16 px per line.
-            fireEvent.wheel(scroll, { deltaY: -3, deltaMode: 1, ctrlKey: true });
-            expect(scrollTop()).toBeCloseTo(top + 100 - 48, 0);
+        it('zooms with Ctrl + wheel and keeps the browser from zooming the page; a pinch zooms smoothly', () => {
+            render(<WeekView {...defaultProps} />);
+            const scroll = screen.getByTestId('week-scroll');
+            expect(fireEvent.wheel(scroll, { deltaY: -100, ctrlKey: true })).toBe(false); // prevented
+            expect(height()).toBe(Math.round(720 * 1.15));
+            // A trackpad pinch arrives as many Ctrl + wheel events with small
+            // deltas: each zooms only a little.
+            const zoomed = height();
+            fireEvent.wheel(scroll, { deltaY: -4, ctrlKey: true });
+            expect(height()).toBeGreaterThan(zoomed);
+            expect(height()).toBeLessThan(zoomed * 1.02);
+        });
+
+        it('zooms with a pinch in Safari (gesture events) instead of zooming the page', () => {
+            render(<WeekView {...defaultProps} />);
+            const scroll = screen.getByTestId('week-scroll');
+            const gesture = (type: string, scale: number) => {
+                const event = Object.assign(new Event(type, { cancelable: true }), { scale, clientY: 300 });
+                act(() => { scroll.dispatchEvent(event); });
+                return event.defaultPrevented;
+            };
+            expect(gesture('gesturestart', 1)).toBe(true);
+            expect(gesture('gesturechange', 1.5)).toBe(true);
+            expect(height()).toBe(720 * 1.5);
+            gesture('gesturechange', 2);
+            expect(height()).toBe(720 * 2);
         });
     });
 
@@ -225,7 +248,7 @@ describe('WeekView', () => {
         const count = () => within(scale).getAllByTestId('time-scale-label').length;
         const before = count();
 
-        for (let i = 0; i < 6; i++) fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100 });
+        for (let i = 0; i < 6; i++) fireEvent.wheel(screen.getByTestId('week-scroll'), { deltaY: -100, ctrlKey: true });
         expect(count()).toBeGreaterThan(before);
     });
 

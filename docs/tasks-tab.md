@@ -58,6 +58,18 @@ without leaving it.
   left/right — the horizontal position of the pointer decides the new
   indentation level, a line with an indented marker shows where it will land.
   Rest rows cannot be dragged; a row cannot be dropped into its own subtree.
+- **Draw dependency** (2026-10-05): the button next to "+ New task" — or a
+  tap on AltGr (right Option on a Mac) — turns on a mode in which a line
+  dragged from one task to another makes the **start task depend on the end
+  task** (a Rest row stands for its parent). The line says what a release
+  would do ("“Firmware” depends on “CAD”") and the view scrolls near its
+  edges. A created dependency can be undone from the toast; a refused one
+  (a cycle — named with the chain that already exists —, its own parent or
+  subtask, a duplicate) shows the reason in a toast. The mode stays on for
+  more lines; AltGr held down draws only while held, Esc stops. Meanwhile a
+  click opens no dialog and rows cannot be dragged by their handles; the
+  row's controls (expand, circle, slider, ▶) keep working. AltGr is ignored
+  while typing (AltGr+Q is @ on German keyboards).
 - **A parent that loses its last subtask stays open.** It becomes an
   ordinary task again with its own estimate — moving a task never completes
   (or deletes) anything. Only *completing* the last open subtask completes the

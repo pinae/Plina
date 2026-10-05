@@ -31,6 +31,8 @@ const MAX_ZOOM = 6;
 const FALLBACK_HEIGHT = 720;
 // Pixels per wheel step for wheels that count in lines / pages (deltaMode).
 const LINE_PX = 16;
+// A wheel notch scrolls about this far; with Ctrl it zooms by one ZOOM_STEP.
+const WHEEL_NOTCH_PX = 100;
 // The opening time frame starts this far below the day headers, so the label
 // at its start (centered on its line) is not cut off.
 const FRAME_MARGIN = 8;
@@ -114,42 +116,57 @@ export const WeekView: React.FC<WeekViewProps> = ({
         setZoom(next);
     }, [fitHeight, rangeStart, rangeEnd]);
 
-    // Mouse wheel adjusts the zoom factor, anchored on the cursor; Ctrl+wheel
-    // scrolls.  Attached natively so the page scroll (and with Ctrl the
-    // browser's page zoom) can be prevented; Shift+wheel stays native.
+    // The mouse wheel scrolls (natively); Ctrl+wheel zooms, anchored on the
+    // cursor — a trackpad pinch arrives as Ctrl+wheel too (Safari sends
+    // gesture events instead).  Attached natively so the browser's page zoom
+    // can be prevented.
     useEffect(() => {
         const container = scrollRef.current;
         if (!container) return;
-        const onWheel = (event: WheelEvent) => {
-            if (event.shiftKey) return; // escape hatch: native scroll
-            event.preventDefault();
-            adjusted.current = true;
-            if (event.ctrlKey) {
-                const delta = event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE ? LINE_PX
-                    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? container.clientHeight : 1);
-                if (pendingScroll.current) pendingScroll.current.top += delta; // a zoom not yet rendered
-                else container.scrollTop += delta;
-                return;
-            }
-            const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+        const zoomBy = (factor: number, clientY: number) => {
             const prev = zoomRef.current;
             const next = Math.min(MAX_ZOOM, Math.max(1, prev * factor));
             if (next === prev) return;
             zoomRef.current = next;
             // Keep the time under the cursor stationary while zooming (the
-            // grid starts below the sticky day headers).  Several wheel events
-            // can arrive before React renders: continue from the scroll
-            // position the previous one asked for.
+            // grid starts below the sticky day headers).  Several events can
+            // arrive before React renders: continue from the scroll position
+            // the previous one asked for.
             const rect = container.getBoundingClientRect();
-            const pointerY = event.clientY - rect.top;
+            const pointerY = clientY - rect.top;
             const headerHeight = headerRef.current?.offsetHeight ?? 0;
             const scrollTop = pendingScroll.current?.top ?? container.scrollTop;
             const gridY = scrollTop + pointerY - headerHeight;
             pendingScroll.current = { top: gridY * (next / prev) - pointerY + headerHeight, zoom: next };
             setZoom(next);
         };
+        const onWheel = (event: WheelEvent) => {
+            adjusted.current = true; // the view is the user's from now on
+            if (!event.ctrlKey) return; // native scroll (Shift: sideways)
+            event.preventDefault();
+            // One wheel notch (about 100 px) is one zoom step; a pinch sends
+            // many small deltas and zooms smoothly.
+            const pixels = event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE ? LINE_PX
+                : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? container.clientHeight : 1);
+            zoomBy(ZOOM_STEP ** Math.max(-1, Math.min(1, -pixels / WHEEL_NOTCH_PX)), event.clientY);
+        };
+        // Safari's pinch: `scale` grows from 1 during the gesture.
+        let gestureScale = 1;
+        const onGesture = (event: Event) => {
+            const { scale = 1, clientY = 0 } = event as Event & { scale?: number; clientY?: number };
+            event.preventDefault();
+            adjusted.current = true;
+            if (event.type === 'gesturestart') gestureScale = 1;
+            else if (scale > 0) { zoomBy(scale / gestureScale, clientY); gestureScale = scale; }
+        };
         container.addEventListener('wheel', onWheel, { passive: false });
-        return () => container.removeEventListener('wheel', onWheel);
+        container.addEventListener('gesturestart', onGesture);
+        container.addEventListener('gesturechange', onGesture);
+        return () => {
+            container.removeEventListener('wheel', onWheel);
+            container.removeEventListener('gesturestart', onGesture);
+            container.removeEventListener('gesturechange', onGesture);
+        };
     }, []);
 
     // Apply a pending scroll once the grid has been rendered at its zoom

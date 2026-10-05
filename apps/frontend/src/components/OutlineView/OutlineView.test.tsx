@@ -715,3 +715,178 @@ describe('drag and drop (T-6)', () => {
     });
 });
 
+
+describe('drawing dependencies', () => {
+    let edges: { predecessor: string; successor: string }[] = [];
+    beforeAll(() => {
+        // jsdom has no PointerEvent (and no layout: the row under the pointer
+        // is the event's target, there is no elementFromPoint).
+        if (!('PointerEvent' in window)) {
+            class PointerEventPolyfill extends MouseEvent {
+                pointerId: number;
+                pointerType: string;
+                constructor(type: string, init: PointerEventInit = {}) {
+                    super(type, init);
+                    this.pointerId = init.pointerId ?? 1;
+                    this.pointerType = init.pointerType ?? 'mouse';
+                }
+            }
+            (window as unknown as { PointerEvent: unknown }).PointerEvent = PointerEventPolyfill;
+        }
+    });
+    beforeEach(() => {
+        edges = [];
+        server.use(
+            http.post(`${API}/dependencies/`, async ({ request }) => {
+                const edge = await request.json() as { predecessor: string; successor: string };
+                edges.push(edge);
+                log.push(`depend ${edge.successor} on ${edge.predecessor}`);
+                return HttpResponse.json({ id: `dep-${edges.length}`, ...edge }, { status: 201 });
+            }),
+            http.delete(`${API}/dependencies/:id/`, ({ params }) => {
+                log.push(`DELETE dependency ${params.id}`);
+                return new HttpResponse(null, { status: 204 });
+            }),
+        );
+    });
+
+    const drawButton = () => screen.getByRole('button', { name: /draw dependency/i });
+    const draw = (from: string, to: string | null) => {
+        fireEvent.pointerDown(row(from), { button: 0, clientX: 100, clientY: 10 });
+        const target = to ? row(to) : document.body;
+        fireEvent.pointerMove(target, { clientX: 120, clientY: 80 });
+        fireEvent.pointerUp(target, { clientX: 120, clientY: 80 });
+    };
+    const altGr = (target: Element | Window = window) => {
+        fireEvent.keyDown(target, { key: 'AltGraph', code: 'AltRight' });
+        fireEvent.keyUp(target, { key: 'AltGraph', code: 'AltRight' });
+    };
+
+    it('the button turns drawing on and off; rows then open no dialog and cannot be moved', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(drawButton()).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(drawButton());
+        expect(drawButton()).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByText(/drag from a task to the task it depends on/i)).toBeInTheDocument();
+        expect(within(row('CAD')).queryByRole('button', { name: 'drag CAD' })).toBeNull();
+        fireEvent.click(row('CAD'));
+        expect(screen.queryByRole('dialog')).toBeNull();
+        fireEvent.click(drawButton());
+        expect(drawButton()).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.queryByText(/drag from a task to the task it depends on/i)).toBeNull();
+    });
+
+    it('a line from one task to another makes the first depend on the second, with Undo', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.click(drawButton());
+        fireEvent.pointerDown(row('Firmware'), { button: 0, clientX: 100, clientY: 10 });
+        fireEvent.pointerMove(row('CAD'), { clientX: 120, clientY: 80 });
+        // While drawing, the line says what it will do.
+        expect(screen.getByTestId('dependency-line')).toBeInTheDocument();
+        expect(screen.getByText('“Firmware” depends on “CAD”')).toBeInTheDocument();
+        expect(row('CAD')).toHaveAttribute('data-draw', 'to');
+        expect(row('Firmware')).toHaveAttribute('data-draw', 'from');
+        fireEvent.pointerUp(row('CAD'), { clientX: 120, clientY: 80 });
+
+        await waitFor(() => expect(edges).toEqual([{ predecessor: 'cad', successor: 'fw' }]));
+        expect(screen.queryByTestId('dependency-line')).toBeNull();
+        expect(await screen.findByText('“Firmware” now depends on “CAD”')).toBeInTheDocument();
+        expect(drawButton()).toHaveAttribute('aria-pressed', 'true'); // more can follow
+        fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+        await waitFor(() => expect(log).toContain('DELETE dependency dep-1'));
+    });
+
+    it('a Rest row stands for its parent task', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Rest of Hardware Design' });
+        fireEvent.click(drawButton());
+        draw('Buy milk', 'Rest of Hardware Design');
+        await waitFor(() => expect(edges).toEqual([{ predecessor: 'hw', successor: 'milk' }]));
+    });
+
+    it('shows in a toast why a dependency is not possible', async () => {
+        server.use(http.post(`${API}/dependencies/`, () => HttpResponse.json(
+            // DRF sends every message as a list.
+            { detail: ['This dependency would create a cycle.'], cycle: ['fw', 'cad', 'fw'] }, { status: 400 })));
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.click(drawButton());
+        draw('Firmware', 'CAD');
+        expect(await screen.findByText(
+            '“Firmware” can’t depend on “CAD” — “CAD” already depends on “Firmware” (Firmware → CAD), so this would be a cycle.',
+        )).toBeInTheDocument();
+
+        server.use(http.post(`${API}/dependencies/`, () => HttpResponse.json({
+            detail: ['“CAD” is part of “Hardware Design”. A task cannot depend on its own parent or subtask.'],
+        }, { status: 400 })));
+        draw('CAD', 'Hardware Design');
+        expect(await screen.findByText(/“CAD” can’t depend on “Hardware Design” — “CAD” is part of “Hardware Design”/))
+            .toBeInTheDocument();
+    });
+
+    it('releasing on the start task or beside the tasks adds nothing', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.click(drawButton());
+        draw('CAD', 'CAD');
+        draw('CAD', null);
+        await act(() => new Promise(resolve => setTimeout(resolve, 50)));
+        expect(edges).toEqual([]);
+        expect(screen.queryByTestId('dependency-line')).toBeNull();
+    });
+
+    it('Esc stops drawing (and a line being drawn)', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.click(drawButton());
+        fireEvent.pointerDown(row('Firmware'), { button: 0 });
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(screen.queryByTestId('dependency-line')).toBeNull();
+        expect(drawButton()).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.pointerUp(row('CAD'));
+        await act(() => new Promise(resolve => setTimeout(resolve, 50)));
+        expect(edges).toEqual([]);
+    });
+
+    describe('AltGr', () => {
+        it('a tap turns drawing on and off', async () => {
+            renderOutline();
+            await within(outline()).findByRole('treeitem', { name: 'CAD' });
+            altGr();
+            expect(drawButton()).toHaveAttribute('aria-pressed', 'true');
+            altGr(outline());
+            expect(drawButton()).toHaveAttribute('aria-pressed', 'false');
+            // Right Option on a Mac (no AltGraph key there).
+            fireEvent.keyDown(window, { key: 'Alt', code: 'AltRight' });
+            fireEvent.keyUp(window, { key: 'Alt', code: 'AltRight' });
+            expect(drawButton()).toHaveAttribute('aria-pressed', 'true');
+        });
+
+        it('held down, it draws only while held', async () => {
+            renderOutline();
+            await within(outline()).findByRole('treeitem', { name: 'CAD' });
+            fireEvent.keyDown(window, { key: 'AltGraph', code: 'AltRight' });
+            expect(drawButton()).toHaveAttribute('aria-pressed', 'true');
+            draw('Firmware', 'CAD');
+            fireEvent.keyUp(window, { key: 'AltGraph', code: 'AltRight' });
+            expect(drawButton()).toHaveAttribute('aria-pressed', 'false');
+            await waitFor(() => expect(edges).toEqual([{ predecessor: 'cad', successor: 'fw' }]));
+        });
+
+        it('typing a character with it (AltGr+Q is @) or in a text field changes nothing', async () => {
+            renderOutline();
+            await within(outline()).findByRole('treeitem', { name: 'CAD' });
+            fireEvent.keyDown(window, { key: 'AltGraph', code: 'AltRight' });
+            fireEvent.keyDown(window, { key: '@', code: 'KeyQ' });
+            fireEvent.keyUp(window, { key: 'AltGraph', code: 'AltRight' });
+            expect(drawButton()).toHaveAttribute('aria-pressed', 'false');
+
+            fireEvent.click(screen.getByRole('button', { name: 'add task at the top level' }));
+            const input = screen.getByRole('textbox', { name: 'New task' });
+            altGr(input);
+            expect(drawButton()).toHaveAttribute('aria-pressed', 'false');
+        });
+    });
+});

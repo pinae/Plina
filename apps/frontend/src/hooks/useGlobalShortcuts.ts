@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react';
 
 export type ShortcutMap = Partial<Record<string, () => void>>;
 
-function isTyping(target: EventTarget | null): boolean {
+export function isTyping(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
     if (target.isContentEditable || target.getAttribute('contenteditable') === 'true') return true;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return true;

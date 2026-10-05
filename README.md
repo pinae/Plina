@@ -31,9 +31,9 @@ Tasks form a directed acyclic graph (DAG): an edge A -> B means
 *finish-to-start* — B may not be scheduled before all planned work of A is
 allocated. Every valid plan is therefore a topological ordering of the
 remaining tasks packed into time buckets. The graph is edited visually in
-the **Dependencies** tab (a node editor); attempts to close a cycle are
-rejected by the server with the exact offending path, which the editor
-highlights in red.
+the **Dependencies** tab (a node editor) or drawn in the Tasks tab
+("Draw dependency", below); attempts to close a cycle are rejected by the
+server with the exact offending path, which the editor highlights in red.
 
 A DAG usually admits many valid orderings, and that is the product:
 wherever the graph leaves a real choice (independent branches at the
@@ -83,6 +83,11 @@ and Wunderlist:
 * "+ Add task" at the end of every project and quick add in the header
   understand tokens: `Order filament 30m #maker !7 >fri +Blog`.
 * "Sort ▶" walks the inbox of tasks without an estimate.
+* "Draw dependency" (or a tap on AltGr — right Option on a Mac; held down,
+  it draws only while held): drag a line from one task to another and the
+  first depends on the second (Undo in the toast). When that is not
+  possible — a cycle, its own parent or subtask, a duplicate — a toast says
+  why.
 
 The header shows the active project, the time tracker (▶ next planned task)
 and the quick add; the split editor breaks a task into parts with ghost

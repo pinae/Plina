@@ -127,7 +127,8 @@ export interface Dependency {
 
 /** 400 payload of POST /api/dependencies/ when an edge would close a cycle. */
 export interface DependencyCycleError {
-    detail: string;
+    /** DRF sends the message as a list (`["…"]`). */
+    detail: string | string[];
     cycle?: string[];
 }
 

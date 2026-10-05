@@ -26,7 +26,7 @@ export function useDependencyEditing() {
                 onError: error => {
                     const payload = error.response?.data;
                     setCyclePath(payload?.cycle ?? null);
-                    setToast(payload?.detail ?? 'Could not create the dependency.');
+                    setToast([payload?.detail ?? []].flat()[0] ?? 'Could not create the dependency.');
                 },
             },
         );

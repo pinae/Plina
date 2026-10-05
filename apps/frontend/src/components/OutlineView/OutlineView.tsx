@@ -23,12 +23,17 @@
  *
  * Touch screens (UI-9): the selected row gets buttons for what lives on keys
  * — outdent, indent, move, details (no double-click on a phone), split.
+ *
+ * "Draw dependency" (or AltGr): a line dragged from one task to another
+ * makes the first depend on the second (Undo in the toast); a refusal says
+ * why in a toast.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
-    IconButton, Snackbar, Switch, TextField, Tooltip, Typography,
+    IconButton, Portal, Snackbar, Switch, TextField, Tooltip, Typography,
 } from '@mui/material';
+import AddLinkIcon from '@mui/icons-material/AddLink';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -51,15 +56,18 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from '@dnd-kit/utilities';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
+import { DependencyDrawLayer } from '../DependencyDrawLayer/DependencyDrawLayer.tsx';
 import { ProjectPicker, type ProjectPick } from '../ProjectPicker/ProjectPicker.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { createTag, deleteTask as deleteTaskRequest } from '../../api.ts';
 import {
-    useCompleteTask, useCreateTask, useDeleteTask, useMoveTask, useReopenTask, useSetPriority, useSettings, useStartTracking,
-    useTags, useTasks, useUpdateTask,
+    useCompleteTask, useCreateDependency, useCreateTask, useDeleteDependency, useDeleteTask, useMoveTask, useReopenTask,
+    useSetPriority, useSettings, useStartTracking, useTags, useTasks, useUpdateTask,
 } from '../../queries.tsx';
+import { useDependencyDrawing } from '../../hooks/useDependencyDrawing.ts';
+import { dependencyCreated, dependencyRefusal } from '../../utils/dependencyMessages.ts';
 import { PrioritySlider } from '../PrioritySlider/PrioritySlider.tsx';
 import { titleColor } from '../../utils/taskColors.ts';
 import { commitRowTokens, newRow } from '../../utils/outline.ts';
@@ -72,7 +80,7 @@ import {
 import { projectOptions } from '../../utils/projects.ts';
 import { readCollapsed, readShowCompleted, storeCollapsed, storeShowCompleted } from '../../utils/taskTreePrefs.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
-import type { Task, TaskWrite } from '../../types.ts';
+import type { DependencyCycleError, Task, TaskWrite } from '../../types.ts';
 import { useIsMobile, useIsNarrow, useIsTouch } from '../../hooks/useResponsive.ts';
 
 const human = (duration: string | null) => formatDuration(duration);
@@ -110,6 +118,8 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const reopenTask = useReopenTask();
     const setPriorityMutation = useSetPriority();
     const moveMutation = useMoveTask();
+    const createDependency = useCreateDependency();
+    const deleteDependency = useDeleteDependency();
 
     const [sortMode, setSortMode] = useState(false);
     const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
@@ -313,6 +323,26 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         }).catch(error => setMessage(serverMessage(error)));
     };
 
+    /** A line drawn from one row to another: the start task depends on the
+     *  end task (a Rest row stands for its parent). */
+    const linkTasks = (fromKey: string, toKey: string) => {
+        const from = items.find(i => i.key === fromKey)?.task;
+        const to = items.find(i => i.key === toKey)?.task;
+        if (!from || !to) return;
+        createDependency.mutateAsync({ predecessor: to.id, successor: from.id }).then(created => setUndoToast({
+            text: dependencyCreated(from, to),
+            undo: () => deleteDependency.mutate(created.id, { onError: error => setMessage(serverMessage(error)) }),
+        })).catch(error => setMessage(dependencyRefusal(
+            (error as AxiosError<DependencyCycleError>).response?.data, from, to,
+            id => allTasks.find(t => t.id === id)?.header,
+        )));
+    };
+    const drawing = useDependencyDrawing(linkTasks);
+    const drawLine = drawing.line;
+    const drawFrom = drawLine ? items.find(i => i.key === drawLine.fromKey) : undefined;
+    const drawTo = drawLine && drawLine.overKey !== drawLine.fromKey
+        ? items.find(i => i.key === drawLine.overKey) : undefined;
+
     const requestDelete = (task: Task) => {
         if (task.children_ids?.length) {
             setConfirmDelete(task);
@@ -506,7 +536,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         }
     }
     const projection = drag ? projectDrop(items, allTasks, drag.activeKey, drag.overKey, drag.offsetX, INDENT_PX) : null;
-    const sortableKeys = sortMode ? [] : items
+    const sortableKeys = sortMode || drawing.active ? [] : items
         .filter(i => i.kind === 'task' && !i.task.is_done && !draggedSubtree.has(i.key))
         .map(i => i.key);
 
@@ -550,6 +580,13 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         New task
                     </Button>
                 )}
+                <Tooltip describeChild title={rowButtons ? 'Drag from a task to the task it depends on'
+                    : 'Drag from a task to the task it depends on · AltGr (right Option on a Mac): tap to turn on/off, hold to draw while held · Esc stops'}>
+                    <Button size="small" variant={drawing.active ? 'contained' : 'outlined'} aria-pressed={drawing.active}
+                        startIcon={<AddLinkIcon />} onClick={drawing.toggle}>
+                        Draw dependency
+                    </Button>
+                </Tooltip>
                 <Chip label={`Inbox (${inboxCount})`} size="small" variant={sortMode ? 'filled' : 'outlined'} />
                 <Button size="small" variant={sortMode ? 'contained' : 'outlined'}
                     onClick={() => (sortMode ? (setSortMode(false), refocus()) : startSort())}>
@@ -568,12 +605,19 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         label={<Typography variant="body2">Show completed</Typography>} />
                 )}
             </Box>
+            {drawing.active && (
+                <Alert severity="info" role="status" sx={{ py: 0 }}>
+                    Drag from a task to the task it depends on.{rowButtons
+                        ? ' Tap “Draw dependency” again to stop.' : ' AltGr or Esc stops.'}
+                </Alert>
+            )}
             <Box
                 ref={container}
                 role="tree"
                 aria-label="Outline"
                 tabIndex={0}
                 onKeyDown={onKeyDown}
+                onPointerDown={drawing.onPointerDown}
                 sx={{ outline: 'none', border: 1, borderColor: 'divider', borderRadius: 1, '&:focus-visible': { borderColor: 'primary.main' } }}
             >
                 {items.length === 0 && (
@@ -598,8 +642,13 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         sortMode={sortMode}
                         defaultDuration={defaultDuration}
                         editing={editing?.key === item.key ? editing : null}
+                        drawMode={drawing.active}
+                        drawRole={drawFrom === item ? 'from' : drawTo === item ? 'to' : undefined}
                         onSelect={() => { setSelection({ key: item.key, index }); refocus(); }}
-                        onOpen={() => (item.kind === 'task' ? setDialogTaskId(item.task.id) : setSplitTask(item.task))}
+                        onOpen={() => {
+                            if (drawing.active) return; // drawing: a click opens nothing
+                            if (item.kind === 'task') setDialogTaskId(item.task.id); else setSplitTask(item.task);
+                        }}
                         onToggle={() => toggleCollapsed(item.task.id)}
                         onToggleDone={() => toggleDone(item.task)}
                         onPriority={priority => setPriority(item.task, priority)}
@@ -644,6 +693,13 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 ))}
             </Box>
 
+            {drawLine && drawFrom && (
+                <Portal>
+                    <DependencyDrawLayer from={drawLine.from} to={drawLine.to} onTarget={drawTo !== undefined}
+                        label={drawTo ? `“${drawFrom.task.header}” depends on “${drawTo.task.header}”`
+                            : `Drop on the task “${drawFrom.task.header}” depends on`} />
+                </Portal>
+            )}
             <ProjectPicker
                 open={move !== null} anchorEl={move?.anchor ?? null}
                 onClose={() => { setMove(null); refocus(); }} onPick={pickMove}
@@ -741,6 +797,10 @@ function SortableRow({ sortable, dragDepth, handleVisible, ...props }: Omit<Outl
 
 interface OutlineItemRowProps {
     drag?: RowDrag;
+    /** "Draw dependency" is on: rows start and end lines, not drags. */
+    drawMode?: boolean;
+    /** The row a line starts at or would end at. */
+    drawRole?: 'from' | 'to';
     item: OutlineItem;
     selected: boolean;
     sortMode: boolean;
@@ -770,7 +830,7 @@ interface OutlineItemRowProps {
 function OutlineItemRow({
     item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compact,
     narrow, canComplete, onTrack,
-    onEditChange, onEditKeyDown, onEditBlur, onElement, drag,
+    onEditChange, onEditKeyDown, onEditBlur, onElement, drag, drawMode, drawRole,
 }: OutlineItemRowProps) {
     const task = item.task;
     const depth = drag?.depth ?? item.depth;
@@ -819,6 +879,8 @@ function OutlineItemRow({
             onClick={() => { onSelect(); onOpen(); }}
             style={drag?.style}
             data-dragging={drag?.dragging ? 'true' : undefined}
+            data-row-key={item.key}
+            data-draw={drawRole}
             sx={{
                 display: 'flex', alignItems: 'center', gap: compact ? 0.5 : 1, minHeight: 32, pr: compact ? 0.5 : 1,
                 pl: 0.5 + depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',
@@ -826,7 +888,9 @@ function OutlineItemRow({
                 opacity: done ? 0.55 : 1,
                 position: 'relative', zIndex: drag?.dragging ? 2 : undefined,
                 boxShadow: drag?.dragging ? 6 : undefined,
-                outline: drag?.dragging ? '2px dashed' : undefined, outlineColor: 'primary.main',
+                outline: drag?.dragging ? '2px dashed' : drawRole ? '2px solid' : undefined, outlineColor: 'primary.main',
+                outlineOffset: drawRole ? -2 : undefined,
+                ...(drawMode ? { cursor: 'crosshair', userSelect: 'none', touchAction: 'none' } : {}),
                 transitionProperty: 'padding-left', transitionDuration: '120ms',
                 '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                 // The handle fades in on hover / selection (Todoist).
