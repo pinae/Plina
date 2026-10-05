@@ -100,11 +100,14 @@ def preview_occurrences(start_times: str, count: int = 5) -> List[datetime]:
     """
     if not start_times.strip():
         raise RecurrenceError("Please enter a recurrence rule, e.g. “every weekday at 09:00”.")
+    from tasks.services import recurrence
+    try:
+        recurrence.parse_rule(start_times)
+    except recurrence.RecurrenceError as error:
+        raise RecurrenceError(str(error)) from error
     probe = TimeBucketType(name="preview", start_times=start_times,
                            duration=timedelta(hours=1))
     buckets = probe.generate_buckets(generation_range=timedelta(days=366))
     if not buckets:
-        raise RecurrenceError(
-            f"“{start_times}” is not a recognizable recurrence rule."
-        )
+        raise RecurrenceError(f"“{start_times.strip()}” does not happen in the coming year.")
     return [bucket.start_date for bucket in buckets[:count]]

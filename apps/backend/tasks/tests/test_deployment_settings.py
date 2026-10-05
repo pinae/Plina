@@ -66,7 +66,9 @@ class EnvHelpersTest(SimpleTestCase):
     def test_sqlite_unless_another_engine_is_configured(self):
         with self.env():
             self.assertEqual(database_from_env(Path("/app")),
-                             {"ENGINE": "django.db.backends.sqlite3", "NAME": Path("/app/db.sqlite3")})
+                             {"ENGINE": "django.db.backends.sqlite3", "NAME": Path("/app/db.sqlite3"),
+                              # Concurrent writers wait instead of "database is locked".
+                              "OPTIONS": {"transaction_mode": "IMMEDIATE", "timeout": 20}})
         with self.env(DB_ENGINE="django.db.backends.sqlite3", DB_NAME="/data/plina.sqlite3"):
             self.assertEqual(database_from_env(Path("/app"))["NAME"], Path("/data/plina.sqlite3"))
         with self.env(**POSTGRES):

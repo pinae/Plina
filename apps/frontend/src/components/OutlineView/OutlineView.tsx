@@ -47,6 +47,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import EditIcon from '@mui/icons-material/Edit';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import AddIcon from '@mui/icons-material/Add';
+import RepeatIcon from '@mui/icons-material/Repeat';
 import type { AxiosError } from 'axios';
 import {
     closestCenter, DndContext, KeyboardSensor, MeasuringStrategy, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -80,6 +81,7 @@ import {
 import { projectOptions } from '../../utils/projects.ts';
 import { readCollapsed, readShowCompleted, storeCollapsed, storeShowCompleted } from '../../utils/taskTreePrefs.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
+import { dueFrom, recurrenceSummary, withoutLaterOccurrences } from '../../utils/recurring.ts';
 import type { DependencyCycleError, Task, TaskWrite } from '../../types.ts';
 import { useIsMobile, useIsNarrow, useIsTouch } from '../../hooks/useResponsive.ts';
 
@@ -160,7 +162,9 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     }, []);
 
     const allTasks = useMemo(() => tasks.data ?? [], [tasks.data]);
-    const visibleTasks = useMemo(() => allTasks.filter(t => !pendingDeletes.has(t.id)), [allTasks, pendingDeletes]);
+    // A recurring appointment's occurrences ahead: only the next one.
+    const visibleTasks = useMemo(() => withoutLaterOccurrences(allTasks, new Date())
+        .filter(t => !pendingDeletes.has(t.id)), [allTasks, pendingDeletes]);
     const activeId = settings.data?.active_task_id ?? null;
 
     // When the active project changes, open the path down to it (once — the
@@ -343,6 +347,15 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const drawTo = drawLine && drawLine.overKey !== drawLine.fromKey
         ? items.find(i => i.key === drawLine.overKey) : undefined;
 
+    /** The split editor — a recurring task says why it has no parts. */
+    const openSplit = (task: Task) => {
+        if (task.series_id) {
+            setMessage(`“${task.header}” repeats: a recurring task cannot have subtasks.`);
+            return;
+        }
+        setSplitTask(task);
+    };
+
     const requestDelete = (task: Task) => {
         if (task.children_ids?.length) {
             setConfirmDelete(task);
@@ -463,7 +476,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
             startTracking.mutate(task.id, { onError: error => setMessage(serverMessage(error)) });
         } else if (key === 's' || key === 'S') {
             event.preventDefault();
-            setSplitTask(task);
+            openSplit(task);
         } else if (!isTask) {
             return;
         } else if (key === 'ArrowRight' && selected.kind === 'task' && selected.hasChildren) {
@@ -677,7 +690,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                             onIndent={() => moveTo(item.task, indentMove(allTasks, item.task.id))}
                             onMove={direction => moveTo(item.task, neighbourMove(allTasks, item.task.id, direction))}
                             onDetails={() => setDialogTaskId(item.task.id)}
-                            onSplit={() => setSplitTask(item.task)}
+                            onSplit={() => openSplit(item.task)}
                         />
                     ) : null,
                     draft?.afterKey === item.key ? renderDraft() : null,
@@ -967,6 +980,17 @@ function OutlineItemRow({
                 {item.kind === 'task' && item.active && !editing && !narrow && (
                     <Chip size="small" color="primary" variant="outlined" label="active"
                         sx={{ height: 18, fontSize: '0.7rem', flexShrink: 0 }} />
+                )}
+                {item.kind === 'task' && task.series_id && !editing && (
+                    <Tooltip title={recurrenceSummary(task)}>
+                        <Box component="span" data-testid="repeats" aria-label={`repeats ${recurrenceSummary(task)}`}
+                            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', flexShrink: 0 }}>
+                            <RepeatIcon sx={{ fontSize: 16 }} />
+                            {dueFrom(task, new Date()) && (
+                                <Typography variant="caption" noWrap>{dueFrom(task, new Date())}</Typography>
+                            )}
+                        </Box>
+                    </Tooltip>
                 )}
             </Box>
             {/* Aligned, muted details (Todoist/Wunderlist density). Below 900 px

@@ -66,6 +66,18 @@ class TaskSerializer(serializers.ModelSerializer):
     estimate_reason = serializers.ChoiceField(
         choices=['edited', 'set_to_sum', 'raised_from_warning'], write_only=True, required=False,
     )
+    #: Repeats (README: Recurring tasks): the rule as typed, e.g. "every
+    #: tuesday at 20:00"; "" stops the repetition after this occurrence.
+    #: Read back with ``recurrence_description``, ``occurrence`` & co.
+    recurrence = serializers.CharField(required=False, allow_blank=True, max_length=256, write_only=True,
+                                       trim_whitespace=True)
+    #: A recurring task's edit applies to this occurrence only, or to the
+    #: following open ones too.
+    scope = serializers.ChoiceField(choices=['this', 'following'], write_only=True, required=False)
+
+    #: What “this and the following” passes on to the following occurrences.
+    FOLLOWING_FIELDS = ('header', 'description', 'duration', 'priority', 'color', 'tags', 'latest_finish_date',
+                        'start_date', 'is_appointment', 'parent')
 
     _UNSET = object()
 
@@ -94,7 +106,32 @@ class TaskSerializer(serializers.ModelSerializer):
         data['own_hex_color'] = to_hex(task.color)
         data['hex_color'] = tree.effective_color(task.id)
         data['inherited_hex_color'] = tree.inherited_color(task.id)
+        data.update(self._recurrence(task))
         return data
+
+    def _recurrence(self, task) -> dict:
+        """The series a task is an occurrence of (README: Recurring tasks)."""
+        if task.series_id is None:
+            return {'recurrence': None, 'recurrence_description': None, 'series_id': None,
+                    'occurrence': None, 'next_occurrence': None, 'occurrence_count': 0}
+        from .services.recurrence import RecurrenceError, describe, parse_rule
+        from .services.series import next_after, occurrence_counts
+        series = task.series
+        counts = self.context.setdefault('_occurrence_counts', {})
+        if series.id not in counts:  # one query for a whole list
+            counts.update(occurrence_counts(
+                [item.series_id for item in (self.parent.instance if self.parent is not None else [task])]
+                + [series.id]))
+        try:
+            description = describe(parse_rule(series.recurrence))
+        except RecurrenceError:
+            description = series.recurrence
+        moment = serializers.DateTimeField()
+        following = next_after(series, task.occurrence)
+        return {'recurrence': series.recurrence, 'recurrence_description': description,
+                'series_id': series.id, 'occurrence': moment.to_representation(task.occurrence),
+                'next_occurrence': moment.to_representation(following) if following else None,
+                'occurrence_count': counts.get(series.id, 0)}
 
     def _pop_color(self, validated_data):
         """``own_hex_color`` -> the model's rgb bytes (only when given)."""
@@ -117,6 +154,19 @@ class TaskSerializer(serializers.ModelSerializer):
             error = parent_change_error(instance, new_parent)
             if error is not None:
                 raise serializers.ValidationError(error)
+        if instance is None and new_parent not in (self._UNSET, None) and new_parent.series_id is not None:
+            from .services.series import subtasks_refused
+            raise serializers.ValidationError({'parent_id': [subtasks_refused(new_parent)]})
+        if attrs.get('recurrence'):
+            from .services.recurrence import RecurrenceError, parse_rule
+            try:
+                parse_rule(attrs['recurrence'])
+            except RecurrenceError as error:
+                raise serializers.ValidationError({'recurrence': [str(error)]})
+            if instance is not None and instance.children.exists():
+                raise serializers.ValidationError({'recurrence': [
+                    f'“{instance.header}” has subtasks: a task with subtasks cannot repeat. '
+                    'Repeat its subtasks instead.']})
         if instance is not None and attrs.get('completed_at') is not None and not instance.is_done:
             from .services.completion import CompletionError, ensure_completable
             try:
@@ -157,9 +207,21 @@ class TaskSerializer(serializers.ModelSerializer):
                 })
         return attrs
 
+    def _repeat(self, task, text):
+        from .services.recurrence import RecurrenceError
+        from .services.series import make_recurring
+        from .services.settings import ensure_active_is_project
+        try:
+            make_recurring(task, text)
+        except RecurrenceError as error:
+            raise serializers.ValidationError({'recurrence': [str(error)]})
+        ensure_active_is_project()  # a recurring task holds no tasks
+
     @transaction.atomic
     def create(self, validated_data):
         validated_data.pop('estimate_reason', None)
+        validated_data.pop('scope', None)
+        recurrence = validated_data.pop('recurrence', '')
         self._pop_color(validated_data)
         if 'order' not in validated_data:
             parent = validated_data.get('parent')
@@ -169,12 +231,17 @@ class TaskSerializer(serializers.ModelSerializer):
         if task.completed_at is not None:
             write_completion_snapshot(task)
         ensure_auto_colors()  # a new project
+        if recurrence:
+            self._repeat(task, recurrence)
         return task
 
     @transaction.atomic
     def update(self, instance, validated_data):
         reason = validated_data.pop('estimate_reason', 'edited')
+        recurrence = validated_data.pop('recurrence', None)
+        scope = validated_data.pop('scope', 'this')
         self._pop_color(validated_data)
+        following = {field: value for field, value in validated_data.items() if field in self.FOLLOWING_FIELDS}
         old_duration = instance.duration
         was_done = instance.completed_at is not None
         if 'parent' in validated_data and 'order' not in validated_data \
@@ -193,6 +260,11 @@ class TaskSerializer(serializers.ModelSerializer):
             clear_completion_snapshot(task)
             if task.parent is not None and task.parent.is_done:
                 reopen(task.parent)  # an open task cannot live in a completed one
+        if recurrence is not None:
+            self._repeat(task, recurrence)
+        if scope == 'following' and following:
+            from .services.series import apply_to_following
+            apply_to_following(task, following)
         ensure_auto_colors()  # moved to the top level
         return task
 
@@ -202,7 +274,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'id', 'header', 'description', 'start_date', 'duration',
             'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'own_hex_color', 'is_fixed',
             'is_appointment', 'completed_at', 'is_done', 'active_tracking_start',
-            'parent_id', 'order', 'estimate_reason',
+            'parent_id', 'order', 'estimate_reason', 'recurrence', 'scope',
             'completion_estimate', 'completion_first_estimate', 'completion_time_spent',
             'completion_subtree_time_spent', 'completion_dropped_rest',
         ]
@@ -305,6 +377,9 @@ class UserSettingsSerializer(serializers.ModelSerializer):
         if task.is_done:
             raise serializers.ValidationError(
                 f'“{task.header}” is completed. Choose an open project.')
+        if task.series_id is not None:
+            raise serializers.ValidationError(
+                f'“{task.header}” repeats: it cannot hold tasks. Choose a project.')
         if not is_project(task):
             raise serializers.ValidationError(
                 f'“{task.header}” is a single step inside “{task.parent.header}”. Choose a '
@@ -358,6 +433,9 @@ class TimeBucketTypeSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         self._pop_color(validated_data)
+        if validated_data.get('start_times', instance.start_times) != instance.start_times:
+            # A new rule counts from now ("every other week", "10 times").
+            validated_data['anchor'] = timezone.now()
         return super().update(instance, validated_data)
 
     class Meta:

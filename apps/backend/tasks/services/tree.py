@@ -349,6 +349,9 @@ def current_dependency_cycle() -> Optional[List[UUID]]:
 def parent_change_error(task: Task, new_parent: Optional[Task]) -> Optional[dict]:
     """Why ``task`` cannot go under ``new_parent`` (a 400 payload), or None.
     Shared by PATCH ``parent_id`` and the move endpoint."""
+    if new_parent is not None and new_parent.series_id is not None:
+        from tasks.services.series import subtasks_refused
+        return {"parent_id": [subtasks_refused(new_parent)]}
     path = reparent_cycle(task.id, new_parent.id if new_parent else None)
     if path is not None:
         if len(path) == 1:

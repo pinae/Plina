@@ -57,6 +57,19 @@ export interface Task {
     completion_time_spent: string | null;
     completion_subtree_time_spent: string | null;
     completion_dropped_rest: string | null;
+    // Recurring tasks (README: Recurring tasks): every occurrence is a task
+    // of its own; null/0 for a task that does not repeat.
+    /** The rule as typed, e.g. "every tuesday at 20:00". */
+    recurrence: string | null;
+    /** The rule in normalized words: "every Tuesday at 20:00". */
+    recurrence_description: string | null;
+    series_id: string | null;
+    /** The date this occurrence stands for (a task is due from then on). */
+    occurrence: string | null;
+    /** The series' next date after this occurrence. */
+    next_occurrence: string | null;
+    /** How many occurrences the series has, done ones included. */
+    occurrence_count: number;
 }
 
 /** Fields accepted when creating/updating a task (tag_ids is write-only). */
@@ -78,6 +91,10 @@ export interface TaskWrite {
     own_hex_color?: string | null;
     /** Why the estimate changes (history); plain edits are "edited". */
     estimate_reason?: 'edited' | 'set_to_sum' | 'raised_from_warning';
+    /** Repeats by this rule; "" stops a recurring task after this occurrence. */
+    recurrence?: string;
+    /** A recurring task's edit: this occurrence only, or the following open ones too. */
+    scope?: 'this' | 'following';
 }
 
 export interface TagWrite {
@@ -95,6 +112,8 @@ export interface BucketTypeWrite {
 }
 
 export interface RecurrencePreview {
+    /** The rule in normalized words: "every weekday at 09:00". */
+    description: string;
     occurrences: string[];
 }
 

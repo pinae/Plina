@@ -890,3 +890,34 @@ describe('drawing dependencies', () => {
         });
     });
 });
+
+describe('recurring tasks (README: Recurring tasks)', () => {
+    const inDays = (days: number) => new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
+    const choir = (id: string, days: number) => makeTask(id, {
+        header: 'Choir', order: 3, is_appointment: true, start_date: inDays(days), series_id: 'choir',
+        occurrence: inDays(days), recurrence: 'every tuesday 19:00', recurrence_description: 'every Tuesday at 19:00',
+        next_occurrence: inDays(days + 7), occurrence_count: 3,
+    });
+
+    it('marks a repeating task and lists only the next of an appointment’s occurrences ahead', async () => {
+        tasks = [...tasks, choir('c1', 1), choir('c2', 8), choir('c3', 15),
+            makeTask('chore', { header: 'Water plants', order: 4, series_id: 'chores', occurrence: inDays(2),
+                recurrence: 'every wednesday', recurrence_description: 'every Wednesday', occurrence_count: 1 })];
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Water plants' });
+        expect(rowNames().filter(name => name === 'Choir')).toHaveLength(1);
+        expect(within(row('Choir')).getByTestId('repeats')).toHaveAccessibleName(/^repeats every Tuesday at 19:00 · next:/);
+        // A task that is not due yet says from when.
+        expect(within(row('Water plants')).getByTestId('repeats')).toHaveTextContent(/^from /);
+        expect(within(row('CAD')).queryByTestId('repeats')).toBeNull();
+    });
+
+    it('cannot be split', async () => {
+        tasks = [...tasks, makeTask('chore', { header: 'Water plants', order: 4, series_id: 'chores',
+            occurrence: inDays(-1), recurrence: 'every wednesday', occurrence_count: 1 })];
+        renderOutline();
+        await select('Water plants');
+        press('s');
+        expect(await screen.findByText(/a recurring task cannot have subtasks/)).toBeInTheDocument();
+    });
+});

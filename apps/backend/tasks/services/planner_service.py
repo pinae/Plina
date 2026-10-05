@@ -51,6 +51,9 @@ class PlanningTask:
     source: Task = field(compare=False, repr=False)
     #: The unit is a parent's Rest (planned under the parent's id, UI-2).
     is_rest: bool = False
+    #: Not planned before this: a recurring task's occurrence that is still
+    #: ahead (README: Recurring tasks).
+    not_before: datetime | None = None
 
     @classmethod
     def from_task(cls, task: Task, project_id: UUID | None | object = ...,
@@ -78,6 +81,7 @@ class PlanningTask:
             remaining_duration=remaining,
             project_id=project_id,
             source=task,
+            not_before=task.occurrence if task.series_id is not None and not task.is_appointment else None,
         )
 
     @classmethod
@@ -352,6 +356,8 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
             return False
         if free < config.min_task_slice and needed > free:
             return False  # leftover gap too small to be worth a context switch
+        if snapshot.not_before is not None and at < snapshot.not_before:
+            return False
         return run.is_eligible(snapshot, at)
 
     last = run.last_task
@@ -416,7 +422,12 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
         while current_time < segment.end:
             snapshot = _pick_next(queue, run, segment, current_time, config)
             if snapshot is None:
-                break
+                # Nothing fits now; a recurring task may become due later in the bucket.
+                due = [s.not_before for s in queue if s.not_before and current_time < s.not_before < segment.end]
+                if not due:
+                    break
+                current_time = min(due)
+                continue
             slice_duration = min(run.remaining[snapshot.id], segment.end - current_time)
             end_time = current_time + slice_duration
             plan[segment.bucket_id].append(

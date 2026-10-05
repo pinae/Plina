@@ -96,6 +96,47 @@ estimates that add up. On phones the header is compact, quick add opens as a
 bottom sheet from ⊕, rows are dragged after a long-press and the selected
 row offers indent/outdent buttons (docs/task-entry-ui.md §7).
 
+### Recurring tasks
+
+"Repeats" in the edit dialog takes a rule in plain language — "every tuesday
+20:00", "every 4 weeks on tuesday 14:00", "every first sunday each month at
+12:30" — and shows it in Plina's words with the next dates while you type,
+or says which word it does not understand. Every occurrence is a task of
+its own (`apps/backend/tasks/services/series.py`):
+
+* Completing one completes only that one; each collects its own tracked
+  time. Deleting a row deletes only that occurrence (its date is skipped);
+  "Delete all occurrences" in the dialog deletes the series, done ones too.
+* An **appointment**'s occurrences exist for the planning horizon (60 days)
+  ahead and block their time like any appointment; a past one completes
+  itself when it ends, unless it is being tracked. The Tasks tab lists only
+  the next one.
+* Any **other task** comes again when its next date is reached — also while
+  the one before is still open — and is planned like any other task from
+  then on, not before ("from Tue 06/10" in its row).
+* A new occurrence copies the latest one (title, description, estimate,
+  priority, tags, color, project); a deadline moves along with the date.
+* Edits apply to "this occurrence" or "this and the following ones". A
+  changed rule applies from the edited occurrence on; an emptied one stops
+  the repetition after it.
+* A recurring task has no subtasks (it cannot be split, nothing moves into
+  it), and is never the active project.
+
+Occurrences are made when tasks or the plan are loaded — no scheduler is
+needed. The rules (`apps/backend/tasks/services/recurrence.py`, also used
+by time buckets) are 24-hour times with or without "at" ("8pm" works too);
+"morning", "afternoon", "evening" and "night" mean 08:00, 14:00, 18:00 and
+21:00, and a rule without a time starts the day at 00:00. They understand
+intervals ("every other week", "every 3 days", "fortnightly"), weekday
+ranges ("mon-wed", "weekdays"), days of the month and year ("the 15th",
+"the last workday of the month", "december 24th"), several times ("at 9
+and 14"), "starting march 3rd", "until june", "for the next 3 weeks", "10
+times" and "except on weekends / in may / december 24th" — everything the
+`recurrent` library understood before, which Plina no longer needs. Rules
+repeat at most hourly. "every 4 weeks" counts from the first occurrence:
+made on a Wednesday, "every 4 weeks on tuesday" starts on the coming
+Tuesday.
+
 
 ### Core Data Structures (Domain Model)
 
@@ -120,13 +161,18 @@ represent the scheduling domain:
   project (synced to all devices) and the user's time zone, in which
   recurrence rules are read.
 
+* TaskSeries: the rule of a recurring task; its occurrences are Tasks
+  (`series`, `occurrence`), see Recurring tasks.
+
 * Tag: A label (with an optional color) used to categorize Tasks 
   and TimeBucketTypes. Tags are the primary mechanism for establishing 
    Affinity (e.g., mapping a #deep-work task to a #deep-work time bucket).
 
 * TimeBucketType: A recurring template for available time.
   * It defines a rule for when a bucket occurs (e.g., "Every weekday at 
-    09:00"), its duration (e.g., 4 hours), and its accepted tags.
+    09:00", in the language of recurring tasks), its duration (e.g., 4
+    hours), and its accepted tags. The rule counts from when it was set
+    ("every other week" keeps its weeks).
   * Its color is chosen, or else automatic: unlike the other bucket types'.
 
 * TimeBucket: A concrete, instantiated block of time in the calendar, 

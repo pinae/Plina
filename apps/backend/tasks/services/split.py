@@ -43,6 +43,9 @@ def split_task(parent: Task, rows: List[dict], *, estimate=UNSET, estimate_reaso
     """Apply the rows; returns the direct subtasks in their new order."""
     if parent.is_done:
         raise SplitError(f"“{parent.header}” is completed. Reopen it before splitting it.")
+    if parent.series_id is not None:
+        from tasks.services.series import subtasks_refused
+        raise SplitError(subtasks_refused(parent))
     if estimate is not UNSET:
         old = parent.duration
         parent.duration = estimate

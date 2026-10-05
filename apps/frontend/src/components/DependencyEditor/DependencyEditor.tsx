@@ -13,6 +13,7 @@ import '@xyflow/react/dist/style.css';
 import { useDependencies, useTasks } from '../../queries.tsx';
 import { useDependencyEditing } from '../../hooks/useDependencyEditing.ts';
 import { applyCycleHighlight, buildFlowGraph, type TaskFlowNode } from '../../utils/dependencyGraph.ts';
+import { withoutLaterOccurrences } from '../../utils/recurring.ts';
 import type { Edge } from '@xyflow/react';
 import { TaskNode } from '../TaskNode/TaskNode.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
@@ -35,8 +36,9 @@ export default function DependencyEditor() {
     const colorMode = useTheme().palette.mode;
 
     const graph = useMemo(() => {
+        // A recurring appointment's occurrences ahead: only the next one.
         const built = buildFlowGraph(
-            tasks.data ?? [], dependencies.data ?? [],
+            withoutLaterOccurrences(tasks.data ?? [], new Date()), dependencies.data ?? [],
         );
         return applyCycleHighlight(built.nodes, built.edges, editing.cyclePath);
     }, [tasks.data, dependencies.data, editing.cyclePath]);

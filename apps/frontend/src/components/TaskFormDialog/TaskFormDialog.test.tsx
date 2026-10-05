@@ -440,3 +440,81 @@ describe('TaskFormDialog — walking through tasks (T-4, like Todoist)', () => {
     });
 });
 
+
+describe('TaskFormDialog — repeats (README: Recurring tasks)', () => {
+    const previewHandler = http.post(`${API}/recurrence-preview/`, async ({ request }) => {
+        const { recurrence } = (await request.json()) as { recurrence: string };
+        if (recurrence === 'every sometimes') {
+            return HttpResponse.json({ detail: 'Plina does not understand “sometimes” in “every sometimes”.' },
+                { status: 400 });
+        }
+        return HttpResponse.json({
+            description: 'every Tuesday at 20:00',
+            occurrences: ['2026-10-06T20:00:00+02:00', '2026-10-13T20:00:00+02:00'],
+        });
+    });
+    const repeats = () => screen.getByRole('textbox', { name: /repeats/i });
+    const occurrence = {
+        id: 'chore', header: 'Water plants', description: '', start_date: null, duration: '00:15:00',
+        latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null,
+        is_fixed: false, is_appointment: false, completed_at: null, is_done: false, active_tracking_start: null,
+        ...treeDefaults, recurrence: 'every tuesday 20:00', recurrence_description: 'every Tuesday at 20:00',
+        series_id: 's1', occurrence: '2026-10-13T20:00:00+02:00', next_occurrence: '2026-10-20T20:00:00+02:00',
+        occurrence_count: 3,
+    };
+
+    it('previews the rule in words and saves it', async () => {
+        server.use(previewHandler);
+        render(<TaskFormDialog open onClose={() => { }} />, { wrapper });
+        fireEvent.change(headerInput(), { target: { value: 'Water plants' } });
+        fireEvent.change(repeats(), { target: { value: 'every tuesday 20:00' } });
+        expect(await screen.findByTestId('recurrence-description')).toHaveTextContent('every Tuesday at 20:00');
+        expect(screen.getAllByTestId('preview-occurrence')).toHaveLength(2);
+        clickCreate();
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({ header: 'Water plants', recurrence: 'every tuesday 20:00' });
+    });
+
+    it('says what it does not understand, also after saving', async () => {
+        server.use(previewHandler, http.post(`${API}/tasks/`, () => HttpResponse.json(
+            { recurrence: ['Plina does not understand “sometimes” in “every sometimes”.'] }, { status: 400 })));
+        render(<TaskFormDialog open onClose={() => { }} />, { wrapper });
+        fireEvent.change(headerInput(), { target: { value: 'Odd' } });
+        fireEvent.change(repeats(), { target: { value: 'every sometimes' } });
+        expect(await screen.findByText(/does not understand “sometimes”/)).toBeInTheDocument();
+        clickCreate();
+        await waitFor(() => expect(repeats()).toHaveAttribute('aria-invalid', 'true'));
+    });
+
+    it('saves an occurrence alone or with the following ones', async () => {
+        const patches: Record<string, unknown>[] = [];
+        server.use(previewHandler, http.patch(`${API}/tasks/chore/`, async ({ request }) => {
+            patches.push((await request.json()) as Record<string, unknown>);
+            return HttpResponse.json(occurrence);
+        }));
+        render(<TaskFormDialog open onClose={() => { }} task={occurrence} />, { wrapper });
+        expect(screen.getByText(/this occurrence:/i)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /split into subtasks/i })).toBeNull();
+        fireEvent.change(headerInput(), { target: { value: 'Water all plants' } });
+        fireEvent.click(screen.getByRole('radio', { name: /this and the following/i }));
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({ header: 'Water all plants', scope: 'following' });
+        expect(patches[0]).not.toHaveProperty('recurrence'); // the rule did not change
+    });
+
+    it('deletes all occurrences after asking', async () => {
+        const deleted: string[] = [];
+        server.use(previewHandler, http.delete(`${API}/tasks/chore/`, ({ request }) => {
+            deleted.push(new URL(request.url).search);
+            return new HttpResponse(null, { status: 204 });
+        }));
+        const onClose = vi.fn();
+        render(<TaskFormDialog open onClose={onClose} task={occurrence} />, { wrapper });
+        fireEvent.click(screen.getByRole('button', { name: /delete all occurrences/i }));
+        expect(await screen.findByText(/all 3 occurrences of “Water plants”/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /^delete all$/i }));
+        await waitFor(() => expect(onClose).toHaveBeenCalled());
+        expect(deleted).toEqual(['?occurrences=all']);
+    });
+});

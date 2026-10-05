@@ -4,9 +4,6 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from datetime import time, timedelta, datetime
-from parsedatetime import Constants as pdtConstants
-from recurrent.event_parser import RecurringEvent
-from dateutil import rrule
 from uuid import uuid4
 import re
 
@@ -100,6 +97,17 @@ class Task(OptionallyColored):
     completion_time_spent = models.DurationField(null=True, blank=True, default=None)
     completion_subtree_time_spent = models.DurationField(null=True, blank=True, default=None)
     completion_dropped_rest = models.DurationField(null=True, blank=True, default=None)
+    #: Recurring tasks (README: Recurring tasks, services.series): the series
+    #: this task is one occurrence of, and the moment of that occurrence.
+    #: Every occurrence is completed and tracked on its own.
+    series = models.ForeignKey(to="TaskSeries", related_name="occurrences", null=True, blank=True,
+                               default=None, on_delete=models.SET_NULL)
+    occurrence = models.DateTimeField(null=True, blank=True, default=None)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["series", "occurrence"], name="one_task_per_occurrence"),
+        ]
 
     @property
     def is_done(self) -> bool:
@@ -107,6 +115,26 @@ class Task(OptionallyColored):
 
     def __str__(self) -> str:
         return "{} ({:.2f}) - ID: {}".format(self.header, self.priority, str(self.id))
+
+
+class TaskSeries(Owned):
+    """A recurring task's rule (README: Recurring tasks): its occurrences
+    are tasks of their own (``Task.series``), made by services.series — an
+    appointment's for the planning horizon ahead, any other task's when its
+    date is reached."""
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    #: As typed, e.g. "every tuesday at 20:00" (services.recurrence).
+    recurrence = models.CharField(max_length=256)
+    #: Where the rule's counting starts, so "every 4 weeks" keeps its rhythm.
+    anchor = models.DateTimeField()
+    #: Occurrences deleted on their own (ISO timestamps): not made again.
+    skipped = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        verbose_name_plural = "task series"
+
+    def __str__(self) -> str:
+        return self.recurrence
 
 
 class TaskEstimateChange(Owned):
@@ -167,6 +195,10 @@ class TimeBucketType(Owned):
     auto_color = models.BinaryField(max_length=3, blank=True, null=True, default=None)
     tags = models.ManyToManyField(to=Tag, related_name="time_bucket_types")
     start_times = models.CharField(max_length=512, default="")
+    #: Where the rule's counting starts (services.recurrence): "every other
+    #: week", "for the next 3 weeks" and "10 times" count from here. The
+    #: serializer resets it when the rule changes.
+    anchor = models.DateTimeField(default=timezone.now)
     duration = models.DurationField(default=timedelta(hours=4))
 
     def __str__(self):
@@ -193,21 +225,15 @@ class TimeBucketType(Owned):
         # Rules speak wall-clock time ("at 14:00") in the user's zone (the
         # active one, see UserTimeZoneMiddleware) — whatever zone ``start``
         # comes in. Each occurrence gets its own offset, so 14:00 stays 14:00
-        # across a daylight-saving change.
-        zone = timezone.get_current_timezone()
-        local_start = timezone.make_naive(start, zone)
-        consts = pdtConstants(localeID='de_DE', usePyICU=False)
-        consts.use24 = True
-        r = RecurringEvent(now_date=start, parse_constants=consts)
-        r.parse(self.start_times)
-        rfc_rule = r.get_RFC_rrule()
-        if rfc_rule is None:
+        # across a daylight-saving change (services.recurrence).
+        from tasks.services.recurrence import RecurrenceError, occurrences, parse_rule
+        try:
+            rule = parse_rule(self.start_times)
+        except RecurrenceError:
             return []  # not a recognizable recurrence rule
-        rr = rrule.rrulestr(rfc_rule, dtstart=local_start)
         buckets = []
-        for start_date in rr.between(local_start, local_start + generation_range, inc=True):
-            buckets.append(TimeBucket(start_date=timezone.make_aware(start_date, timezone=zone),
-                                      duration=self.duration, type=self))
+        for start_date in occurrences(rule, self.anchor or start, start, start + generation_range):
+            buckets.append(TimeBucket(start_date=start_date, duration=self.duration, type=self))
         return buckets
 
 

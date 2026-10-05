@@ -135,9 +135,12 @@ export const updateTask = (taskId: string, patch: TaskWrite) =>
 
 /** A task with subtasks needs ``children``: ``lift`` moves them up one
  *  level, ``delete`` removes the whole subtree (UI-1). */
-export const deleteTask = (taskId: string, children?: 'lift' | 'delete') =>
-    api.delete(`tasks/${taskId}/`, { params: children ? { children } : undefined })
-        .then(() => undefined);
+/** ``children``: what happens to a parent's subtasks; ``occurrences: 'all'``
+ *  deletes every occurrence of a recurring task (else only this one). */
+export const deleteTask = (taskId: string, children?: 'lift' | 'delete', occurrences?: 'all') =>
+    api.delete(`tasks/${taskId}/`, {
+        params: children || occurrences ? { ...(children ? { children } : {}), ...(occurrences ? { occurrences } : {}) } : undefined,
+    }).then(() => undefined);
 
 export const splitTask = (taskId: string, body: SplitRequest) =>
     api.post<SplitResponse>(`tasks/${taskId}/split/`, body).then(r => r.data);
@@ -206,4 +209,10 @@ export const updateBucketType = (bucketTypeId: number, patch: Partial<BucketType
 
 export const previewRecurrence = (startTimes: string) =>
     api.post<RecurrencePreview>('recurrence-preview/', { start_times: startTimes })
+        .then(r => r.data);
+
+/** The Repeats field's preview: the first occurrences from ``start`` (an
+ *  appointment's) or now, as the task would get them. */
+export const previewTaskRecurrence = (recurrence: string, start?: string | null) =>
+    api.post<RecurrencePreview>('recurrence-preview/', { recurrence, ...(start ? { start } : {}) })
         .then(r => r.data);

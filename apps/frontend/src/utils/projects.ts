@@ -13,8 +13,9 @@ export interface ProjectOption {
     color: string | null;
 }
 
+/** A recurring task is none: it cannot hold tasks (README: Recurring tasks). */
 export const isProject = (task: Task) =>
-    !task.parent_id || (task.children_ids?.length ?? 0) > 0;
+    !task.series_id && (!task.parent_id || (task.children_ids?.length ?? 0) > 0);
 
 /** Open projects and sub-projects as a tree: top level by priority, below
  *  in sibling order. */

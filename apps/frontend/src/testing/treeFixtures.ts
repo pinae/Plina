@@ -13,6 +13,9 @@ export const treeDefaults = {
     completion_subtree_time_spent: null, completion_dropped_rest: null,
     // Colors (§4.4): nothing chosen, nothing inherited.
     own_hex_color: null, inherited_hex_color: null,
+    // Does not repeat.
+    recurrence: null, recurrence_description: null, series_id: null, occurrence: null,
+    next_occurrence: null, occurrence_count: 0,
 } satisfies Partial<Task>;
 
 export const makeTask = (id: string, over: Partial<Task> = {}): Task => ({

@@ -62,7 +62,10 @@ def database_from_env(base_dir: Path) -> dict:
     if "." not in engine:
         engine = f"django.db.backends.{engine}"
     if engine == "django.db.backends.sqlite3":
-        return {"ENGINE": engine, "NAME": Path(os.environ.get("DB_NAME") or base_dir / "db.sqlite3")}
+        # IMMEDIATE: concurrent requests that write wait for each other
+        # instead of failing with "database is locked".
+        return {"ENGINE": engine, "NAME": Path(os.environ.get("DB_NAME") or base_dir / "db.sqlite3"),
+                "OPTIONS": {"transaction_mode": "IMMEDIATE", "timeout": 20}}
     return {
         "ENGINE": engine,
         "NAME": os.environ.get("DB_NAME", "plina"),

@@ -8,7 +8,7 @@
 
 export type TaskField =
     | 'header' | 'description' | 'hours' | 'deadline'
-    | 'priority' | 'tags' | 'parent' | 'start';
+    | 'priority' | 'tags' | 'parent' | 'start' | 'recurrence';
 
 export interface TaskFormValues {
     header: string;
@@ -201,7 +201,7 @@ export function validateTaskForm(values: TaskFormValues, context: ValidationCont
 const SERVER_FIELD: Record<string, TaskField> = {
     header: 'header', description: 'description', duration: 'hours',
     latest_finish_date: 'deadline', priority: 'priority', tag_ids: 'tags',
-    parent_id: 'parent', start_date: 'start',
+    parent_id: 'parent', start_date: 'start', recurrence: 'recurrence',
 };
 
 /** Map a DRF 400 payload ({field: [messages]}) onto form fields; anything that

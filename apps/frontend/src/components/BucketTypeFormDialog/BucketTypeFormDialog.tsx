@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
-    Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent,
-    DialogTitle, FormControl, InputLabel, List, ListItem, MenuItem,
+    Box, Button, Chip, Dialog, DialogActions, DialogContent,
+    DialogTitle, FormControl, InputLabel, MenuItem,
     Select, TextField,
 } from '@mui/material';
 
@@ -13,6 +13,7 @@ import {
 import type { Tag, TimeBucketType } from '../../types.ts';
 import { parseDurationMinutes } from '../../utils/duration.ts';
 import { ColorPicker } from '../ColorPicker/ColorPicker.tsx';
+import { RecurrenceField } from '../RecurrenceField/RecurrenceField.tsx';
 
 interface FormDialogProps {
     open: boolean;
@@ -90,8 +91,6 @@ function TagMultiSelect({ value, onChange }: {
     );
 }
 
-const PREVIEW_DEBOUNCE_MS = 300;
-
 /** Hours-as-decimal -> "HH:MM:00" duration string. */
 const hoursToDuration = (value: number): string => {
     const whole = Math.max(0, Math.floor(value || 1));
@@ -109,41 +108,8 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
     const [tagIds, setTagIds] = useState<string[]>(bucketType?.tags.map(t => t.id) ?? []);
     // The chosen color (§4.4); null = automatic, unlike the other types'.
     const [ownColor, setOwnColor] = useState<string | null>(bucketType?.own_hex_color ?? null);
-    const [occurrences, setOccurrences] = useState<string[]>([]);
-    const [previewError, setPreviewError] = useState<string | null>(null);
-    const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
     const create = useCreateBucketType();
     const update = useUpdateBucketType();
-
-    const changeStartTimes = (value: string) => {
-        setStartTimes(value);
-        // An emptied rule has no preview (cleared here, not in the effect).
-        if (!value.trim()) {
-            setOccurrences([]);
-            setPreviewError(null);
-        }
-    };
-
-    // Live preview: server-parsed occurrences, debounced while typing.
-    useEffect(() => {
-        clearTimeout(debounce.current);
-        if (!startTimes.trim()) return;
-        debounce.current = setTimeout(() => {
-            previewRecurrence(startTimes)
-                .then(preview => {
-                    setOccurrences(preview.occurrences);
-                    setPreviewError(null);
-                })
-                .catch(error => {
-                    setOccurrences([]);
-                    setPreviewError(
-                        error?.response?.data?.detail
-                        ?? 'Could not preview the recurrence rule.',
-                    );
-                });
-        }, PREVIEW_DEBOUNCE_MS);
-        return () => clearTimeout(debounce.current);
-    }, [startTimes]);
 
     const submit = () => {
         if (!name.trim() || !startTimes.trim()) return;
@@ -154,7 +120,7 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
             tag_ids: tagIds,
             own_hex_color: ownColor,
         };
-        const done = { onSuccess: () => { setName(''); changeStartTimes(''); setOwnColor(null); onClose(); } };
+        const done = { onSuccess: () => { setName(''); setStartTimes(''); setOwnColor(null); onClose(); } };
         if (editing) {
             update.mutate({ id: bucketType.id, patch: payload }, done);
         } else {
@@ -170,25 +136,11 @@ export function BucketTypeFormDialog({ open, onClose, bucketType }: FormDialogPr
                     label="Name" value={name} autoFocus margin="dense"
                     onChange={event => setName(event.target.value)}
                 />
-                <TextField
-                    label="Recurrence" value={startTimes}
+                <RecurrenceField
+                    label="Recurrence" value={startTimes} onChange={setStartTimes} preview={previewRecurrence}
                     placeholder="every weekday at 09:00"
-                    helperText="Plain language, e.g. “every day at 14:00”"
-                    onChange={event => changeStartTimes(event.target.value)}
+                    helperText="Plain language, e.g. “every day at 14:00”, “every other monday at 9”, “weekdays 8:00 and 13:00”"
                 />
-                {previewError && <Alert severity="error">{previewError}</Alert>}
-                {occurrences.length > 0 && (
-                    <List dense sx={{ bgcolor: 'action.hover', borderRadius: 1 }}>
-                        {occurrences.map(occurrence => (
-                            <ListItem key={occurrence} data-testid="preview-occurrence">
-                                {new Date(occurrence).toLocaleString(undefined, {
-                                    weekday: 'short', month: 'short', day: 'numeric',
-                                    hour: '2-digit', minute: '2-digit',
-                                })}
-                            </ListItem>
-                        ))}
-                    </List>
-                )}
                 <TextField
                     label="Duration (hours)" type="number" value={hours}
                     onChange={event => setHours(event.target.value)}

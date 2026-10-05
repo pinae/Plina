@@ -86,7 +86,8 @@ def start_tracking(task: Task, now: Optional[datetime] = None
 
     open_session = _open_session()
     if open_session is not None and open_session.task_id == task.id:
-        activate(project_for_tracking(task))
+        if project_for_tracking(task) is not None:
+            activate(project_for_tracking(task))
         return open_session, None
     stopped = None
     if open_session is not None:
@@ -98,7 +99,8 @@ def start_tracking(task: Task, now: Optional[datetime] = None
     task.start_date = now
     task.save(update_fields=["is_fixed", "start_date"])
     session = TrackingSession.objects.create(task=task, start=now)
-    activate(project_for_tracking(task))
+    if project_for_tracking(task) is not None:  # a recurring task keeps the active project
+        activate(project_for_tracking(task))
     if stopped is not None:
         recalculate_accepted_plan(now=now)  # the stopped task's time changed
     return session, stopped

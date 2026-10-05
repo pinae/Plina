@@ -31,6 +31,11 @@ describe('projectOptions', () => {
             ['Milk', 0, 'Milk'],
         ]);
     });
+
+    it('never offers a recurring task: it cannot hold tasks', () => {
+        const chore = task('Chore', { series_id: 's1', occurrence: '2026-10-06T20:00:00+02:00' });
+        expect(projectOptions([...tasks, chore]).map(p => p.id)).not.toContain('Chore');
+    });
 });
 
 describe('isInside / projectFor', () => {

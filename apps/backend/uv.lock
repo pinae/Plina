@@ -21,10 +21,8 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "gunicorn" },
     { name = "mozilla-django-oidc" },
-    { name = "parsedatetime" },
     { name = "psycopg", extra = ["binary"] },
     { name = "python-dateutil" },
-    { name = "recurrent" },
 ]
 
 [package.metadata]
@@ -34,10 +32,8 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.17.0" },
     { name = "gunicorn", specifier = ">=26.2.0" },
     { name = "mozilla-django-oidc", specifier = ">=5.0.2" },
-    { name = "parsedatetime", specifier = ">=2.6" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "python-dateutil", specifier = ">=2.9" },
-    { name = "recurrent", specifier = ">=0.4" },
 ]
 
 [[package]]
@@ -401,15 +397,6 @@ wheels = [
 ]
 
 [[package]]
-name = "parsedatetime"
-version = "2.6"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a8/20/cb587f6672dbe585d101f590c3871d16e7aec5a576a1694997a3777312ac/parsedatetime-2.6.tar.gz", hash = "sha256:4cb368fbb18a0b7231f4d76119165451c8d2e35951455dfee97c62a87b04d455", size = 60114, upload-time = "2020-05-31T23:50:57.443Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9d/a4/3dd804926a42537bf69fb3ebb9fd72a50ba84f807d95df5ae016606c976c/parsedatetime-2.6-py3-none-any.whl", hash = "sha256:cb96edd7016872f58479e35879294258c71437195760746faffedb692aef000b", size = 42548, upload-time = "2020-05-31T23:50:56.315Z" },
-]
-
-[[package]]
 name = "psycopg"
 version = "3.3.6"
 source = { registry = "https://pypi.org/simple" }
@@ -507,15 +494,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
 ]
-
-[[package]]
-name = "recurrent"
-version = "0.4.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "parsedatetime" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/fc/bcfe62401f4ac5ab45ba859e6c422a80389331a45c19fa6b5ef3aba06e29/recurrent-0.4.1.tar.gz", hash = "sha256:5452089d2cf1294dbaa51463798284bd8abd9a852ff0785dbb317851c5b596a6", size = 22950, upload-time = "2021-08-16T15:52:42.967Z" }
 
 [[package]]
 name = "requests"

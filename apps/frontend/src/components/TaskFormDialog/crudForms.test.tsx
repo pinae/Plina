@@ -54,6 +54,7 @@ const server = setupServer(
         const { start_times } = (await request.json()) as { start_times: string };
         if (start_times === 'every weekday at 09:00') {
             return HttpResponse.json({
+                description: 'every weekday at 09:00',
                 occurrences: [
                     '2026-07-08T09:00:00+02:00', '2026-07-09T09:00:00+02:00',
                     '2026-07-10T09:00:00+02:00', '2026-07-13T09:00:00+02:00',

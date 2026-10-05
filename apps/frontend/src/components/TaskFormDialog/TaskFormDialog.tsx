@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import type { AxiosError } from 'axios';
 import {
     Alert, Autocomplete, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent,
-    DialogTitle, FormControl, FormControlLabel, FormHelperText, IconButton, InputLabel, MenuItem,
-    Select, Slider, TextField, Tooltip, Typography,
+    DialogContentText, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton,
+    InputLabel, MenuItem, Radio, RadioGroup, Select, Slider, TextField, Tooltip, Typography,
 } from '@mui/material';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 
-import { useCreateTask, useSettings, useTags, useTasks, useUpdateTask } from '../../queries.tsx';
+import { previewTaskRecurrence } from '../../api.ts';
+import { useCreateTask, useDeleteTask, useSettings, useTags, useTasks, useUpdateTask } from '../../queries.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
+import { RecurrenceField } from '../RecurrenceField/RecurrenceField.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
 import { inheritedColorFor } from '../../utils/taskColors.ts';
 import { ColorPicker } from '../ColorPicker/ColorPicker.tsx';
@@ -101,6 +103,7 @@ function TaskForm({
     const settings = useSettings();
     const create = useCreateTask();
     const update = useUpdateTask();
+    const deleteTask = useDeleteTask();
 
     const [header, setHeader] = useState(task?.header ?? '');
     const [description, setDescription] = useState(task?.description ?? '');
@@ -123,9 +126,15 @@ function TaskForm({
         toLocalInput(task?.start_date ?? (initialStart ? initialStart.toISOString() : null)),
     );
     const [startIncomplete, setStartIncomplete] = useState(false);
+    // Repeats (README: Recurring tasks); "" = once. A recurring task's edit
+    // goes to this occurrence or the following ones too.
+    const [recurrence, setRecurrence] = useState(task?.recurrence ?? '');
+    const recurring = Boolean(task?.series_id);
+    const [scope, setScope] = useState<'this' | 'following'>('this');
+    const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
     // Unsaved changes = the editable values differ from when the form opened.
     const snapshot = JSON.stringify([header, description, hours, estimateReason, deadline, priority,
-        tagIds, chosenParentId, ownColor, isAppointment, start]);
+        tagIds, chosenParentId, ownColor, isAppointment, start, recurrence]);
     const [initialSnapshot] = useState(snapshot);
     const dirty = snapshot !== initialSnapshot;
 
@@ -141,9 +150,10 @@ function TaskForm({
     const taskList = tasks.data ?? [];
     const parentId = chosenParentId !== undefined ? chosenParentId
         : editing ? task.parent_id ?? null : settings.data?.active_task_id ?? null;
-    // Possible parents: open tasks, never the task itself or its subtasks.
+    // Possible parents: open tasks, never the task itself or its subtasks;
+    // never a recurring task (it cannot have subtasks).
     const parentOptions = taskList
-        .filter(t => !t.is_done && t.id !== task?.id && !(task && t.ancestor_ids?.includes(task.id)))
+        .filter(t => !t.is_done && t.id !== task?.id && !(task && t.ancestor_ids?.includes(task.id)) && !t.series_id)
         .map(t => ({
             id: t.id,
             path: [...(t.ancestor_ids ?? []).map(id => taskList.find(a => a.id === id)?.header ?? ''), t.header].join(' › '),
@@ -206,7 +216,7 @@ function TaskForm({
         };
     };
 
-    const pending = create.isPending || update.isPending;
+    const pending = create.isPending || update.isPending || deleteTask.isPending;
 
     /** Save, then ``after`` (close by default, or switch to another task). */
     const submit = (after: () => void = onClose) => {
@@ -228,6 +238,8 @@ function TaskForm({
             start_date: isAppointment && start ? new Date(start).toISOString() : task?.start_date ?? null,
         };
         if (editing && estimateReason) payload.estimate_reason = estimateReason;
+        if (recurrence.trim() !== (task?.recurrence ?? '')) payload.recurrence = recurrence.trim();
+        if (recurring) payload.scope = scope;
         const options = {
             onSuccess: after,
             onError: (error: Error) => {
@@ -252,6 +264,18 @@ function TaskForm({
     const spentMinutes = parseDurationMinutes(task?.time_spent ?? null) ?? 0;
     const estimateMinutes = parseDurationMinutes(task?.duration ?? null) ?? defaultDuration;
     const priorityFeedback = shown('priority');
+
+    const deleteAll = () => {
+        if (!task) return;
+        deleteTask.mutate({ taskId: task.id, occurrences: 'all' }, {
+            onSuccess: () => { setConfirmDeleteAll(false); onClose(); },
+            onError: () => {
+                setConfirmDeleteAll(false);
+                setGeneralError('The occurrences could not be deleted. Check your connection and try again.');
+            },
+        });
+    };
+    const startIso = isAppointment && start ? new Date(start).toISOString() : null;
 
     const navigate = (direction: -1 | 1) => {
         if (!onNavigate || !(direction === -1 ? canNavigate?.previous : canNavigate?.next)) return;
@@ -415,6 +439,33 @@ function TaskForm({
                         onBlur={event => { setStartIncomplete(isBadInput(event.target)); touch('start'); }}
                     />
                 )}
+                <RecurrenceField
+                    label="Repeats" value={recurrence} placeholder="every tuesday at 20:00"
+                    onChange={value => { setRecurrence(value); edited('recurrence'); }}
+                    preview={text => previewTaskRecurrence(text, startIso)} previewKey={startIso ?? ''}
+                    error={shown('recurrence')}
+                    helperText={recurring
+                        ? 'Empty = no further occurrences after this one'
+                        : 'Empty = once. E.g. “every tuesday at 20:00”, “every 4 weeks on tuesday 14:00”, “every first sunday of the month at 12:30”'}
+                />
+                {recurring && task?.occurrence && (
+                    <FormControl>
+                        <FormLabel id="task-scope-label" sx={{ typography: 'body2' }}>
+                            This occurrence: {new Date(task.occurrence).toLocaleString(undefined, {
+                                weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                            })}. Save the changes for
+                        </FormLabel>
+                        <RadioGroup row aria-labelledby="task-scope-label" value={scope}
+                            onChange={event => setScope(event.target.value as 'this' | 'following')}>
+                            <FormControlLabel value="this" control={<Radio size="small" />} label="this occurrence" />
+                            <FormControlLabel value="following" control={<Radio size="small" />}
+                                label="this and the following ones" />
+                        </RadioGroup>
+                        {recurrence.trim() !== (task.recurrence ?? '') && (
+                            <FormHelperText>A changed rule applies from this occurrence on.</FormHelperText>
+                        )}
+                    </FormControl>
+                )}
                 {attempts > 0 && visibleErrorCount > 0 && (
                     <Alert severity="error">
                         Please fix the highlighted field{visibleErrorCount > 1 ? `s (${visibleErrorCount})` : ''} before saving.
@@ -423,9 +474,14 @@ function TaskForm({
                 {generalError && <Alert severity="error">{generalError}</Alert>}
             </DialogContent>
             <DialogActions>
-                {editing && (
+                {editing && !recurring && (
                     <Button onClick={onSplit} sx={{ mr: 'auto' }}>
                         {task.children_ids?.length ? `Edit parts (${task.children_ids.length})` : 'Split into subtasks'}
+                    </Button>
+                )}
+                {editing && recurring && (
+                    <Button color="error" onClick={() => setConfirmDeleteAll(true)} disabled={pending} sx={{ mr: 'auto' }}>
+                        Delete all occurrences
                     </Button>
                 )}
                 <Button onClick={onClose}>Cancel</Button>
@@ -433,6 +489,25 @@ function TaskForm({
                     {editing ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
+            {editing && recurring && (
+                <Dialog open={confirmDeleteAll} onClose={() => setConfirmDeleteAll(false)} maxWidth="xs">
+                    <DialogTitle>Delete all occurrences?</DialogTitle>
+                    <DialogContent>
+                        <DialogContentText>
+                            {task.occurrence_count === 1
+                                ? `“${task.header}” will not repeat any more.`
+                                : `All ${task.occurrence_count} occurrences of “${task.header}” are deleted, completed ones too, and it will not repeat any more.`}
+                            {' '}This cannot be undone. To delete only this occurrence, delete it in the Tasks tab.
+                        </DialogContentText>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setConfirmDeleteAll(false)}>Cancel</Button>
+                        <Button color="error" variant="contained" onClick={deleteAll} disabled={deleteTask.isPending}>
+                            Delete all
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+            )}
         </Box>
     );
 }

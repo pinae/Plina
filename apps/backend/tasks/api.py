@@ -25,13 +25,24 @@ class RecalculatingModelViewSet(viewsets.ModelViewSet):
 
 
 class TaskViewSet(RecalculatingModelViewSet):
-    queryset = Task.objects.all()
+    queryset = Task.objects.select_related("series")
     serializer_class = TaskSerializer
 
+    def list(self, request, *args, **kwargs):
+        catch_up_on_series()
+        return super().list(request, *args, **kwargs)
+
     def destroy(self, request, *args, **kwargs):
-        """A parent needs ``?children=lift`` or ``?children=delete`` (§4.5)."""
+        """A parent needs ``?children=lift`` or ``?children=delete`` (§4.5).
+        A recurring task's occurrence goes alone (its date is skipped), or
+        with all the others: ``?occurrences=all``."""
+        from tasks.services.series import delete_occurrence, delete_series
         from tasks.services.tree import TreeError, delete_task
         task = self.get_object()
+        if task.series_id is not None:
+            delete_series(task) if request.query_params.get("occurrences") == "all" else delete_occurrence(task)
+            recalculate_accepted_plan()
+            return Response(status=204)
         try:
             delete_task(task, request.query_params.get("children"))
         except TreeError as error:
@@ -199,16 +210,33 @@ class SettingsView(APIView):
 
 
 class RecurrencePreviewView(APIView):
-    """Live preview for the bucket-type form: the next occurrences of a
-    recurrence string, or the parser error explaining why there are none."""
+    """Live preview for the Repeats field of the task form (``recurrence``,
+    from ``start``) and the bucket-type form (``start_times``): the rule in
+    words and its next occurrences, or the parser error explaining why there
+    are none."""
 
     def post(self, request):
+        from django.utils.dateparse import parse_datetime
+        from .services import recurrence
         from .services.bucket_service import RecurrenceError, preview_occurrences
-        try:
-            occurrences = preview_occurrences(request.data.get("start_times", ""))
-        except RecurrenceError as error:
-            return Response({"detail": str(error)}, status=400)
-        return Response({"occurrences": [occ.isoformat() for occ in occurrences]})
+        if "recurrence" in request.data:
+            from .services.series import preview
+            start = request.data.get("start")
+            start = parse_datetime(start) if isinstance(start, str) and start else None
+            try:
+                description, occurrences = preview(str(request.data["recurrence"]), start)
+            except recurrence.RecurrenceError as error:
+                return Response({"detail": str(error)}, status=400)
+            if not occurrences:
+                return Response({"detail": f"“{request.data['recurrence']}” does not happen any more."}, status=400)
+        else:
+            text = request.data.get("start_times", "")
+            try:
+                occurrences = preview_occurrences(text)
+            except RecurrenceError as error:
+                return Response({"detail": str(error)}, status=400)
+            description = recurrence.describe(recurrence.parse_rule(text))
+        return Response({"description": description, "occurrences": [occ.isoformat() for occ in occurrences]})
 
 
 class TimeBucketViewSet(RecalculatingModelViewSet):
@@ -225,6 +253,14 @@ from tasks.services.planner_service import (build_planning_tasks, rank_tasks, al
 from tasks.services.bucket_service import gather_time_buckets
 from tasks.services.plan_store import recalculate_accepted_plan
 from tasks.models import Task, TimeBucket, TaskDependency, Plan
+
+
+def catch_up_on_series():
+    """Recurring tasks (services.series): make the occurrences that are due
+    before tasks or plans are shown; the accepted plan takes them in."""
+    from tasks.services.series import keep_up
+    if keep_up():
+        recalculate_accepted_plan()
 
 def _task_colors():
     """Color each task shows (§4.4), from one snapshot of the tree; a Rest
@@ -326,6 +362,7 @@ class PlannerView(APIView):
         })
 
     def get(self, request):
+        catch_up_on_series()
         accepted = Plan.objects.filter(is_accepted=True).first()
         if accepted is not None:
             return self._accepted_plan_response(accepted)
@@ -374,6 +411,7 @@ class PlanAlternativesView(APIView):
     def _compute(self):
         from tasks.services.alternatives import generate_alternatives
 
+        catch_up_on_series()
         now = timezone.now()
         snapshots = build_planning_tasks(
             Task.objects.filter(completed_at=None).prefetch_related("tags")

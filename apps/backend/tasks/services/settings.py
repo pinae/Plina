@@ -35,16 +35,17 @@ def user_time_zone() -> Optional[tzinfo]:
 
 
 def is_project(task: Task) -> bool:
-    """Projects are top-level tasks; sub-projects are tasks with subtasks."""
-    return task.parent_id is None or task.children.exists()
+    """Projects are top-level tasks; sub-projects are tasks with subtasks.
+    A recurring task is none: it cannot hold tasks (services.series)."""
+    return task.series_id is None and (task.parent_id is None or task.children.exists())
 
 
-def project_for_tracking(task: Task) -> Task:
+def project_for_tracking(task: Task) -> Optional[Task]:
     """The project that becomes active when ``task`` is tracked: the nearest
     task, starting with ``task`` and walking up, that is top-level or has
-    subtasks (§2)."""
+    subtasks (§2) — None for a recurring top-level task."""
     current = task
-    while not is_project(current):
+    while current is not None and not is_project(current):
         current = current.parent
     return current
 

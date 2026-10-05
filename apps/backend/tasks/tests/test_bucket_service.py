@@ -138,3 +138,46 @@ class GenerateBucketsDefaultArgTest(TestCase):
         self.assertGreaterEqual(
             buckets[0].start_date, timezone.now() - timedelta(days=1)
         )
+
+
+class BucketRhythmTest(TestCase):
+    """A bucket type's rule counts from its anchor (README: Time buckets):
+    "every other week" keeps its weeks whenever the plan is computed, and a
+    changed rule counts from the change."""
+
+    def setUp(self):
+        from zoneinfo import ZoneInfo
+        self.berlin = ZoneInfo("Europe/Berlin")
+        self.zone = timezone.override(self.berlin)
+        self.zone.__enter__()
+        self.addCleanup(self.zone.__exit__, None, None, None)
+        self.anchor = timezone.datetime(2026, 10, 5, 8, 0, tzinfo=self.berlin)  # a Monday
+        self.bucket_type = TimeBucketType.objects.create(
+            name="Sprint review", start_times="every other week on monday at 14:00",
+            duration=timedelta(hours=2), anchor=self.anchor)
+
+    def starts(self, start, days=28):
+        return [bucket.start_date.astimezone(self.berlin).strftime("%d.%m")
+                for bucket in self.bucket_type.generate_buckets(timedelta(days=days), start=start)]
+
+    def test_the_weeks_stay_the_same_whenever_it_is_generated(self):
+        self.assertEqual(self.starts(self.anchor), ["05.10", "19.10"])
+        self.assertEqual(self.starts(self.anchor + timedelta(weeks=1)), ["19.10", "02.11"])
+        self.assertEqual(self.starts(self.anchor - timedelta(weeks=1)), ["05.10", "19.10"])
+
+    def test_a_series_with_an_end_ends(self):
+        self.bucket_type.start_times = "every monday at 14:00 for the next 2 weeks"
+        self.bucket_type.save()
+        self.assertEqual(self.starts(self.anchor, days=60), ["05.10", "12.10"])
+
+    def test_changing_the_rule_counts_from_the_change(self):
+        from tasks.tests.support import APIClient
+        response = APIClient().patch(f"/api/buckettypes/{self.bucket_type.id}/",
+                                     {"start_times": "every 3 weeks on tuesday at 9:00"}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.bucket_type.refresh_from_db()
+        self.assertGreater(self.bucket_type.anchor, timezone.now() - timedelta(minutes=1))
+        anchor = self.bucket_type.anchor
+        APIClient().patch(f"/api/buckettypes/{self.bucket_type.id}/", {"name": "Review"}, format="json")
+        self.bucket_type.refresh_from_db()
+        self.assertEqual(self.bucket_type.anchor, anchor)  # the same rule: the same rhythm
