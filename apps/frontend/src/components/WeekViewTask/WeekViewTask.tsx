@@ -8,6 +8,7 @@ import { minutesToPixels, type DragMode } from '../../utils/weekDrag.ts';
 import { useVerticalDrag } from '../../hooks/useVerticalDrag.ts';
 import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
 import { TaskHoverCard } from '../TaskHoverCard/TaskHoverCard.tsx';
+import type { Lane } from '../../utils/overlapLanes.ts';
 
 /** Live state of an in-progress drag, used to move the dragged appointment as a
  *  floating card and to fade/shrink the tasks the edit would overlap. */
@@ -72,6 +73,8 @@ export interface WeekViewTaskProps {
     resolveCursorHalf?: (clientX: number) => 'left' | 'right';
     /** Report the live drag (null clears it) for the drag layer + fading. */
     onDragChange?: (drag: ActiveDrag | null) => void;
+    /** Its lane among overlapping cards (side by side). */
+    lane?: Lane;
 }
 
 const RESIZE_HANDLE_PX = 10;
@@ -80,7 +83,7 @@ const RESIZE_HANDLE_PX = 10;
  *  (cut off by overflow or a line clamp). 1px slack absorbs rounding. */
 const isClipped = (el: HTMLElement | null) => Boolean(el && el.scrollHeight > el.clientHeight + 1);
 
-export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay, resolveCursorHalf, onDragChange }) => {
+export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay, resolveCursorHalf, onDragChange, lane }) => {
     const date = new Date(task.startTime);
     const startMinutes = date.getHours() * 60 + date.getMinutes();
     const [dragMode, setDragMode] = useState<DragMode | null>(null);
@@ -139,10 +142,12 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
         ? (task.tags.length === 1 ? task.tags[0] : `linear-gradient(to bottom, ${task.tags.join(', ')})`)
         : 'transparent';
 
-    // An overlapped appointment shrinks to half the column, away from the cursor.
+    // An overlapped appointment shrinks to half the column, away from the
+    // cursor; otherwise overlapping cards share the column side by side.
     const shrunk = task.shrinkSide === 'left' || task.shrinkSide === 'right';
-    const width = shrunk ? '50%' : 'calc(100% - 1px)';
-    const left = task.shrinkSide === 'right' ? '50%' : 0;
+    const lanes = lane && lane.count > 1 ? lane : null;
+    const width = shrunk ? '50%' : lanes ? `calc(${100 / lanes.count}% - 1px)` : 'calc(100% - 1px)';
+    const left = shrunk ? (task.shrinkSide === 'right' ? '50%' : 0) : lanes ? `${(lanes.index * 100) / lanes.count}%` : 0;
 
     const handlePointerEnter = (event: React.PointerEvent<HTMLElement>) => {
         // Desktop only: touch has no hover (a tap opens the edit dialog, which
@@ -159,6 +164,8 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
         <Box
             data-testid="week-view-task"
             data-rest={task.isRest ? 'true' : undefined}
+            // "Merge tasks" draws from card to card (README: Calendar).
+            data-task-id={task.isRest ? undefined : task.taskId}
             onMouseDown={canMove ? startDrag('move') : undefined}
             onClick={!canMove && canEdit ? () => onEdit!(task.taskId!) : undefined}
             onPointerEnter={handlePointerEnter}

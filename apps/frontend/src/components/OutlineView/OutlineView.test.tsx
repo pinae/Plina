@@ -14,6 +14,7 @@ import { minutesToDurationString, parseDurationMinutes } from '../../utils/durat
 import type { Task, TaskWrite } from '../../types.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 import { applyMove } from '../../utils/treeDnd.ts';
+import { calendarHandlers } from '../../testing/calendarHandlers.ts';
 
 let tasks: Task[] = [];
 let activeId: string | null = 'hw';
@@ -54,6 +55,7 @@ const initialTasks = (): Task[] => [
 ];
 
 const server = setupServer(
+    ...calendarHandlers(),
     http.get(`${API}/tasks/`, () => HttpResponse.json(withTree(tasks))),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),
     http.get(`${API}/settings/`, () => HttpResponse.json(settingsFor(withTree(tasks), activeId))),
@@ -919,5 +921,20 @@ describe('recurring tasks (README: Recurring tasks)', () => {
         await select('Water plants');
         press('s');
         expect(await screen.findByText(/a recurring task cannot have subtasks/)).toBeInTheDocument();
+    });
+});
+
+describe('tasks from a calendar (README: Calendar)', () => {
+    it('marks the tasks a calendar brought', async () => {
+        const event = { header: 'Kickoff', description: '', place: '', start: '2026-10-14T08:00:00Z',
+            end: '2026-10-14T09:00:00Z', all_day: false };
+        tasks = [...tasks, makeTask('kickoff', {
+            header: 'Kickoff', order: 4, is_appointment: true, start_date: event.start,
+            calendar: { id: 'link-1', name: 'Google Calendar', event, pending: [] },
+        })];
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'Kickoff' });
+        expect(within(row('Kickoff')).getByTestId('from-calendar')).toHaveAccessibleName('from Google Calendar');
+        expect(within(row('CAD')).queryByTestId('from-calendar')).toBeNull();
     });
 });

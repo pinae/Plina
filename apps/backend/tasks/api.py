@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
 from .services.colors import FALLBACK_COLOR, ensure_auto_colors
-from .serializers import (TaskSerializer, TagSerializer,
+from .serializers import (MarkerSerializer, TaskSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer)
 
@@ -25,7 +25,8 @@ class RecalculatingModelViewSet(viewsets.ModelViewSet):
 
 
 class TaskViewSet(RecalculatingModelViewSet):
-    queryset = Task.objects.select_related("series")
+    queryset = Task.objects.select_related("series", "deadline_marker") \
+        .prefetch_related("calendar_links__subscription")
     serializer_class = TaskSerializer
 
     def list(self, request, *args, **kwargs):
@@ -39,6 +40,8 @@ class TaskViewSet(RecalculatingModelViewSet):
         from tasks.services.series import delete_occurrence, delete_series
         from tasks.services.tree import TreeError, delete_task
         task = self.get_object()
+        # An imported task (README: Calendar) dismisses its event: the link
+        # stays without the task, so the next read does not bring it back.
         if task.series_id is not None:
             delete_series(task) if request.query_params.get("occurrences") == "all" else delete_occurrence(task)
             recalculate_accepted_plan()
@@ -148,6 +151,39 @@ class TaskViewSet(RecalculatingModelViewSet):
         return Response({"task": TaskSerializer(task, context=self.get_serializer_context()).data})
 
     @action(detail=True, methods=["post"])
+    def merge(self, request, pk=None):
+        """Merge ``other_id`` into this task (README: Calendar): ``values``
+        are the merged fields (as for PATCH); the other task's time,
+        dependencies, subtasks and calendar link move over, then it goes."""
+        from django.db import transaction
+        from tasks.services.merge import MergeError, merge_into, merge_refusal
+        kept = self.get_object()
+        other = Task.objects.filter(id=request.data.get("other_id")).first() \
+            if _is_uuid(request.data.get("other_id")) else None
+        if other is None:
+            return Response({"detail": "The task to merge is gone. Reload and try again."}, status=400)
+        refusal = merge_refusal(kept, other)
+        values = dict(request.data.get("values") or {})
+        if refusal is None and str(values.get("parent_id")) == str(other.id):
+            refusal = f"“{kept.header}” cannot go into “{other.header}”: that one goes in the merge."
+        if refusal:
+            return Response({"detail": refusal}, status=400)
+        for unmerged in ("recurrence", "scope", "calendar_resolved"):
+            values.pop(unmerged, None)
+        try:
+            with transaction.atomic():
+                serializer = TaskSerializer(kept, data=values, partial=True, context=self.get_serializer_context())
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                notes = merge_into(kept, other)
+        except MergeError as error:
+            return Response(error.payload, status=400)
+        ensure_auto_colors()
+        recalculate_accepted_plan()
+        kept = self.get_queryset().get(id=kept.id)
+        return Response({"task": TaskSerializer(kept, context=self.get_serializer_context()).data, "notes": notes})
+
+    @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
         """Undo a completion (also of auto-completed parents, §4.5)."""
         from tasks.services.completion import CompletionError, reopen
@@ -176,6 +212,111 @@ class DependencyViewSet(mixins.ListModelMixin,
     def perform_destroy(self, instance):
         super().perform_destroy(instance)
         recalculate_accepted_plan()
+
+def _is_uuid(value) -> bool:
+    from uuid import UUID
+    try:
+        UUID(str(value))
+        return True
+    except ValueError:
+        return False
+
+
+class MarkerViewSet(RecalculatingModelViewSet):
+    """Markers (README: Calendar); ``?from=…&to=…`` lists those overlapping."""
+    serializer_class = MarkerSerializer
+
+    def get_queryset(self):
+        from django.db.models import DateTimeField, ExpressionWrapper, F
+        from django.utils.dateparse import parse_datetime
+        from tasks.models import Marker
+        markers = Marker.objects.prefetch_related("calendar_links__subscription")
+        start = parse_datetime(self.request.query_params.get("from") or "")
+        end = parse_datetime(self.request.query_params.get("to") or "")
+        if start is not None:
+            markers = markers.annotate(end_at=ExpressionWrapper(F("start") + F("duration"),
+                                                                output_field=DateTimeField()))
+            markers = markers.filter(end_at__gte=start)
+        if end is not None:
+            markers = markers.filter(start__lte=end)
+        return markers
+
+    def perform_update(self, serializer):
+        from tasks.services.markers import move_deadlines
+        marker = serializer.save()
+        move_deadlines(marker)  # named deadlines move along
+        recalculate_accepted_plan()
+
+    @action(detail=True, methods=["post"])
+    def convert(self, request, pk=None):
+        """Make the marker a special bucket (README: Calendar): the body as
+        for a bucket type; the frame defaults to the marker's time."""
+        from django.db import transaction
+        from tasks.services.colors import ensure_bucket_type_colors
+        from tasks.services.markers import make_special_bucket
+        marker = self.get_object()
+        data = {"name": marker.title, "special_start": marker.start, "special_end": marker.end,
+                **request.data}
+        serializer = TimeBucketTypeSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            bucket_type = serializer.save()
+            make_special_bucket(marker, bucket_type)
+        ensure_bucket_type_colors()
+        recalculate_accepted_plan()
+        bucket_type.refresh_from_db()
+        return Response(TimeBucketTypeSerializer(bucket_type).data, status=201)
+
+
+class CalendarViewSet(viewsets.ModelViewSet):
+    """The calendars Plina reads (README: Calendar)."""
+
+    def get_queryset(self):
+        from tasks.models import CalendarSubscription
+        return CalendarSubscription.objects.order_by("name")
+
+    def get_serializer_class(self):
+        from tasks.serializers import CalendarSubscriptionSerializer
+        return CalendarSubscriptionSerializer
+
+    def perform_create(self, serializer):
+        self._read(serializer.save())  # says at once whether the address works
+
+    def perform_update(self, serializer):
+        url_changed = "url" in serializer.validated_data
+        subscription = serializer.save()
+        if url_changed:
+            self._read(subscription)
+
+    def perform_destroy(self, instance):
+        from tasks.services.calendar_sync import unsubscribe
+        unsubscribe(instance)
+        recalculate_accepted_plan()
+
+    def _read(self, subscription):
+        from django.utils import timezone as tz
+        from tasks.services.calendar_sync import CalendarError, sync
+        now = tz.now()
+        try:
+            sync(subscription, now)
+            subscription.last_synced_at, subscription.last_error = now, ""
+        except CalendarError as error:
+            subscription.last_error = str(error)
+        subscription.last_attempt_at = now
+        subscription.save(update_fields=["last_synced_at", "last_error", "last_attempt_at"])
+        recalculate_accepted_plan()
+
+    @action(detail=False, methods=["post"], url_path="sync")
+    def sync_all(self, request):
+        """Read the calendars not read for a while (``force``: all now). The
+        app calls this when it opens and every few minutes."""
+        from tasks.services.calendar_sync import sync_due
+        changed = sync_due(force=bool(request.data.get("force")))
+        if changed:
+            recalculate_accepted_plan()
+        serializer = self.get_serializer_class()
+        return Response({"changed": changed, "calendars": serializer(self.get_queryset(), many=True).data})
+
 
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()

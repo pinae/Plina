@@ -120,6 +120,8 @@ describe('dropTimeFromOffset', () => {
 
 const API = 'http://localhost:8000/api';
 const server = setupServer(
+    ...calendarHandlers(),
+    ...noBucketTypes(),
     http.get(`${API}/plan/`, () => HttpResponse.json(planPayload)),
     http.get(`${API}/settings/`, () => HttpResponse.json({
         default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',
@@ -548,6 +550,7 @@ describe('moving a bucket (regression: no duplicate)', () => {
 import { firstFreeDay } from '../../utils/planToWeek.ts';
 import type { PlannedBucket } from '../../types.ts';
 import { treeDefaults } from '../../testing/treeFixtures.ts';
+import { calendarHandlers, noBucketTypes } from '../../testing/calendarHandlers.ts';
 
 function emptyBucket(id: string, day: string): PlannedBucket {
     return {
@@ -634,5 +637,128 @@ describe('feasibility banner and jump button', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe('calendar in the Week view (README: Calendar)', () => {
+    const conference = {
+        id: 'm-conf', title: 'Conference', description: '', place: '', start: new Date(2026, 6, 9).toISOString(),
+        duration: '1 00:00:00', end: new Date(2026, 6, 10).toISOString(), all_day: true, calendar: null,
+        deadline_task_count: 0,
+    };
+    const hackathon = {
+        id: 7, name: 'Hackathon', start_times: '', duration: '1 00:00:00', tags: [], hex_color: '#ff9800',
+        own_hex_color: null, auto_hex_color: '#ff9800', is_special: true, calendar: null,
+        special_start: new Date(2026, 6, 10, 8).toISOString(), special_end: new Date(2026, 6, 11, 18).toISOString(),
+    };
+    const task = (id: string, over: Partial<Task> = {}): Task => ({
+        id, header: id, description: '', start_date: null, duration: '01:00:00', latest_finish_date: null,
+        time_spent: '00:00:00', priority: 5, tags: [], hex_color: null, is_fixed: false, is_appointment: false,
+        completed_at: null, is_done: false, active_tracking_start: null, ...treeDefaults, ...over,
+    });
+    const mine = task('t1', { header: 'Design Schema' });
+    const invitation = task('meet', {
+        header: 'Team Sync', is_appointment: true, start_date: '2026-07-08T10:00:00', calendar: {
+            id: 'link-1', name: 'Google Calendar', pending: [],
+            event: { header: 'Team Sync', description: '', place: 'Room 1', start: '2026-07-08T10:00:00',
+                end: '2026-07-08T11:00:00', all_day: false },
+        },
+    });
+    const lane = (day: Date) => screen.getByLabelText(`marks on ${day.toDateString()}`);
+
+    beforeAll(() => {
+        // jsdom has no PointerEvent (and no layout: the card under the
+        // pointer is the event's target).
+        if (!('PointerEvent' in window)) {
+            class PointerEventPolyfill extends MouseEvent {
+                pointerId: number;
+                pointerType: string;
+                constructor(type: string, init: PointerEventInit = {}) {
+                    super(type, init);
+                    this.pointerId = init.pointerId ?? 1;
+                    this.pointerType = init.pointerType ?? 'mouse';
+                }
+            }
+            (window as unknown as { PointerEvent: unknown }).PointerEvent = PointerEventPolyfill;
+        }
+    });
+
+    it('shows markers and special buckets under their days and opens them', async () => {
+        server.use(
+            http.get(`${API}/markers/`, () => HttpResponse.json([conference])),
+            http.get(`${API}/buckettypes/`, () => HttpResponse.json([hackathon])),
+            http.get(`${API}/tags/`, () => HttpResponse.json([])),
+            http.post(`${API}/recurrence-preview/`, () => HttpResponse.json({ description: '', occurrences: [] })),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        await waitFor(() => expect(lane(new Date(2026, 6, 9))).toHaveTextContent('⚑ Conference'));
+        // From its start time on the first day, all day on the next.
+        await waitFor(() => expect(lane(new Date(2026, 6, 10))).toHaveTextContent(/^◆ 08:00.*Hackathon$/));
+        expect(lane(new Date(2026, 6, 11))).toHaveTextContent(/^◆ Hackathon$/);
+        expect(lane(new Date(2026, 6, 8)).textContent).toBe('');
+
+        fireEvent.click(screen.getByText('⚑ Conference'));
+        expect(await screen.findByText('Marker “Conference”')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByText('Marker “Conference”')).toBeNull());
+
+        fireEvent.click(screen.getByText('◆ Hackathon'));
+        expect(await screen.findByText('Edit special bucket')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByText('Edit special bucket')).toBeNull());
+
+        fireEvent.click(lane(new Date(2026, 6, 8)));
+        expect(await screen.findByText('New marker')).toBeInTheDocument();
+        expect((screen.getByLabelText('First day') as HTMLInputElement).value).toBe('2026-07-08');
+    });
+
+    it('merges two tasks dragged onto each other, keeping your own', async () => {
+        const merges: { id: string; body: unknown }[] = [];
+        server.use(
+            http.get(`${API}/tasks/`, () => HttpResponse.json([mine, invitation])),
+            http.get(`${API}/tags/`, () => HttpResponse.json([])),
+            http.post(`${API}/tasks/:id/merge/`, async ({ params, request }) => {
+                merges.push({ id: String(params.id), body: await request.json() });
+                return HttpResponse.json({ task: mine, notes: [] });
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+        const card = (id: string) => document.querySelector(`[data-task-id="${id}"]`)!;
+
+        const button = screen.getByRole('button', { name: /merge tasks/i });
+        expect(button).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(button);
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByText(/drag from one task onto another/i)).toBeInTheDocument();
+
+        // From the invitation onto your task: yours stays.
+        fireEvent.pointerDown(card('meet'), { button: 0, clientX: 100, clientY: 10 });
+        fireEvent.pointerMove(card('t1'), { clientX: 120, clientY: 80 });
+        expect(screen.getByText('Merge “Team Sync” and “Design Schema”')).toBeInTheDocument();
+        fireEvent.pointerUp(card('t1'), { clientX: 120, clientY: 80 });
+
+        expect(await screen.findByText('Merge two tasks')).toBeInTheDocument();
+        expect(screen.getByText(/“Design Schema” stays/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Merge' }));
+
+        await waitFor(() => expect(merges).toHaveLength(1));
+        expect(merges[0]).toMatchObject({ id: 't1', body: { other_id: 'meet' } });
+        expect(await screen.findByText('Merged into “Design Schema”.')).toBeInTheDocument();
+        // Done merging: the cards open again on a click.
+        expect(button).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('stops merging with Esc', async () => {
+        server.use(http.get(`${API}/tasks/`, () => HttpResponse.json([mine, invitation])));
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+
+        fireEvent.click(screen.getByRole('button', { name: /merge tasks/i }));
+        fireEvent.keyDown(window, { key: 'Escape' });
+
+        expect(screen.getByRole('button', { name: /merge tasks/i })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.queryByText(/drag from one task onto another/i)).toBeNull();
     });
 });

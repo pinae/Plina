@@ -12,6 +12,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import App from './App.tsx';
 import { API, makeTask, makerTag, settingsFor, treeTasks } from './testing/treeFixtures.ts';
 import type { Task, TaskWrite } from './types.ts';
+import { calendarHandlers, noBucketTypes } from './testing/calendarHandlers.ts';
 
 let tasks: Task[] = [];
 let posted: TaskWrite[] = [];
@@ -19,6 +20,8 @@ const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const settings = () => ({ ...settingsFor(tasks, 'hw'), time_zone: zone });
 
 const server = setupServer(
+    ...calendarHandlers(),
+    ...noBucketTypes(),
     http.get(`${API}/tasks/`, () => HttpResponse.json(tasks)),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),
     http.get(`${API}/settings/`, () => HttpResponse.json(settings())),

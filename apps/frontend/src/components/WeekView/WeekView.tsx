@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Button, Typography } from '@mui/material';
+import { Box, Button, Tooltip, Typography } from '@mui/material';
 import { DayColumn, BUCKET_COLUMN_WIDTH } from '../DayColumn/DayColumn.tsx';
 import { TimeScale, TIME_SCALE_WIDTH } from '../TimeScale/TimeScale.tsx';
 import type { ViewTask, TaskActions, ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
@@ -42,8 +42,43 @@ const FRAME_MARGIN = 8;
 const ROW_MIN_WIDTH = 1400;
 const DAY_MIN_WIDTH = (ROW_MIN_WIDTH - TIME_SCALE_WIDTH) / 7;
 
+/** Shown over its days in the lane below the day headers (README: Calendar):
+ *  a marker, or a special bucket's time frame. */
+export interface DayMark {
+    id: string;
+    kind: 'marker' | 'special';
+    title: string;
+    start: Date;
+    end: Date;
+    color: string;
+    allDay: boolean;
+}
+
+const dayStart = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate());
+
+/** The marks on ``day``: overlapping it, or — a moment — in it. */
+const marksOnDay = (marks: DayMark[], day: Date) => {
+    const from = dayStart(day).getTime();
+    const until = addDays(dayStart(day), 1).getTime();
+    return marks
+        .filter(mark => (mark.end.getTime() > mark.start.getTime()
+            ? mark.start.getTime() < until && mark.end.getTime() > from
+            : mark.start.getTime() >= from && mark.start.getTime() < until))
+        .sort((a, b) => a.start.getTime() - b.start.getTime());
+};
+
+const markLabel = (mark: DayMark, day: Date) => {
+    const time = mark.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return mark.allDay || mark.start < dayStart(day) ? mark.title : `${time} ${mark.title}`;
+};
+
 interface WeekViewProps {
     tasks: ViewTask[];
+    /** Markers and special buckets for the lane below the day headers. */
+    marks?: DayMark[];
+    onMarkClick?: (mark: DayMark) => void;
+    /** A click on a day's empty lane: a new marker on that day. */
+    onMarkCreate?: (day: Date) => void;
     initialDate?: Date;
     zones?: BucketZone[];
     actions?: TaskActions;
@@ -63,7 +98,7 @@ interface WeekViewProps {
 export const WeekView: React.FC<WeekViewProps> = ({
     tasks, initialDate = new Date(), zones = [], actions,
     onZoneClick, onZoneChange, onCreateTask, onTaskEdit, onTaskChange,
-    onTaskDragChange, activeDrag, viewRange,
+    onTaskDragChange, activeDrag, viewRange, marks = [], onMarkClick, onMarkCreate,
 }) => {
     const [currentDate, setCurrentDate] = useState(initialDate);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -256,6 +291,37 @@ export const WeekView: React.FC<WeekViewProps> = ({
                             <Typography variant="h5" sx={{ fontWeight: 'normal' }}>
                                 {day.getDate().toString().padStart(2, '0')}
                             </Typography>
+                            {/* Markers and special buckets on this day (README: Calendar);
+                                a click on the free lane makes a new marker. */}
+                            <Box data-testid="day-marks" aria-label={`marks on ${day.toDateString()}`}
+                                onClick={onMarkCreate ? () => onMarkCreate(dayStart(day)) : undefined}
+                                sx={{
+                                    display: 'flex', flexDirection: 'column', gap: 0.25, mt: 0.5, minHeight: 20,
+                                    borderRadius: 1, cursor: onMarkCreate ? 'cell' : undefined,
+                                    '&:hover': onMarkCreate ? { bgcolor: 'action.hover' } : undefined,
+                                }}>
+                                {marksOnDay(marks, day).map(mark => (
+                                    <Tooltip key={mark.id} title={mark.kind === 'special'
+                                        ? `Special bucket: ${mark.title} — the regular buckets give way`
+                                        : `${mark.title} · ${mark.start.toLocaleString()}`}>
+                                        <Box component="button" type="button" data-testid="day-mark"
+                                            data-kind={mark.kind}
+                                            onClick={event => { event.stopPropagation(); onMarkClick?.(mark); }}
+                                            sx={{
+                                                all: 'unset', boxSizing: 'border-box', cursor: 'pointer', px: 0.75,
+                                                fontSize: '0.72rem', lineHeight: '18px', textAlign: 'left',
+                                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                                borderRadius: '4px', color: '#fff',
+                                                bgcolor: mark.kind === 'special' ? mark.color : 'transparent',
+                                                border: `1px solid ${mark.color}`,
+                                                borderLeftWidth: mark.kind === 'marker' ? 4 : 1,
+                                                '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+                                            }}>
+                                            {mark.kind === 'special' ? '◆ ' : '⚑ '}{markLabel(mark, day)}
+                                        </Box>
+                                    </Tooltip>
+                                ))}
+                            </Box>
                         </Box>
                     ))}
                 </Box>

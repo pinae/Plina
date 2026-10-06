@@ -6,9 +6,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { SettingsPage } from './SettingsPage.tsx';
 import { API, loggedInSession } from '../../testing/treeFixtures.ts';
+import { calendarHandlers } from '../../testing/calendarHandlers.ts';
 
 let patches: unknown[] = [];
 const server = setupServer(
+    ...calendarHandlers(),
     http.get(`${API}/auth/session/`, () => HttpResponse.json(loggedInSession())),
     http.get(`${API}/settings/`, () => HttpResponse.json({
         default_duration: '01:00:00', active_task_id: null, active_task_path: [], time_zone: '',

@@ -234,4 +234,20 @@ describe('DayColumn', () => {
 
         expect(mockCreateTask).not.toHaveBeenCalled();
     });
+
+    it('puts overlapping cards side by side (e.g. your appointment and an invitation)', () => {
+        const card = (title: string, startTime: string, duration: number): ViewTask => ({
+            title, startTime, duration, color: '#123456', manuallySet: true, description: '', tags: [],
+            continues: false, taskId: title, isAppointment: true,
+        });
+        render(<DayColumn {...defaultProps} tasks={[
+            card('Kickoff', '2024-01-01T14:00:00', 60), card('Project kickoff', '2024-01-01T14:00:00', 90),
+            card('Later', '2024-01-01T17:00:00', 60),
+        ]} />);
+        const [mine, invitation, later] = screen.getAllByTestId('week-view-task');
+        expect(invitation).toHaveStyle({ left: '0%' });
+        expect(mine).toHaveStyle({ left: '50%' });
+        expect(getComputedStyle(mine).width).toBe('calc(50% - 1px)');
+        expect(getComputedStyle(later).width).toBe('calc(100% - 1px)');
+    });
 });

@@ -69,9 +69,15 @@ class Task(OptionallyColored):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     header = models.CharField(max_length=1024)
     description = models.TextField(default="", blank=True)
+    #: Where it takes place (an address, a room, a video call link).
+    place = models.CharField(max_length=512, default="", blank=True)
     start_date = models.DateTimeField("start date", blank=True, null=True, default=None)
     duration = models.DurationField(blank=True, null=True, default=None)
     latest_finish_date = models.DateTimeField("due until", blank=True, null=True, default=None)
+    #: A named deadline (README: Calendar): the deadline is this marker's
+    #: start and moves with it (services.markers).
+    deadline_marker = models.ForeignKey(to="Marker", related_name="deadline_tasks", null=True, blank=True,
+                                        default=None, on_delete=models.SET_NULL)
     time_spent = models.DurationField(default=timedelta(seconds=0))
     priority = models.FloatField(default=5.0)
     tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
@@ -137,6 +143,30 @@ class TaskSeries(Owned):
         return self.recurrence
 
 
+class Marker(Owned):
+    """Something on certain days or at a certain time (README: Calendar): a
+    conference, a holiday, a deadline. Shown in the Week view and usable as
+    a named deadline; it plans nothing. All-day events of a calendar become
+    markers; one can become a special bucket."""
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    title = models.CharField(max_length=512)
+    description = models.TextField(default="", blank=True)
+    place = models.CharField(max_length=512, default="", blank=True)
+    start = models.DateTimeField()
+    #: All day: from midnight to midnight (23 or 25 hours on clock changes).
+    duration = models.DurationField(default=timedelta(days=1))
+
+    class Meta:
+        ordering = ["start"]
+
+    @property
+    def end(self) -> datetime:
+        return self.start + self.duration
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.start:%Y-%m-%d %H:%M})"
+
+
 class TaskEstimateChange(Owned):
     """One change of a task's estimate (§4.6) — the history is kept so
     estimates can be compared with tracked time when analyzing projects."""
@@ -195,6 +225,12 @@ class TimeBucketType(Owned):
     auto_color = models.BinaryField(max_length=3, blank=True, null=True, default=None)
     tags = models.ManyToManyField(to=Tag, related_name="time_bucket_types")
     start_times = models.CharField(max_length=512, default="")
+    #: A special bucket (README: Calendar) — travel, a hackathon: its buckets
+    #: exist only from ``special_start`` until ``special_end`` (by its rule,
+    #: or the whole time without one), and the regular buckets there give
+    #: way to them.
+    special_start = models.DateTimeField(null=True, blank=True, default=None)
+    special_end = models.DateTimeField(null=True, blank=True, default=None)
     #: Where the rule's counting starts (services.recurrence): "every other
     #: week", "for the next 3 weeks" and "10 times" count from here. The
     #: serializer resets it when the rule changes.
@@ -216,10 +252,16 @@ class TimeBucketType(Owned):
         """Sets the chosen color; None = automatic."""
         self.color = bytes.fromhex(new_color.lstrip("#")) if new_color else None
 
+    @property
+    def is_special(self) -> bool:
+        return self.special_start is not None and self.special_end is not None
+
     def generate_buckets(self, generation_range: timedelta, start: datetime | None = None) -> List[TimeBucket]:
         if start is None:
             start = timezone.now()
         start = start.replace(second=0, microsecond=0)
+        if self.is_special:
+            return self._special_buckets(start, start + generation_range)
         if not self.start_times.strip():
             return []  # manual-only type: buckets are placed by hand
         # Rules speak wall-clock time ("at 14:00") in the user's zone (the
@@ -234,6 +276,29 @@ class TimeBucketType(Owned):
         buckets = []
         for start_date in occurrences(rule, self.anchor or start, start, start + generation_range):
             buckets.append(TimeBucket(start_date=start_date, duration=self.duration, type=self))
+        return buckets
+
+    def _special_buckets(self, start: datetime, end: datetime) -> List[TimeBucket]:
+        """Within the frame only: by the rule, cut to the frame — or, without
+        a rule, the whole frame as one bucket."""
+        if self.special_end <= start or self.special_start >= end:
+            return []
+        if not self.start_times.strip():
+            return [TimeBucket(start_date=self.special_start, duration=self.special_end - self.special_start,
+                               type=self)]
+        from tasks.services.recurrence import RecurrenceError, occurrences, parse_rule
+        try:
+            rule = parse_rule(self.start_times)
+        except RecurrenceError:
+            return []
+        buckets = []
+        lookback = self.duration  # one that began before the frame but reaches into it
+        for start_date in occurrences(rule, self.special_start - lookback, max(start, self.special_start) - lookback,
+                                      min(end, self.special_end)):
+            bucket_start = max(start_date, self.special_start)
+            bucket_end = min(start_date + self.duration, self.special_end)
+            if bucket_end > bucket_start:
+                buckets.append(TimeBucket(start_date=bucket_start, duration=bucket_end - bucket_start, type=self))
         return buckets
 
 
@@ -257,6 +322,62 @@ class TimeBucket(Owned):
     @end_date.setter
     def set_end_date(self, new_end_date: datetime):
         self.duration = new_end_date - self.start_date
+
+
+class CalendarSubscription(Owned):
+    """A calendar Plina reads (README: Calendar): its secret iCal address,
+    e.g. Google Calendar's "Secret address in iCal format". Its events are
+    kept in Plina by services.calendar_sync."""
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    name = models.CharField(max_length=128)
+    #: Secret: whoever has it can read the calendar. Never sent back.
+    url = models.CharField(max_length=2048)
+    #: Your address in that calendar: events you declined are left out.
+    email = models.CharField(max_length=254, default="", blank=True)
+    #: The color its appointments get.
+    hex_color = models.CharField(max_length=7, default="#7986cb")
+    last_attempt_at = models.DateTimeField(null=True, blank=True, default=None)
+    last_synced_at = models.DateTimeField(null=True, blank=True, default=None)
+    last_error = models.TextField(default="", blank=True)
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class CalendarLink(Owned):
+    """What one event (occurrence) of a calendar became in Plina — an
+    appointment, a marker or a special bucket — so the next sync updates it
+    instead of adding it again. A merge moves it to the task kept; deleting
+    the task in Plina leaves the link without one: the event is dismissed."""
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    subscription = models.ForeignKey(to=CalendarSubscription, related_name="links", on_delete=models.CASCADE)
+    uid = models.CharField(max_length=512)
+    #: The occurrence of a repeating event (UTC ISO); "" for a single one.
+    recurrence_id = models.CharField(max_length=64, default="", blank=True)
+    task = models.ForeignKey(to=Task, related_name="calendar_links", null=True, blank=True, default=None,
+                             on_delete=models.SET_NULL)
+    marker = models.ForeignKey(to=Marker, related_name="calendar_links", null=True, blank=True, default=None,
+                               on_delete=models.SET_NULL)
+    bucket_type = models.ForeignKey(to=TimeBucketType, related_name="calendar_links", null=True, blank=True,
+                                    default=None, on_delete=models.SET_NULL)
+    #: The event as last read (header, description, place, start, end,
+    #: all_day): the base the next sync compares with.
+    data = models.JSONField(default=dict)
+    #: Plina made the object from the event: it goes when the event goes
+    #: (unless worked on). False once merged into your task or converted.
+    owned = models.BooleanField(default=True)
+    #: Fields the calendar changed but Plina kept (you had changed them).
+    pending = models.JSONField(default=list, blank=True)
+    #: The occurrence's start, to know which links the read covered.
+    start = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["subscription", "uid", "recurrence_id"], name="one_link_per_event"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subscription.name}: {self.uid} {self.recurrence_id}"
 
 
 class TrackingSession(Owned):

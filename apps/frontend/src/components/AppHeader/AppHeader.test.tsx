@@ -14,6 +14,7 @@ import { API, loggedInSession, makeTask, makerTag, settingsFor, treeTasks } from
 import { projectFor } from '../../utils/projects.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 import type { PlanResponse, SettingsWrite, Task, TaskWrite } from '../../types.ts';
+import { calendarHandlers, noBucketTypes } from '../../testing/calendarHandlers.ts';
 
 let tasks: Task[] = [];
 let tracked: { id: string; since: string } | null = null;
@@ -43,6 +44,8 @@ const plan = (): PlanResponse => ({
 });
 
 const server = setupServer(
+    ...calendarHandlers(),
+    ...noBucketTypes(),
     http.get(`${API}/plan/`, () => HttpResponse.json(plan())),
     http.get(`${API}/tasks/`, () => HttpResponse.json(withTracking())),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),

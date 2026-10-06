@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary.tsx';
 import { AppHeader } from './components/AppHeader/AppHeader.tsx';
 import { useIsMobile } from './hooks/useResponsive.ts';
 import { useTimeZoneSync } from './hooks/useTimeZoneSync.ts';
+import { useCalendarSync } from './queries.tsx';
 
 type TabKey = 'tasks' | 'week' | 'calendar' | 'tags' | 'buckets' | 'dependencies';
 
@@ -40,6 +41,8 @@ function App() {
   const compact = useIsMobile();
   // Recurring buckets ("every day at 14:00") follow the device's time zone.
   useTimeZoneSync();
+  // The calendars Plina reads (README: Calendar), while the app is open.
+  useCalendarSync();
 
   const handleChange = (_event: React.SyntheticEvent, newValue: TabKey) => {
     setTab(newValue);

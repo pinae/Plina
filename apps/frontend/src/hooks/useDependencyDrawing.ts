@@ -7,6 +7,9 @@
  * Rows carry `data-row-key`; the row under the pointer is found with
  * elementFromPoint (touch pointers stay captured by the start row), else the
  * event's target.  Near the edges of the scrolling area the view scrolls.
+ *
+ * The Week view's "Merge tasks" draws the same way between task cards
+ * (``attribute: 'data-task-id'``, without AltGr; README: Calendar).
  */
 import { useEffect, useRef, useState } from 'react';
 
@@ -21,7 +24,12 @@ export interface DrawLine {
     to: Point;
 }
 
-const ROW = '[data-row-key]';
+export interface DrawingOptions {
+    /** The attribute that marks the elements a line goes between (its value is their key). */
+    attribute?: string;
+    /** A tap on AltGr toggles the mode (the Tasks tab). */
+    altGr?: boolean;
+}
 /** Controls inside a row keep working (expand, complete, priority, ▶). */
 const CONTROLS = 'button, input, [role="slider"], .MuiSlider-root';
 /** Within this distance of the scrolling area's edge the view scrolls … */
@@ -32,9 +40,9 @@ const MODIFIERS = ['Control', 'Shift', 'Alt', 'AltGraph', 'Meta'];
 
 const isAltGr = (event: KeyboardEvent) => event.key === 'AltGraph' || event.code === 'AltRight';
 
-function rowKeyAt(x: number, y: number, fallback: EventTarget | null): string | null {
+function rowKeyAt(attribute: string, x: number, y: number, fallback: EventTarget | null): string | null {
     const element = document.elementFromPoint?.(x, y) ?? (fallback instanceof Element ? fallback : null);
-    return element?.closest(ROW)?.getAttribute('data-row-key') ?? null;
+    return element?.closest(`[${attribute}]`)?.getAttribute(attribute) ?? null;
 }
 
 function scrollParent(element: Element | null): HTMLElement | null {
@@ -45,11 +53,12 @@ function scrollParent(element: Element | null): HTMLElement | null {
     return document.scrollingElement as HTMLElement | null;
 }
 
-export function useDependencyDrawing(onDraw: (fromKey: string, toKey: string) => void) {
+export function useDependencyDrawing(onDraw: (fromKey: string, toKey: string) => void,
+    { attribute = 'data-row-key', altGr: withAltGr = true }: DrawingOptions = {}) {
     const [active, setActive] = useState(false);
     const [line, setLine] = useState<DrawLine | null>(null);
-    const latest = useRef({ active, onDraw });
-    useEffect(() => { latest.current = { active, onDraw }; });
+    const latest = useRef({ active, onDraw, attribute });
+    useEffect(() => { latest.current = { active, onDraw, attribute }; });
     // The drag in progress: the start row and where on it the drag began.
     const start = useRef<{ key: string; row: HTMLElement; offset: Point; pointer: Point } | null>(null);
     // AltGr while held: the mode before it, and whether a line was drawn.
@@ -65,7 +74,7 @@ export function useDependencyDrawing(onDraw: (fromKey: string, toKey: string) =>
         const rect = drag.row.getBoundingClientRect();
         setLine({
             fromKey: drag.key,
-            overKey: rowKeyAt(pointer.x, pointer.y, target),
+            overKey: rowKeyAt(latest.current.attribute, pointer.x, pointer.y, target),
             from: { x: rect.left + drag.offset.x, y: rect.top + drag.offset.y },
             to: pointer,
         });
@@ -75,8 +84,8 @@ export function useDependencyDrawing(onDraw: (fromKey: string, toKey: string) =>
         if (!latest.current.active || event.button !== 0) return;
         const target = event.target as Element;
         if (target.closest(CONTROLS)) return;
-        const row = target.closest<HTMLElement>(ROW);
-        const key = row?.getAttribute('data-row-key');
+        const row = target.closest<HTMLElement>(`[${attribute}]`);
+        const key = row?.getAttribute(attribute);
         if (!row || !key) return;
         event.preventDefault(); // no text selection while drawing
         const rect = row.getBoundingClientRect();
@@ -94,7 +103,7 @@ export function useDependencyDrawing(onDraw: (fromKey: string, toKey: string) =>
                 altGr.current = null;
                 setActive(false);
             } else if (isAltGr(event)) {
-                if (event.repeat || altGr.current || isTyping(event.target)) return;
+                if (!withAltGr || event.repeat || altGr.current || isTyping(event.target)) return;
                 altGr.current = { before: latest.current.active, drew: false };
                 setActive(true);
             } else if (altGr.current && !MODIFIERS.includes(event.key)) {
@@ -122,7 +131,7 @@ export function useDependencyDrawing(onDraw: (fromKey: string, toKey: string) =>
             window.removeEventListener('keyup', onKeyUp);
             window.removeEventListener('blur', onBlur);
         };
-    }, []);
+    }, [withAltGr]);
 
     // While a line is drawn: follow the pointer, scroll near the edges.
     const drawing = line !== null;
@@ -131,7 +140,7 @@ export function useDependencyDrawing(onDraw: (fromKey: string, toKey: string) =>
         const onMove = (event: PointerEvent) => update({ x: event.clientX, y: event.clientY }, event.target);
         const onUp = (event: PointerEvent) => {
             const fromKey = start.current?.key;
-            const toKey = rowKeyAt(event.clientX, event.clientY, event.target);
+            const toKey = rowKeyAt(latest.current.attribute, event.clientX, event.clientY, event.target);
             stopLine();
             if (fromKey && toKey && toKey !== fromKey) latest.current.onDraw(fromKey, toKey);
         };

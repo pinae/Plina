@@ -19,6 +19,8 @@ export interface Task {
     id: string;
     header: string;
     description: string;
+    /** Where it takes place; "" = nowhere in particular. */
+    place: string;
     start_date: string | null;
     duration: string | null;
     latest_finish_date: string | null;
@@ -70,6 +72,29 @@ export interface Task {
     next_occurrence: string | null;
     /** How many occurrences the series has, done ones included. */
     occurrence_count: number;
+    /** A named deadline (README: Calendar): the deadline is this marker's start. */
+    deadline_marker: { id: string; title: string; start: string } | null;
+    /** The calendar event it follows (README: Calendar), null for a task of yours. */
+    calendar: TaskCalendar | null;
+}
+
+/** The calendar event behind a task, as last read. */
+export interface TaskCalendar {
+    id: string;
+    /** The calendar's name, e.g. "Google". */
+    name: string;
+    event: CalendarEvent;
+    /** What the calendar changed but Plina kept (you had changed it). */
+    pending: ('header' | 'description')[];
+}
+
+export interface CalendarEvent {
+    header: string;
+    description: string;
+    place: string;
+    start: string;
+    end: string;
+    all_day: boolean;
 }
 
 /** Fields accepted when creating/updating a task (tag_ids is write-only). */
@@ -95,6 +120,61 @@ export interface TaskWrite {
     recurrence?: string;
     /** A recurring task's edit: this occurrence only, or the following open ones too. */
     scope?: 'this' | 'following';
+    place?: string;
+    /** A named deadline: the deadline follows this marker; null = a date of its own. */
+    deadline_marker_id?: string | null;
+    /** Compared with the calendar: what it changed and Plina kept is settled. */
+    calendar_resolved?: boolean;
+}
+
+/** Something on certain days or at a certain time (README: Calendar). */
+export interface Marker {
+    id: string;
+    title: string;
+    description: string;
+    place: string;
+    start: string;
+    /** "HH:MM:SS" or "D HH:MM:SS". */
+    duration: string;
+    end: string;
+    /** From midnight to midnight. */
+    all_day: boolean;
+    /** The calendar it comes from. */
+    calendar: { id: string; name: string } | null;
+    /** How many tasks have it as their deadline. */
+    deadline_task_count: number;
+}
+
+export type MarkerWrite = Partial<Pick<Marker, 'title' | 'description' | 'place' | 'start' | 'duration'>>;
+
+/** A calendar Plina reads (README: Calendar); the address is never sent back. */
+export interface CalendarSubscription {
+    id: string;
+    name: string;
+    /** E.g. "calendar.google.com …". */
+    url_hint: string;
+    email: string;
+    hex_color: string;
+    last_synced_at: string | null;
+    last_error: string;
+}
+
+export interface CalendarSubscriptionWrite {
+    name?: string;
+    url?: string;
+    email?: string;
+    hex_color?: string;
+}
+
+export interface CalendarSyncResponse {
+    changed: boolean;
+    calendars: CalendarSubscription[];
+}
+
+export interface MergeResponse {
+    task: Task;
+    /** E.g. a dependency left out because it would have made a cycle. */
+    notes: string[];
 }
 
 export interface TagWrite {
@@ -109,6 +189,9 @@ export interface BucketTypeWrite {
     tag_ids?: string[];
     /** The chosen color; null = automatic (§4.4). */
     own_hex_color?: string | null;
+    /** A special bucket's time frame (README: Calendar); both or neither. */
+    special_start?: string | null;
+    special_end?: string | null;
 }
 
 export interface RecurrencePreview {
@@ -129,6 +212,13 @@ export interface TimeBucketType {
     own_hex_color: string | null;
     /** Its automatic color, unlike the other bucket types'. */
     auto_hex_color: string | null;
+    /** A special bucket (README: Calendar): only within this time frame,
+     *  where the regular buckets give way to it. */
+    special_start?: string | null;
+    special_end?: string | null;
+    is_special?: boolean;
+    /** The calendar event it was made from. */
+    calendar?: { id: string; name: string } | null;
 }
 
 export interface TimeBucket {

@@ -4,7 +4,8 @@
  * default duration used for tasks without an own estimate
  * (planning, Σ parts, split editor ghosts; changing it re-plans the accepted
  * plan on the server) and the time frame the Week view opens on, filling the
- * screen — usually the work hours.
+ * screen — usually the work hours — and the calendars Plina reads
+ * (README: Calendar).
  */
 import { useState } from 'react';
 import { Alert, Box, Button, CircularProgress, TextField, Typography } from '@mui/material';
@@ -13,6 +14,7 @@ import type { AxiosError } from 'axios';
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { useSettings, useUpdateSettings } from '../../queries.tsx';
 import { AccountSettings } from '../AccountSettings/AccountSettings.tsx';
+import { CalendarSettings } from '../CalendarSettings/CalendarSettings.tsx';
 import { minutesToText } from '../../utils/outline.ts';
 import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import { clockMinutes } from '../../utils/timeScale.ts';
@@ -139,6 +141,8 @@ export function SettingsPage() {
                 <DefaultDurationForm initial={settings.data.default_duration} />
                 <Typography variant="h6" sx={{ mt: 2 }}>Week view</Typography>
                 <WeekViewFrameForm start={settings.data.week_view_start} end={settings.data.week_view_end} />
+                <Typography variant="h6" sx={{ mt: 2 }}>Calendars</Typography>
+                <CalendarSettings />
             </> : <CircularProgress aria-label="loading" size={24} />}
         </Box>
     );

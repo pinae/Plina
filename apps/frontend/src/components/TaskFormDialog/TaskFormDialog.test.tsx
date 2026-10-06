@@ -13,11 +13,13 @@ import { useState, type ReactNode } from 'react';
 import { TaskFormDialog } from './TaskFormDialog.tsx';
 import { treeDefaults } from '../../testing/treeFixtures.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
+import { calendarHandlers } from '../../testing/calendarHandlers.ts';
 
 const API = 'http://localhost:8000/api';
 let posted: Record<string, unknown>[] = [];
 
 const server = setupServer(
+    ...calendarHandlers(),
     http.get(`${API}/tags/`, () => HttpResponse.json([])),
     http.get(`${API}/tasks/`, () => HttpResponse.json([])),
     http.get(`${API}/settings/`, () => HttpResponse.json({
@@ -516,5 +518,85 @@ describe('TaskFormDialog — repeats (README: Recurring tasks)', () => {
         fireEvent.click(screen.getByRole('button', { name: /^delete all$/i }));
         await waitFor(() => expect(onClose).toHaveBeenCalled());
         expect(deleted).toEqual(['?occurrences=all']);
+    });
+});
+
+describe('TaskFormDialog — place, markers and calendars (README: Calendar)', () => {
+    const inTwoWeeks = new Date();
+    inTwoWeeks.setDate(inTwoWeeks.getDate() + 14);
+    inTwoWeeks.setHours(9, 0, 0, 0);
+    const conference = {
+        id: 'm-conf', title: 'Conference', description: '', place: '', start: inTwoWeeks.toISOString(),
+        duration: '1 00:00:00', end: inTwoWeeks.toISOString(), all_day: false, calendar: null, deadline_task_count: 0,
+    };
+    const appointment = {
+        id: 'kickoff', header: 'Kickoff', description: 'Bring the slides', start_date: '2026-10-14T08:00:00Z',
+        duration: '01:00:00', latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [],
+        hex_color: null, is_fixed: false, is_appointment: true, completed_at: null, is_done: false,
+        active_tracking_start: null, ...treeDefaults, place: 'Room 4.12',
+        calendar: {
+            id: 'link-1', name: 'Google Calendar', pending: ['header' as const],
+            event: {
+                header: 'Project kickoff', description: 'Bring the slides', place: 'Room 4.12',
+                start: '2026-10-14T08:00:00Z', end: '2026-10-14T09:00:00Z', all_day: false,
+            },
+        },
+    };
+    const prepare = {
+        ...appointment, id: 'prep', header: 'Prepare talk', is_appointment: false, start_date: null, place: '',
+        calendar: null, latest_finish_date: conference.start,
+        deadline_marker: { id: conference.id, title: conference.title, start: conference.start },
+    };
+    const markersHandler = http.get(`${API}/markers/`, () => HttpResponse.json([conference]));
+
+    it('saves a place', async () => {
+        render(<TaskFormDialog open onClose={() => { }} />, { wrapper });
+        fireEvent.change(headerInput(), { target: { value: 'Workshop' } });
+        fireEvent.change(screen.getByRole('textbox', { name: /^place$/i }), { target: { value: ' Lab 2 ' } });
+        clickCreate();
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({ header: 'Workshop', place: 'Lab 2' });
+    });
+
+    it('takes a marker as the deadline', async () => {
+        server.use(markersHandler);
+        render(<TaskFormDialog open onClose={() => { }} />, { wrapper });
+        fireEvent.change(headerInput(), { target: { value: 'Prepare talk' } });
+        fireEvent.mouseDown(await screen.findByRole('combobox', { name: /deadline at a marker/i }));
+        fireEvent.click(await screen.findByRole('option', { name: /^Conference/ }));
+
+        expect(screen.getByText('At “Conference” — moves with it')).toBeInTheDocument();
+        clickCreate();
+        await waitFor(() => expect(posted).toHaveLength(1));
+        expect(posted[0]).toMatchObject({ deadline_marker_id: 'm-conf', latest_finish_date: conference.start });
+    });
+
+    it('lets go of the marker when the deadline gets a date of its own', async () => {
+        const patches: Record<string, unknown>[] = [];
+        server.use(markersHandler, http.patch(`${API}/tasks/prep/`, async ({ request }) => {
+            patches.push((await request.json()) as Record<string, unknown>);
+            return HttpResponse.json(prepare);
+        }));
+        render(<TaskFormDialog open onClose={() => { }} task={prepare} />, { wrapper });
+        expect(await screen.findByText('At “Conference” — moves with it')).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText(/^deadline$/i), { target: { value: '2030-01-10T12:00' } });
+        expect(screen.queryByText(/moves with it/)).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({
+            deadline_marker_id: null, latest_finish_date: new Date('2030-01-10T12:00').toISOString(),
+        });
+    });
+
+    it('says what the calendar changed and compares it with the task', async () => {
+        render(<TaskFormDialog open onClose={() => { }} task={appointment} />, { wrapper });
+        expect(screen.getByText('Google Calendar changed the title; yours is kept.')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+
+        expect(await screen.findByText('Compare “Kickoff” with Google Calendar')).toBeInTheDocument();
+        expect((screen.getByLabelText('merged Title') as HTMLInputElement).value).toBe('Kickoff');
     });
 });
