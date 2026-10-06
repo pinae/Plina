@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Plina</title>
+  <rect width="64" height="64" rx="14" fill="#1b2529"/>
+  <!-- A "P" packed from task blocks: the long task, the rounded one, the next one. -->
+  <rect x="13" y="11" width="11" height="42" rx="4" fill="#539dad"/>
+  <path d="M32 11h6a13 13 0 0 1 0 26h-6a4 4 0 0 1-4-4V15a4 4 0 0 1 4-4z" fill="#f2b134"/>
+  <rect x="28" y="41" width="14" height="12" rx="4" fill="#e5677f"/>
+</svg>
