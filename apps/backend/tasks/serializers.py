@@ -4,7 +4,7 @@ from rest_framework import serializers
 from datetime import timedelta
 
 from .models import (CalendarSubscription, Marker, Task, Tag, TimeBucket, TimeBucketType, TaskDependency,
-                     UserSettings)
+                     TrackingSession, UserSettings)
 from .services.colors import ensure_auto_colors, ensure_bucket_type_colors, from_hex, to_hex
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
                                  write_completion_snapshot)
@@ -605,3 +605,24 @@ class CalendarSubscriptionSerializer(serializers.ModelSerializer):
         model = CalendarSubscription
         fields = ['id', 'name', 'url', 'url_hint', 'email', 'hex_color', 'last_synced_at', 'last_error']
         read_only_fields = ['last_synced_at', 'last_error']
+
+
+class TrackingSessionSerializer(serializers.ModelSerializer):
+    """Tracked time (README: Time sheet): when, on which task; ``running``
+    while it is being tracked, ``seconds`` until its end or now."""
+    task_id = serializers.PrimaryKeyRelatedField(queryset=Task.objects.all(), source='task')
+    task_header = serializers.CharField(source='task.header', read_only=True)
+    task_tags = TagSerializer(source='task.tags', many=True, read_only=True)
+    running = serializers.SerializerMethodField()
+    seconds = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TrackingSession
+        fields = ['id', 'task_id', 'task_header', 'task_tags', 'start', 'end', 'running', 'seconds']
+
+    def get_running(self, session) -> bool:
+        return session.end is None
+
+    def get_seconds(self, session) -> int:
+        from django.utils import timezone
+        return max(0, round(((session.end or timezone.now()) - session.start).total_seconds()))

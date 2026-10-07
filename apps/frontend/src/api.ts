@@ -25,6 +25,8 @@ import type {
     TimeBucket,
     TimeBucketType,
     TimeSheet,
+    TrackedSession,
+    TrackedSessionWrite,
     TrackingResponse,
     UserSettings,
     LoginRequest,
@@ -270,3 +272,16 @@ export const mergeTasks = (keptId: string, otherId: string, values: TaskWrite) =
 /** The days from ``from`` to ``to`` (YYYY-MM-DD, both included) with tracked work. */
 export const fetchTimeSheet = (from: string, to: string) =>
     api.get<TimeSheet>('timesheet/', { params: { from, to } }).then(r => r.data);
+
+/** Tracked time: a task's (``task``) or that begun on days (``from``, ``to``). */
+export const fetchSessions = (params: { task?: string; from?: string; to?: string }) =>
+    api.get<TrackedSession[]>('sessions/', { params }).then(r => r.data);
+
+export const createSession = (session: TrackedSessionWrite) =>
+    api.post<TrackedSession>('sessions/', session).then(r => r.data);
+
+export const updateSession = (sessionId: string, patch: TrackedSessionWrite) =>
+    api.patch<TrackedSession>(`sessions/${sessionId}/`, patch).then(r => r.data);
+
+export const deleteSession = (sessionId: string) =>
+    api.delete(`sessions/${sessionId}/`).then(() => undefined);

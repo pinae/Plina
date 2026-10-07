@@ -214,6 +214,17 @@ session counts on the day it began, also when it went on after midnight
 are left out. `GET /api/timesheet/?from=2026-10-01&to=2026-10-31` gives the
 same as JSON.
 
+**Correcting and entering tracked time** — a task left running over night,
+or work that was not tracked live: "Edit the times of this day" in an open
+day of the time sheet, "Add time" above it (any day, any task), or "Tracked
+time" in a task's edit dialog (all of that task's time). Each stretch has a
+day, a from and an until; an until at or before the from is on the next
+day. Giving the running one an end stops it. Plina refuses an end before
+the start, time in the future and overlaps (one task at a time, the reason
+names the other task). The task's tracked time, a done task's figures, the
+plan and the time sheet follow every change
+(`apps/backend/tasks/services/sessions.py`, `/api/sessions/`).
+
 
 ### Core Data Structures (Domain Model)
 

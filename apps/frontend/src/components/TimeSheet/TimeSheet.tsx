@@ -2,6 +2,8 @@
  * The time sheet (README: Time sheet): a month of tracked work, a row per
  * day — when work began and ended, the pauses and the working time. The
  * arrow opens a day: the tasks counted on it, their tags and their time.
+ * "Edit times" there and "Add time" correct and enter tracked time
+ * (TrackedTimeDialog).
  *
  * Work is time tracked on tasks tagged #Arbeit or #Work; time tracked on
  * #Freizeit or #Freetime tasks between the begin and end of work is a pause.
@@ -15,12 +17,15 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import EditIcon from '@mui/icons-material/Edit';
+import MoreTimeIcon from '@mui/icons-material/MoreTime';
 
 import { useTimeSheet } from '../../queries.tsx';
 import type { TimeSheetDay } from '../../types.ts';
 import { fromDateInput, toDateInput } from '../../utils/dateInput.ts';
 import { hoursAndMinutes } from '../../utils/duration.ts';
 import { useIsMobile } from '../../hooks/useResponsive.ts';
+import { TrackedTimeDialog } from '../TrackedTimeDialog/TrackedTimeDialog.tsx';
 
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -37,8 +42,8 @@ const daysLater = (date: string, iso: string) => {
     return Math.round((endDay.getTime() - fromDateInput(date).getTime()) / (24 * 3600 * 1000));
 };
 
-function DayRows({ day, open, onToggle, compact }: {
-    day: TimeSheetDay; open: boolean; onToggle: () => void; compact: boolean;
+function DayRows({ day, open, onToggle, onEdit, compact }: {
+    day: TimeSheetDay; open: boolean; onToggle: () => void; onEdit: () => void; compact: boolean;
 }) {
     const label = dayLabel(day.date);
     const later = daysLater(day.date, day.end);
@@ -107,6 +112,11 @@ function DayRows({ day, open, onToggle, compact }: {
                                 ))}
                             </TableBody>
                         </Table>
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5, mt: -0.5 }}>
+                            <Button size="small" startIcon={<EditIcon />} onClick={onEdit}>
+                                Edit the times of this day
+                            </Button>
+                        </Box>
                     </Collapse>
                 </TableCell>
             </TableRow>
@@ -123,6 +133,8 @@ export default function TimeSheet({ initialMonth }: { initialMonth?: Date }) {
     const to = toDateInput(new Date(month.getFullYear(), month.getMonth() + 1, 0));
     const sheet = useTimeSheet(from, to);
     const [openDays, setOpenDays] = useState<Set<string>>(new Set());
+    // The tracked time being edited: of a day (YYYY-MM-DD), or '' for today's.
+    const [editing, setEditing] = useState<string | null>(null);
     const toggle = (date: string) => setOpenDays(open => {
         const next = new Set(open);
         if (next.has(date)) next.delete(date);
@@ -149,6 +161,10 @@ export default function TimeSheet({ initialMonth }: { initialMonth?: Date }) {
                 {month.getTime() !== thisMonth.getTime() && (
                     <Button size="small" onClick={() => setMonth(thisMonth)}>This month</Button>
                 )}
+                <Button size="small" variant="outlined" startIcon={<MoreTimeIcon />} onClick={() => setEditing('')}
+                    sx={{ ml: 'auto' }}>
+                    Add time
+                </Button>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Work is the time tracked on tasks tagged {workTags}: a day begins with the first and ends with the
@@ -187,7 +203,7 @@ export default function TimeSheet({ initialMonth }: { initialMonth?: Date }) {
                             )}
                             {days.map(day => (
                                 <DayRows key={day.date} day={day} open={openDays.has(day.date)} compact={compact}
-                                    onToggle={() => toggle(day.date)} />
+                                    onToggle={() => toggle(day.date)} onEdit={() => setEditing(day.date)} />
                             ))}
                         </TableBody>
                         {days.length > 0 && (
@@ -209,6 +225,7 @@ export default function TimeSheet({ initialMonth }: { initialMonth?: Date }) {
                     </Table>
                 </TableContainer>
             )}
+            {editing !== null && <TrackedTimeDialog day={editing || undefined} onClose={() => setEditing(null)} />}
         </Box>
     );
 }

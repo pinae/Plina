@@ -54,10 +54,14 @@ import {
     updateCalendar,
     updateMarker,
     fetchTimeSheet,
+    fetchSessions,
+    createSession,
+    updateSession,
+    deleteSession,
 } from './api';
 import type {
     BucketTypeWrite, CalendarSubscriptionWrite, Dependency, DependencyCycleError, MarkerWrite, SettingsWrite,
-    SplitRequest, TagWrite, Task, TaskWrite, TrackingBlockedError, UserSettings,
+    SplitRequest, TagWrite, Task, TaskWrite, TrackedSessionWrite, TrackingBlockedError, UserSettings,
 } from './types';
 import { applyMove } from './utils/treeDnd.ts';
 import { goTo } from './utils/navigation.ts';
@@ -73,6 +77,7 @@ export const queryKeys = {
     markers: ['markers'] as const,
     calendars: ['calendars'] as const,
     timeSheet: ['timesheet'] as const,
+    sessions: ['sessions'] as const,
 };
 
 /** Other devices pick up a changed active project this often (§3.1). */
@@ -182,7 +187,7 @@ export const useStartTracking = () => {
         mutationFn: startTracking,
         onSuccess: data => {
             if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
-            return invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet);
+            return invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions);
         },
     });
 };
@@ -208,7 +213,7 @@ export const useStopTracking = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: stopTracking,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -218,7 +223,7 @@ export const useCompleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: completeTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -244,7 +249,7 @@ export const useUpdateTask = () => {
     return useMutation({
         mutationFn: ({ taskId, patch }: { taskId: string; patch: TaskWrite }) =>
             updateTask(taskId, patch),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -299,7 +304,7 @@ export const useDeleteTask = () => {
             taskId: string; children?: 'lift' | 'delete'; occurrences?: 'all';
         }) => deleteTask(taskId, children, occurrences),
         onSuccess: () =>
-            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.timeSheet),
+            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -504,7 +509,7 @@ export const useMergeTasks = () => {
     return useMutation({
         mutationFn: ({ keptId, otherId, values }: { keptId: string; otherId: string; values: TaskWrite }) =>
             mergeTasks(keptId, otherId, values),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -521,3 +526,36 @@ export const useTimeSheet = (from: string, to: string) =>
         refetchInterval: query => (query.state.data?.days.some(day => day.running)
             ? TIME_SHEET_RUNNING_REFRESH_MS : false),
     });
+
+// ---------------------------------------------------------- tracked time
+
+/** Tracked time of a task (``task``) or begun on days (``from``, ``to``). */
+export const useSessions = (params: { task?: string; from?: string; to?: string }) =>
+    useQuery({ queryKey: [...queryKeys.sessions, params], queryFn: () => fetchSessions(params) });
+
+/** What a change of tracked time changes: the task's time, the plan, the time sheet. */
+const TRACKED_TIME = [queryKeys.sessions, queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet] as const;
+
+export const useCreateSession = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: createSession,
+        onSuccess: () => invalidate(...TRACKED_TIME),
+    });
+};
+
+export const useUpdateSession = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: TrackedSessionWrite }) => updateSession(id, patch),
+        onSuccess: () => invalidate(...TRACKED_TIME),
+    });
+};
+
+export const useDeleteSession = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: deleteSession,
+        onSuccess: () => invalidate(...TRACKED_TIME),
+    });
+};

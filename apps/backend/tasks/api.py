@@ -6,7 +6,7 @@ from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
 from .services.colors import FALLBACK_COLOR, ensure_auto_colors
 from .serializers import (MarkerSerializer, TaskSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
-                          TaskDependencySerializer)
+                          TaskDependencySerializer, TrackingSessionSerializer)
 
 class RecalculatingModelViewSet(viewsets.ModelViewSet):
     """A7: schedule-relevant CRUD triggers a recalculation of the accepted plan."""
@@ -378,6 +378,70 @@ class RecurrencePreviewView(APIView):
                 return Response({"detail": str(error)}, status=400)
             description = recurrence.describe(recurrence.parse_rule(text))
         return Response({"description": description, "occurrences": [occ.isoformat() for occ in occurrences]})
+
+
+class SessionViewSet(viewsets.ModelViewSet):
+    """Tracked time (README: Time sheet): ``?task=<id>`` lists a task's
+    sessions, ``?from=2026-10-01&to=2026-10-07`` those begun on these days.
+    Creating, changing and deleting one keeps the task's tracked time right
+    (services.sessions)."""
+    serializer_class = TrackingSessionSerializer
+
+    def get_queryset(self):
+        from datetime import date
+        from .models import TrackingSession
+        from .services.timesheet import day_bounds
+        sessions = TrackingSession.objects.select_related("task").prefetch_related("task__tags").order_by("start")
+        params = self.request.query_params
+        if params.get("task"):
+            if not _is_uuid(params["task"]):
+                return sessions.none()
+            sessions = sessions.filter(task_id=params["task"])
+        if params.get("from") or params.get("to"):
+            try:
+                first = date.fromisoformat(params.get("from") or params["to"])
+                last = date.fromisoformat(params.get("to") or params["from"])
+            except ValueError:
+                raise serializers.ValidationError({"detail": "Give the days like 2026-10-01."})
+            start, end = day_bounds(first, last)
+            sessions = sessions.filter(start__gte=start, start__lt=end)
+        return sessions
+
+    @staticmethod
+    def _refusal(error):
+        return Response({field: message if field == "detail" else [message]
+                         for field, message in error.errors.items()}, status=400)
+
+    def create(self, request, *args, **kwargs):
+        from .services.sessions import SessionError, add_session
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            session = add_session(data["task"], data["start"], data.get("end"))
+        except SessionError as error:
+            return self._refusal(error)
+        return Response(self.get_serializer(session).data, status=201)
+
+    def update(self, request, *args, **kwargs):
+        from .services.sessions import SessionError, change_session
+        session = self.get_object()
+        serializer = self.get_serializer(session, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if "task" in data and data["task"].id != session.task_id:
+            return Response({"task_id": ["Tracked time stays with its task: delete it and add it to the other."]},
+                            status=400)
+        try:
+            change_session(session, data.get("start", session.start), data["end"] if "end" in data else session.end)
+        except SessionError as error:
+            return self._refusal(error)
+        return Response(self.get_serializer(session).data)
+
+    def destroy(self, request, *args, **kwargs):
+        from .services.sessions import remove_session
+        remove_session(self.get_object())
+        return Response(status=204)
 
 
 class TimeSheetView(APIView):

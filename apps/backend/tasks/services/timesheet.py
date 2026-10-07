@@ -79,6 +79,12 @@ def _midnight(day: date, zone) -> datetime:
     return timezone.make_aware(datetime.combine(day, time()), zone)
 
 
+def day_bounds(first: date, last: date, zone=None):
+    """From the start of ``first`` to the end of ``last`` (the user's days)."""
+    zone = zone or timezone.get_current_timezone()
+    return _midnight(first, zone), _midnight(last + timedelta(days=1), zone)
+
+
 def _clip(start: datetime, end: datetime, low: datetime, high: datetime) -> float:
     return max(0.0, (min(end, high) - max(start, low)).total_seconds())
 
@@ -88,7 +94,7 @@ def time_sheet(first: date, last: date, now: Optional[datetime] = None, zone=Non
     tracked, oldest first."""
     zone = zone or timezone.get_current_timezone()
     now = now or timezone.now()
-    window_start, window_end = _midnight(first, zone), _midnight(last + timedelta(days=1), zone)
+    window_start, window_end = day_bounds(first, last, zone)
     sessions = (TrackingSession.objects.filter(start__gte=window_start, start__lt=window_end)
                 .select_related("task").prefetch_related("task__tags").order_by("start"))
     # Per day (the one it began on): the sessions of work and pause, with their task.

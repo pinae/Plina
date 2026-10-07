@@ -34,6 +34,7 @@ const thursday: TimeSheetDay = {
 
 let requests: string[] = [];
 let days: TimeSheetDay[] = [];
+let sessionQueries: string[] = [];
 
 const server = setupServer(
     http.get(`${API}/timesheet/`, ({ request }) => {
@@ -45,6 +46,11 @@ const server = setupServer(
         };
         return HttpResponse.json(sheet);
     }),
+    http.get(`${API}/sessions/`, ({ request }) => {
+        sessionQueries.push(new URL(request.url).search);
+        return HttpResponse.json([]);
+    }),
+    http.get(`${API}/tasks/`, () => HttpResponse.json([])),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -52,6 +58,7 @@ afterEach(() => {
     server.resetHandlers();
     requests = [];
     days = [];
+    sessionQueries = [];
 });
 afterAll(() => server.close());
 
@@ -134,5 +141,23 @@ describe('TimeSheet', () => {
         render(<TimeSheet initialMonth={new Date(2026, 10, 1)} />, { wrapper });
         expect(await screen.findByText(/No work tracked in/)).toHaveTextContent(/tagged #Arbeit or #Work/);
         expect(screen.queryByTestId('time-sheet-total')).toBeNull();
+    });
+
+    it('edits the times of a day, and adds time for any day (README: Time sheet)', async () => {
+        days = [wednesday];
+        render(<TimeSheet initialMonth={new Date(2026, 9, 1)} />, { wrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /show the tasks of/ }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Edit the times of this day' }));
+
+        expect(await screen.findByRole('dialog', { name: 'Tracked time' })).toBeInTheDocument();
+        await waitFor(() => expect(sessionQueries).toEqual(['?from=2026-10-07&to=2026-10-07']));
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add time' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Tracked time' });
+        const today = new Date();
+        const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        expect((within(dialog).getAllByLabelText('Day')[0] as HTMLInputElement).value).toBe(iso);
     });
 });
