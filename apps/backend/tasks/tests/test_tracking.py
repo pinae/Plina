@@ -139,6 +139,8 @@ class TrackingApiTest(TestCase):
     @patch("tasks.services.tracking.recalculate_accepted_plan")
     def test_stop_updates_time_spent_and_triggers_recalculation(self, recalc):
         self.client.post(f"/api/tasks/{self.task.id}/track/start/")
+        recalc.assert_called_once()  # the task is anchored where it is worked on
+        recalc.reset_mock()
 
         response = self.client.post(f"/api/tasks/{self.task.id}/track/stop/")
 

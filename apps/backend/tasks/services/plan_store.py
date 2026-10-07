@@ -5,7 +5,9 @@
   buckets it uses (A8), delete every other plan.  Accepting never fixes tasks.
 * :func:`recalculate_accepted_plan` — reflow all fluid entries with the
   plan's stored generation config; entries of appointments and anchored fixed
-  tasks stay untouched (byte-identical).
+  tasks stay untouched (byte-identical) while they still say where the task
+  is — moved (an appointment dragged or changed in its calendar, a task
+  started), or new since the plan was accepted, they follow.
 """
 from __future__ import annotations
 
@@ -181,13 +183,27 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
 
     anchored_ids = _anchored_task_ids()
     plan.entries.exclude(task_id__in=anchored_ids).delete()
+    # An anchored task keeps its entries while they still say where it is
+    # (the allocation puts it at the same times); else they follow it. Done
+    # tasks are not allocated any more: their entries stay as they were.
+    placed: Dict[UUID, list] = {}
+    for _, item in _chronological_items(allocation):
+        placed.setdefault(item.task.id, []).append((item.start_time, item.duration))
+    open_ids = {snapshot.id for snapshot in snapshots}
+    stored: Dict[UUID, list] = {}
+    for entry in plan.entries.all():
+        stored.setdefault(entry.task_id, []).append((entry.start, entry.duration))
+    moved = [task_id for task_id, slots in stored.items()
+             if task_id in open_ids and sorted(slots) != sorted(placed.get(task_id, []))]
+    plan.entries.filter(task_id__in=moved).delete()
     kept_entries = list(plan.entries.all())
+    kept_ids = {entry.task_id for entry in kept_entries}
 
     bucket_by_id = {bucket.id: bucket for bucket in buckets}
     new_pairs = [
         (bucket_id, item)
         for bucket_id, item in _chronological_items(allocation)
-        if item.task.id not in anchored_ids
+        if item.task.id not in kept_ids
     ]
 
     # Orders: anchored entries keep theirs (byte-identical); new entries get

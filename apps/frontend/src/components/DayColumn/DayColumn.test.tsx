@@ -250,4 +250,24 @@ describe('DayColumn', () => {
         expect(getComputedStyle(mine).width).toBe('calc(50% - 1px)');
         expect(getComputedStyle(later).width).toBe('calc(100% - 1px)');
     });
+
+    it('draws back-to-back cards touching, also at seconds', () => {
+        // Switched live at 10:15:37: one ends when the other starts.
+        const card = (title: string, startTime: string, duration: number): ViewTask => ({
+            title, startTime, duration, color: '#123456', manuallySet: true, description: '', tags: [],
+            continues: false, taskId: title,
+        });
+        render(<DayColumn {...defaultProps} columnHeight={1440} tasks={[
+            card('First', new Date(2024, 0, 1, 9).toISOString(), 75 + 37 / 60),
+            card('Second', new Date(2024, 0, 1, 10, 15, 37).toISOString(), 44 + 23 / 60),
+        ]} />);
+        const [first, second] = screen.getAllByTestId('week-view-task');
+        const px = (value: string) => parseFloat(value);
+        // 1px per minute: the first ends where the second begins.
+        expect(px(getComputedStyle(first).top) + px(getComputedStyle(first).height))
+            .toBeCloseTo(px(getComputedStyle(second).top), 5);
+        expect(px(getComputedStyle(second).top)).toBeCloseTo(10 * 60 + 15 + 37 / 60, 5);
+        // Both the whole width: touching is no overlap.
+        expect(getComputedStyle(first).width).toBe('calc(100% - 1px)');
+    });
 });

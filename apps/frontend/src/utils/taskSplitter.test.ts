@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { splitTaskAcrossDays } from './taskSplitter';
 import type { ViewTask } from '../components/WeekViewTask/WeekViewTask.tsx';
 
@@ -88,5 +88,33 @@ describe('splitTaskAcrossDays', () => {
         expect(result[2].duration).toBe(120);
         expect(result[2].continues).toBe(false);
         expect(result[2].startTime).toBe('2024-02-14T00:00:00.000Z');
+    });
+
+    describe('in a time zone other than UTC (the days are the device’s)', () => {
+        const zone = process.env.TZ;
+        beforeEach(() => { process.env.TZ = 'Europe/Berlin'; });
+        afterEach(() => { process.env.TZ = zone; });
+
+        it('splits at local midnight', () => {
+            // 23:00 to 01:00 in Berlin: 21:00 to 23:00 UTC — no UTC midnight in it.
+            const task = createTask('Late', '2024-02-12T22:00:00.000Z', 120);
+            const result = splitTaskAcrossDays(task);
+
+            expect(result.map(segment => [new Date(segment.startTime).getHours(), segment.duration]))
+                .toEqual([[23, 60], [0, 60]]);
+            expect(result[0].continues).toBe(true);
+        });
+
+        it('leaves a task over UTC midnight in one piece', () => {
+            // 00:30 to 02:30 in Berlin: one day there.
+            const result = splitTaskAcrossDays(createTask('Early', '2024-02-12T23:30:00.000Z', 120));
+            expect(result).toHaveLength(1);
+        });
+    });
+
+    it('keeps fractions of minutes (seconds) exactly', () => {
+        const start = new Date(2024, 1, 12, 23, 59, 30).toISOString();
+        const result = splitTaskAcrossDays(createTask('Seconds', start, 1.5));
+        expect(result.map(segment => segment.duration)).toEqual([0.5, 1]);
     });
 });

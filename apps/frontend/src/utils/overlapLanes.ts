@@ -9,10 +9,15 @@ export interface Lane {
     count: number;
 }
 
+/** Cards overlapping by less than this count as touching (seconds tracked
+ *  live against whole minutes typed): no lanes for that. */
+const TOUCHING_MS = 60_000;
+
 export function overlapLanes(tasks: { startTime: string; duration: number }[]): Lane[] {
     const order = tasks.map((task, i) => {
         const start = new Date(task.startTime).getTime();
-        return { i, start, end: start + task.duration * 60000 };
+        const end = start + task.duration * 60000;
+        return { i, start, end: Math.max(start, end - TOUCHING_MS) };
     }).sort((a, b) => a.start - b.start || b.end - a.end);
     const lanes: Lane[] = new Array(tasks.length);
     let group: number[] = [];

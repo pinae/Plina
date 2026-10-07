@@ -52,6 +52,15 @@ offers fresh choices. Feasibility warnings ("Project X can't finish by ...")
 surface as a banner with remedy shortcuts, and the Week view can jump to
 the first day with free capacity.
 
+An accepted plan keeps appointments and anchored tasks where they are and
+reflows the rest around them; when one of them moves (dragged, changed in
+its calendar, started) or is new (a calendar read, an occurrence of a
+recurring appointment), its place in the plan follows. Where two time
+buckets cover the same hours, that time is planned once. In the Week view
+cards are drawn at their exact times (seconds too), split at the device's
+midnight, and only cards that really overlap (by a minute or more, e.g. two
+appointments at once) share their column side by side.
+
 Try it: `uv run python manage.py populate_demo_data --user <name>` (in
 `apps/backend`, after `migrate` and `createsuperuser`, see
 [Development Setup](#development-setup)) sets up the full demo (two

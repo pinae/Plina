@@ -6,9 +6,10 @@ models.  The allocator never mutates ``Task`` instances; it works on immutable
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, Iterable, List, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 from uuid import UUID
 
 from django.utils import timezone
@@ -228,6 +229,35 @@ class _Segment:
         return self.end - self.start
 
 
+class _Occupied:
+    """The time already planned, over all buckets: where two buckets cover
+    the same hours (two kinds of time that overlap), that time is planned
+    once — what one bucket's task took, the other's cannot have too."""
+
+    def __init__(self):
+        self._spans: List[Tuple[datetime, datetime]] = []  # sorted, merged, not touching
+
+    def add(self, start: datetime, end: datetime) -> None:
+        spans = [span for span in self._spans if span[1] < start or span[0] > end]
+        joined = [span for span in self._spans if not (span[1] < start or span[0] > end)]
+        start = min([start, *(span[0] for span in joined)])
+        end = max([end, *(span[1] for span in joined)])
+        spans.append((start, end))
+        self._spans = sorted(spans)
+
+    def free_window(self, at: datetime, limit: datetime) -> Optional[Tuple[datetime, datetime]]:
+        """The first free stretch from ``at`` on, before ``limit``; None if
+        there is none."""
+        index = bisect_right(self._spans, (at, datetime.max.replace(tzinfo=at.tzinfo))) - 1
+        if index >= 0 and self._spans[index][1] > at:
+            at = self._spans[index][1]  # inside planned time: free from its end
+        if at >= limit:
+            return None
+        following = bisect_right(self._spans, (at, datetime.max.replace(tzinfo=at.tzinfo)))
+        until = self._spans[following][0] if following < len(self._spans) else limit
+        return at, min(until, limit)
+
+
 class _AllocationRun:
     """All mutable bookkeeping for one allocation: remaining durations,
     dependency states and finish times.  Snapshots and models stay untouched."""
@@ -302,7 +332,8 @@ def _build_segments(buckets: List, appointments: List[PlanningTask]) -> List[_Se
 
 
 def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
-                    run: _AllocationRun, plan: Dict[object, List[PlanItem]]) -> None:
+                    run: _AllocationRun, plan: Dict[object, List[PlanItem]],
+                    occupied: _Occupied) -> None:
     """Anchored fixed tasks fill capacity from their start_date onward,
     splitting across segments and buckets until their duration is placed.
 
@@ -325,13 +356,18 @@ def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
             if index is None:
                 break  # no suitable capacity left in the horizon; leftover unplanned
             segment = segments[index]
-            begin = max(segment.start, cursor)
-            slice_duration = min(run.remaining[snapshot.id], segment.end - begin)
+            window = occupied.free_window(max(segment.start, cursor), segment.end)
+            if window is None:
+                cursor = segment.end  # taken in an overlapping bucket
+                continue
+            begin, window_end = window
+            slice_duration = min(run.remaining[snapshot.id], window_end - begin)
             end_time = begin + slice_duration
             plan.setdefault(segment.bucket_id, []).append(
                 PlanItem.of(snapshot, begin, slice_duration)
             )
             run.consume(snapshot, slice_duration, end_time)
+            occupied.add(begin, end_time)
             head = _Segment(segment.bucket_id, segment.tag_ids, segment.start, begin)
             tail = _Segment(segment.bucket_id, segment.tag_ids, end_time, segment.end)
             segments[index:index + 1] = [
@@ -414,26 +450,37 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
         run.consume(appointment, appointment.remaining_duration, end_time)
 
     segments = _build_segments(buckets, by_role["appointment"])
-    _place_anchored(by_role["anchored"], segments, run, plan)
+    occupied = _Occupied()
+    _place_anchored(by_role["anchored"], segments, run, plan, occupied)
 
     queue = list(by_role["flexible"])  # ranked order is preserved
     for segment in segments:
         current_time = segment.start
         while current_time < segment.end:
-            snapshot = _pick_next(queue, run, segment, current_time, config)
+            # Only time no other bucket's task took (buckets may overlap).
+            window = occupied.free_window(current_time, segment.end)
+            if window is None:
+                break
+            current_time, window_end = window
+            free = _Segment(segment.bucket_id, segment.tag_ids, current_time, window_end)
+            snapshot = _pick_next(queue, run, free, current_time, config)
             if snapshot is None:
                 # Nothing fits now; a recurring task may become due later in the bucket.
-                due = [s.not_before for s in queue if s.not_before and current_time < s.not_before < segment.end]
-                if not due:
+                due = [s.not_before for s in queue if s.not_before and current_time < s.not_before < window_end]
+                if due:
+                    current_time = min(due)
+                elif window_end < segment.end:
+                    current_time = window_end  # the next free stretch of this bucket
+                else:
                     break
-                current_time = min(due)
                 continue
-            slice_duration = min(run.remaining[snapshot.id], segment.end - current_time)
+            slice_duration = min(run.remaining[snapshot.id], window_end - current_time)
             end_time = current_time + slice_duration
             plan[segment.bucket_id].append(
                 PlanItem.of(snapshot, current_time, slice_duration)
             )
             run.consume(snapshot, slice_duration, end_time)
+            occupied.add(current_time, end_time)
             run.last_task = snapshot
             if run.remaining[snapshot.id] <= timedelta(0):
                 queue.remove(snapshot)
