@@ -18,8 +18,8 @@ BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 10, 7, 10, 0, tzinfo=BERLIN)
 
 
-def at(day, hour, minute=0):
-    return datetime(2026, 10, day, hour, minute, tzinfo=BERLIN)
+def at(day, hour, minute=0, second=0):
+    return datetime(2026, 10, day, hour, minute, second, tzinfo=BERLIN)
 
 
 def hours(value):
@@ -128,6 +128,62 @@ class ServiceTest(SessionCase):
         project.refresh_from_db()
         self.assertEqual(self.report.completion_time_spent, hours(2))
         self.assertEqual(project.completion_subtree_time_spent, hours(2))
+
+
+class MinutesTest(SessionCase):
+    """Tracking keeps seconds, the editor works in whole minutes: a time typed
+    in the minute in which a neighbour ended or began joins it."""
+
+    def setUp(self):
+        super().setUp()
+        # Switched live from one task to the other at 10:15:37.
+        start_tracking(self.report, now=at(6, 9, 0, 12))
+        start_tracking(self.review, now=at(6, 10, 15, 37))
+        self.first = TrackingSession.objects.get(task=self.report)
+        self.second = TrackingSession.objects.get(task=self.review)
+        change_session(self.second, self.second.start, at(6, 11, 0, 5), now=NOW)  # stopped at 11:00:05
+
+    def test_a_start_in_the_minute_the_task_before_ended_begins_then(self):
+        # The editor shows the second one from "10:15"; its end is corrected to 11:30.
+        change_session(self.second, at(6, 10, 15), at(6, 11, 30), now=NOW)
+
+        self.second.refresh_from_db()
+        self.assertEqual((self.second.start, self.second.end), (at(6, 10, 15, 37), at(6, 11, 30)))
+        self.assertEqual(self.spent(self.review), at(6, 11, 30) - at(6, 10, 15, 37))
+        self.assertEqual(self.spent(self.report), at(6, 10, 15, 37) - at(6, 9, 0, 12))  # untouched
+
+    def test_an_end_in_the_minute_the_task_after_began_ends_then(self):
+        # The first one, its until shown as "10:15", its from corrected to 8:30.
+        change_session(self.first, at(6, 8, 30), at(6, 10, 15), now=NOW)
+
+        self.first.refresh_from_db()
+        self.assertEqual((self.first.start, self.first.end), (at(6, 8, 30), at(6, 10, 15, 37)))
+
+    def test_time_entered_afterwards_joins_its_neighbours(self):
+        lunch = Task.objects.create(header="Lunch")
+        TrackingSession.objects.create(task=self.report, start=at(6, 11, 45, 50), end=at(6, 12, 30))
+        session = add_session(lunch, at(6, 11), at(6, 11, 45), now=NOW)
+        self.assertEqual((session.start, session.end), (at(6, 11, 0, 5), at(6, 11, 45, 50)))
+
+    def test_a_minute_earlier_still_overlaps(self):
+        with self.assertRaisesMessage(SessionError, "overlaps “Report”"):
+            change_session(self.second, at(6, 10, 14), at(6, 11, 30), now=NOW)
+        with self.assertRaisesMessage(SessionError, "overlaps “Review”"):
+            change_session(self.first, at(6, 9), at(6, 10, 16), now=NOW)
+
+    def test_times_with_seconds_stay_as_they_are(self):
+        change_session(self.second, at(6, 10, 20, 3), at(6, 11, 30), now=NOW)
+        self.second.refresh_from_db()
+        self.assertEqual(self.second.start, at(6, 10, 20, 3))
+
+    def test_through_the_api(self):
+        # What the editor sends when the second one's end is corrected.
+        with mock.patch("django.utils.timezone.now", return_value=NOW):
+            response = APIClient().patch(f"/api/sessions/{self.second.id}/", {
+                "start": at(6, 10, 15).isoformat(), "end": at(6, 11, 30).isoformat(),
+            }, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(datetime.fromisoformat(response.json()["start"]), at(6, 10, 15, 37))
 
 
 class SessionApiTest(SessionCase):

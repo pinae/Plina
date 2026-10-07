@@ -20,7 +20,7 @@ import { useCreateSession, useDeleteSession, useSessions, useTasks, useUpdateSes
 import type { Task, TrackedSession } from '../../types.ts';
 import { fromDateInput, toDateInput } from '../../utils/dateInput.ts';
 import { hoursAndMinutes } from '../../utils/duration.ts';
-import { composeSpan, refusal, toTimeInput, untilNextDay } from '../../utils/trackedTime.ts';
+import { composeSpan, keepSeconds, refusal, toTimeInput, untilNextDay } from '../../utils/trackedTime.ts';
 import { useIsMobile } from '../../hooks/useResponsive.ts';
 
 const shrink = { inputLabel: { shrink: true } };
@@ -58,8 +58,11 @@ function SessionRow({ session, byDay }: { session: TrackedSession; byDay: boolea
             setError('When did it end?');
             return;
         }
-        update.mutate({ id: session.id, patch: { start: span.start.toISOString(), end: span.end?.toISOString() ?? null } },
-            { onError: failure => setError(refusal(failure, 'The time could not be saved.')) });
+        // What was not changed keeps its seconds (the fields show whole minutes).
+        update.mutate({ id: session.id, patch: {
+            start: keepSeconds(span.start, session.start),
+            end: span.end ? keepSeconds(span.end, session.end) : null,
+        } }, { onError: failure => setError(refusal(failure, 'The time could not be saved.')) });
     };
 
     return (
