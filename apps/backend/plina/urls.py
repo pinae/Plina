@@ -19,6 +19,7 @@ from django.urls import include, path
 from rest_framework import routers
 from tasks.api import (TaskViewSet, TagViewSet, TimeBucketViewSet, SettingsView,
                        TimeBucketTypeViewSet, RecurrencePreviewView, MarkerViewSet, CalendarViewSet, TimeSheetView,
+                       SessionViewSet,
                        DependencyViewSet, PlannerView, PlanAlternativesView, PlanViewSet)
 from plina.django_views import forbidden_error_view, not_found_error_view, internal_error_view
 from accounts import urls as accounts_urls
@@ -32,6 +33,7 @@ router.register(r'dependencies', DependencyViewSet)
 router.register(r'plans', PlanViewSet)
 router.register(r'markers', MarkerViewSet, basename='marker')
 router.register(r'calendars', CalendarViewSet, basename='calendar')
+router.register(r'sessions', SessionViewSet, basename='session')
 
 urlpatterns = [
     # Logging in (README: Accounts); everything else needs a login.

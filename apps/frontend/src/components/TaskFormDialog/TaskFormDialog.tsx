@@ -13,6 +13,7 @@ import {
     useCreateTask, useDeleteTask, useMarkers, useSettings, useTags, useTasks, useUpdateTask,
 } from '../../queries.tsx';
 import { MergeDialog } from '../MergeDialog/MergeDialog.tsx';
+import { TrackedTimeDialog } from '../TrackedTimeDialog/TrackedTimeDialog.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import { RecurrenceField } from '../RecurrenceField/RecurrenceField.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
@@ -115,6 +116,7 @@ function TaskForm({
     const markers = useMarkers();
     const [deadlineMarkerId, setDeadlineMarkerId] = useState<string | null>(task?.deadline_marker?.id ?? null);
     const [comparing, setComparing] = useState(false);
+    const [trackedTime, setTrackedTime] = useState(false);
     // Empty = the user's default duration (UI-8).
     const [hours, setHours] = useState(() => {
         const minutes = task ? parseDurationMinutes(task.duration) : initialDurationMinutes ?? null;
@@ -378,11 +380,19 @@ function TaskForm({
                                 </Button>
                             </Box>
                         )}
-                        {editing && spentMinutes > 0 && (
-                            <Typography variant="body2" color={spentMinutes > estimateMinutes ? 'warning.main' : 'text.secondary'} sx={{ mt: 0.5 }}>
-                                Spent {human(spentMinutes)} of {human(estimateMinutes)}
-                                {spentMinutes > estimateMinutes ? ` (+${human(spentMinutes - estimateMinutes)})` : ''}
-                            </Typography>
+                        {editing && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
+                                {spentMinutes > 0 && (
+                                    <Typography variant="body2" color={spentMinutes > estimateMinutes ? 'warning.main' : 'text.secondary'}>
+                                        Spent {human(spentMinutes)} of {human(estimateMinutes)}
+                                        {spentMinutes > estimateMinutes ? ` (+${human(spentMinutes - estimateMinutes)})` : ''}
+                                    </Typography>
+                                )}
+                                {/* Correct or enter tracked time (README: Time sheet). */}
+                                <Button size="small" onClick={() => setTrackedTime(true)}>
+                                    {spentMinutes > 0 ? 'Tracked time' : 'Add tracked time'}
+                                </Button>
+                            </Box>
                         )}
                     </Box>
                     <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -541,6 +551,7 @@ function TaskForm({
                 </Button>
             </DialogActions>
             {comparing && task && <MergeDialog kept={task} onClose={() => setComparing(false)} />}
+            {trackedTime && task && <TrackedTimeDialog task={task} onClose={() => setTrackedTime(false)} />}
             {editing && recurring && (
                 <Dialog open={confirmDeleteAll} onClose={() => setConfirmDeleteAll(false)} maxWidth="xs">
                     <DialogTitle>Delete all occurrences?</DialogTitle>

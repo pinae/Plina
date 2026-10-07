@@ -503,3 +503,23 @@ export interface TimeSheet {
     pause_tags: string[];
     days: TimeSheetDay[];
 }
+
+/** A stretch of tracked time on a task (README: Time sheet). */
+export interface TrackedSession {
+    id: string;
+    task_id: string;
+    task_header: string;
+    task_tags: Tag[];
+    start: string;
+    /** Null while it is being tracked. */
+    end: string | null;
+    running: boolean;
+    /** Until its end, or now. */
+    seconds: number;
+}
+
+export interface TrackedSessionWrite {
+    task_id?: string;
+    start?: string;
+    end?: string | null;
+}

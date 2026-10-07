@@ -600,3 +600,37 @@ describe('TaskFormDialog — place, markers and calendars (README: Calendar)', (
         expect((screen.getByLabelText('merged Title') as HTMLInputElement).value).toBe('Kickoff');
     });
 });
+
+describe('TaskFormDialog — tracked time (README: Time sheet)', () => {
+    const task = {
+        id: 'report', header: 'Report', description: '', start_date: null, duration: '04:00:00',
+        latest_finish_date: null, time_spent: '01:30:00', priority: 5, tags: [], hex_color: null,
+        is_fixed: false, is_appointment: false, completed_at: null, is_done: false, active_tracking_start: null,
+        ...treeDefaults,
+    };
+
+    it('opens the task’s tracked time to correct it', async () => {
+        const queries: string[] = [];
+        server.use(http.get(`${API}/sessions/`, ({ request }) => {
+            queries.push(new URL(request.url).search);
+            return HttpResponse.json([]);
+        }));
+        render(<TaskFormDialog open onClose={() => { }} task={task} />, { wrapper });
+        expect(screen.getByText(/Spent 1h 30m of 4h/)).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Tracked time' }));
+
+        expect(await screen.findByRole('dialog', { name: 'Tracked time of “Report”' })).toBeInTheDocument();
+        await waitFor(() => expect(queries).toEqual(['?task=report']));
+    });
+
+    it('offers to add tracked time to a task without any', () => {
+        render(<TaskFormDialog open onClose={() => { }} task={{ ...task, time_spent: '00:00:00' }} />, { wrapper });
+        expect(screen.getByRole('button', { name: 'Add tracked time' })).toBeInTheDocument();
+    });
+
+    it('is not offered for a new task', () => {
+        render(<TaskFormDialog open onClose={() => { }} />, { wrapper });
+        expect(screen.queryByRole('button', { name: /tracked time/i })).toBeNull();
+    });
+});
