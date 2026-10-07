@@ -7,6 +7,11 @@ not in the future, and overlaps no other one (one task at a time). Only the
 session being tracked right now may stay open; giving it an end stops it.
 The task's tracked time (``time_spent``) follows every change, and a done
 task's completion figures too; then the accepted plan is recalculated.
+
+Tracking keeps seconds, the editor shows and takes whole minutes: a time
+typed in whole minutes joins the session that ended (or began) within that
+minute (``snap``), so the start "10:15" after a task stopped at 10:15:37
+begins at 10:15:37 instead of overlapping it by 37 seconds.
 """
 from __future__ import annotations
 
@@ -21,6 +26,7 @@ from tasks.services.plan_store import recalculate_accepted_plan
 
 #: Clocks differ a little: an end this far ahead still counts as now.
 CLOCK_SLACK = timedelta(minutes=1)
+MINUTE = timedelta(minutes=1)
 
 
 class SessionError(Exception):
@@ -39,6 +45,29 @@ def booked(session: TrackingSession) -> timedelta:
 def _moment(value: datetime) -> str:
     local = timezone.localtime(value)
     return f"{local:%a %d/%m %H:%M}"
+
+
+def _whole_minute(value: datetime) -> bool:
+    return value.second == 0 and value.microsecond == 0
+
+
+def snap(start: datetime, end: Optional[datetime], session: Optional[TrackingSession] = None):
+    """``start`` and ``end`` joined to their neighbours: a start typed in
+    whole minutes begins when another session ended within that minute, an
+    end typed so ends when another began within it (``session``: the one
+    being changed, not its own neighbour)."""
+    others = TrackingSession.objects.all()
+    if session is not None:
+        others = others.exclude(pk=session.pk)
+    if _whole_minute(start):
+        before = others.filter(end__gte=start, end__lt=start + MINUTE).order_by("-end").first()
+        if before is not None:
+            start = before.end
+    if end is not None and _whole_minute(end):
+        after = others.filter(start__gte=end, start__lt=end + MINUTE).order_by("start").first()
+        if after is not None:
+            end = after.start
+    return start, end
 
 
 def check(start: datetime, end: Optional[datetime], session: Optional[TrackingSession] = None,
@@ -84,6 +113,7 @@ def _book(task: Task, change: timedelta) -> None:
 @transaction.atomic
 def add_session(task: Task, start: datetime, end: Optional[datetime],
                 now: Optional[datetime] = None) -> TrackingSession:
+    start, end = snap(start, end)
     check(start, end, now=now)
     session = TrackingSession.objects.create(task=task, start=start, end=end)
     _book(task, booked(session))
@@ -94,6 +124,7 @@ def add_session(task: Task, start: datetime, end: Optional[datetime],
 @transaction.atomic
 def change_session(session: TrackingSession, start: datetime, end: Optional[datetime],
                    now: Optional[datetime] = None) -> TrackingSession:
+    start, end = snap(start, end, session)
     check(start, end, session, now=now)
     before = booked(session)
     session.start, session.end = start, end

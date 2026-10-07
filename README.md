@@ -219,9 +219,12 @@ or work that was not tracked live: "Edit the times of this day" in an open
 day of the time sheet, "Add time" above it (any day, any task), or "Tracked
 time" in a task's edit dialog (all of that task's time). Each stretch has a
 day, a from and an until; an until at or before the from is on the next
-day. Giving the running one an end stops it. Plina refuses an end before
-the start, time in the future and overlaps (one task at a time, the reason
-names the other task). The task's tracked time, a done task's figures, the
+day. Giving the running one an end stops it. Tracking keeps seconds, the
+editor shows whole minutes: a time you type joins the neighbour that ended
+(or began) within that minute — from "10:15" after a task stopped at
+10:15:37 begins at 10:15:37 — and a time you leave alone keeps its seconds.
+Plina refuses an end before the start, time in the future and overlaps
+(one task at a time, the reason names the other task). The task's tracked time, a done task's figures, the
 plan and the time sheet follow every change
 (`apps/backend/tasks/services/sessions.py`, `/api/sessions/`).
 

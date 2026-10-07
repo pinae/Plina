@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 import { TrackedTimeDialog } from './TrackedTimeDialog.tsx';
 import { API, makeTask } from '../../testing/treeFixtures.ts';
 import type { TrackedSession } from '../../types.ts';
-import { composeSpan, untilNextDay } from '../../utils/trackedTime.ts';
+import { composeSpan, keepSeconds, untilNextDay } from '../../utils/trackedTime.ts';
 
 const local = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute).toISOString();
 const report = makeTask('report', { header: 'Report' });
@@ -87,7 +87,31 @@ describe('composeSpan', () => {
     });
 });
 
+describe('keepSeconds', () => {
+    it('keeps the seconds of a time whose minute did not change', () => {
+        const tracked = new Date(2026, 9, 6, 10, 15, 37).toISOString();
+        expect(keepSeconds(new Date(2026, 9, 6, 10, 15), tracked)).toBe(tracked);
+        expect(keepSeconds(new Date(2026, 9, 6, 10, 16), tracked)).toBe(local(6, 10, 16));
+        expect(keepSeconds(new Date(2026, 9, 6, 10, 15), null)).toBe(local(6, 10, 15));
+    });
+});
+
 describe('TrackedTimeDialog by task', () => {
+    it('keeps the seconds tracked live where only the other end was changed', async () => {
+        // Switched to it live at 10:15:37: the editor shows 10:15.
+        const start = new Date(2026, 9, 6, 10, 15, 37).toISOString();
+        sessions = [session('b', start, new Date(2026, 9, 6, 11, 0, 5).toISOString())];
+        render(<TrackedTimeDialog task={report} onClose={() => {}} />, { wrapper });
+        const [row] = await screen.findAllByTestId('tracked-session');
+        expect(field(row, 'From').value).toBe('10:15');
+
+        fireEvent.change(field(row, 'Until'), { target: { value: '11:30' } });
+        fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+
+        await waitFor(() => expect(changes()).toHaveLength(1));
+        expect(changes()[0].body).toEqual({ start, end: local(6, 11, 30) });
+    });
+
     it('lists the task’s time, the latest first, and cuts back a night that ran on', async () => {
         sessions = [session('a', local(5, 9), local(5, 12)), session('b', local(6, 17), local(7, 9))];
         render(<TrackedTimeDialog task={report} onClose={() => {}} />, { wrapper });

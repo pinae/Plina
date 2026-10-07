@@ -23,6 +23,17 @@ export function composeSpan(date: string, from: string, until: string): { start:
     return { start, end: untilNextDay(from, until) ? addDays(end, 1) : end };
 }
 
+/** ``moment`` as sent: the ``original`` with its seconds when the minute
+ *  shown was not changed — only a changed time is a whole minute. */
+export function keepSeconds(moment: Date, original: string | null): string {
+    if (original) {
+        const minute = new Date(original);
+        minute.setSeconds(0, 0);
+        if (minute.getTime() === moment.getTime()) return original;
+    }
+    return moment.toISOString();
+}
+
 /** Why the server refused (its words), else ``fallback``. */
 export function refusal(failure: Error, fallback: string): string {
     const data = (failure as AxiosError<Record<string, unknown>>).response?.data;
