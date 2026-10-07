@@ -25,7 +25,7 @@ class RecalculatingModelViewSet(viewsets.ModelViewSet):
 
 
 class TaskViewSet(RecalculatingModelViewSet):
-    queryset = Task.objects.select_related("series", "deadline_marker") \
+    queryset = Task.objects.select_related("series__calendar_subscription", "deadline_marker") \
         .prefetch_related("calendar_links__subscription")
     serializer_class = TaskSerializer
 
@@ -43,7 +43,12 @@ class TaskViewSet(RecalculatingModelViewSet):
         # An imported task (README: Calendar) dismisses its event: the link
         # stays without the task, so the next read does not bring it back.
         if task.series_id is not None:
-            delete_series(task) if request.query_params.get("occurrences") == "all" else delete_occurrence(task)
+            if request.query_params.get("occurrences") == "all":
+                from tasks.services.calendar_series import dismiss
+                dismiss(task.series)  # a calendar's later occurrences do not come either
+                delete_series(task)
+            else:
+                delete_occurrence(task)
             recalculate_accepted_plan()
             return Response(status=204)
         try:

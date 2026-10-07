@@ -82,6 +82,9 @@ class TaskSerializer(serializers.ModelSerializer):
     )
     #: Compared with the calendar: its changes Plina kept back are settled.
     calendar_resolved = serializers.BooleanField(write_only=True, required=False)
+    #: A series that follows a repeating calendar event: new occurrences
+    #: join without asking (README: Calendar); read back in ``series_calendar``.
+    calendar_auto = serializers.BooleanField(write_only=True, required=False)
 
     #: What “this and the following” passes on to the following occurrences.
     FOLLOWING_FIELDS = ('header', 'description', 'duration', 'priority', 'color', 'tags', 'latest_finish_date',
@@ -134,10 +137,21 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def _recurrence(self, task) -> dict:
         """The series a task is an occurrence of (README: Recurring tasks)."""
-        if task.series_id is None:
-            return {'recurrence': None, 'recurrence_description': None, 'series_id': None,
-                    'occurrence': None, 'next_occurrence': None, 'occurrence_count': 0}
         from .services.recurrence import RecurrenceError, describe, parse_rule
+        if task.series_id is None:
+            # An occurrence of a repeating calendar event that came on its own
+            # (it did not fit): the rule and switch of the series following it.
+            followed = self._followed_series(task)
+            if followed is not None:
+                try:
+                    description = describe(parse_rule(followed.recurrence))
+                except RecurrenceError:
+                    description = followed.recurrence
+                return {'recurrence': followed.recurrence, 'recurrence_description': description, 'series_id': None,
+                        'occurrence': None, 'next_occurrence': None, 'occurrence_count': 0,
+                        'series_calendar': self._series_calendar(followed)}
+            return {'recurrence': None, 'recurrence_description': None, 'series_id': None,
+                    'occurrence': None, 'next_occurrence': None, 'occurrence_count': 0, 'series_calendar': None}
         from .services.series import next_after, occurrence_counts
         series = task.series
         counts = self.context.setdefault('_occurrence_counts', {})
@@ -151,10 +165,31 @@ class TaskSerializer(serializers.ModelSerializer):
             description = series.recurrence
         moment = serializers.DateTimeField()
         following = next_after(series, task.occurrence)
+        calendar = series.calendar_subscription
         return {'recurrence': series.recurrence, 'recurrence_description': description,
                 'series_id': series.id, 'occurrence': moment.to_representation(task.occurrence),
                 'next_occurrence': moment.to_representation(following) if following else None,
-                'occurrence_count': counts.get(series.id, 0)}
+                'occurrence_count': counts.get(series.id, 0),
+                # The repeating calendar event it follows (README: Calendar).
+                'series_calendar': self._series_calendar(series) if calendar is not None else None}
+
+    @staticmethod
+    def _series_calendar(series) -> dict:
+        return {'name': series.calendar_subscription.name, 'auto': series.calendar_auto,
+                'mismatch': series.calendar_mismatch}
+
+    def _followed_series(self, task):
+        """The series following the repeating event of ``task``'s calendar link."""
+        links = [link for link in task.calendar_links.all() if link.recurrence_id]
+        if not links:
+            return None
+        if '_followed' not in self.context:  # one query for a whole list
+            from .models import TaskSeries
+            self.context['_followed'] = {
+                (series.calendar_subscription_id, series.calendar_uid): series
+                for series in TaskSeries.objects.filter(calendar_subscription__isnull=False)
+                .select_related('calendar_subscription')}
+        return self.context['_followed'].get((links[0].subscription_id, links[0].uid))
 
     def _pop_color(self, validated_data):
         """``own_hex_color`` -> the model's rgb bytes (only when given)."""
@@ -252,6 +287,7 @@ class TaskSerializer(serializers.ModelSerializer):
         validated_data.pop('estimate_reason', None)
         validated_data.pop('scope', None)
         validated_data.pop('calendar_resolved', None)
+        validated_data.pop('calendar_auto', None)
         recurrence = validated_data.pop('recurrence', '')
         self._pop_color(validated_data)
         if 'order' not in validated_data:
@@ -273,6 +309,7 @@ class TaskSerializer(serializers.ModelSerializer):
         scope = validated_data.pop('scope', 'this')
         if validated_data.pop('calendar_resolved', False):
             instance.calendar_links.update(pending=[])
+        calendar_auto = validated_data.pop('calendar_auto', None)
         self._pop_color(validated_data)
         following = {field: value for field, value in validated_data.items() if field in self.FOLLOWING_FIELDS}
         old_duration = instance.duration
@@ -298,6 +335,11 @@ class TaskSerializer(serializers.ModelSerializer):
         if scope == 'following' and following:
             from .services.series import apply_to_following
             apply_to_following(task, following)
+        if calendar_auto is not None:
+            from .services.calendar_series import followed, set_auto
+            series = followed(task)  # also from an occurrence that came on its own
+            if series is not None and series.calendar_subscription_id:
+                set_auto(series, calendar_auto)
         ensure_auto_colors()  # moved to the top level
         return task
 
@@ -308,7 +350,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'latest_finish_date', 'deadline_marker_id', 'calendar_resolved', 'time_spent', 'priority', 'tags',
             'tag_ids', 'own_hex_color', 'is_fixed',
             'is_appointment', 'completed_at', 'is_done', 'active_tracking_start',
-            'parent_id', 'order', 'estimate_reason', 'recurrence', 'scope',
+            'parent_id', 'order', 'estimate_reason', 'recurrence', 'scope', 'calendar_auto',
             'completion_estimate', 'completion_first_estimate', 'completion_time_spent',
             'completion_subtree_time_spent', 'completion_dropped_rest',
         ]

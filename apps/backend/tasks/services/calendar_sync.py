@@ -32,7 +32,9 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from tasks.models import CalendarLink, CalendarSubscription, Marker, Task, TimeBucketType, TrackingSession
+from tasks.models import (CalendarLink, CalendarSubscription, Marker, Task, TaskSeries, TimeBucketType,
+                          TrackingSession)
+from tasks.services import calendar_series
 from tasks.services.settings import user_time_zone
 
 SYNC_INTERVAL = timedelta(minutes=10)
@@ -203,6 +205,33 @@ def read_events(data: bytes, start: datetime, end: datetime, zone=None, email: s
     return events
 
 
+@dataclass
+class Repeating:
+    """A repeating event's rule as the calendar has it."""
+    rrule: Dict[str, list]  # e.g. {"FREQ": ["WEEKLY"], "BYDAY": ["TU"]}
+    start: datetime  # its first occurrence (DTSTART)
+
+
+def read_repeating(data: bytes, zone=None) -> Dict[str, Repeating]:
+    """The rules of the repeating timed events, by UID (README: Calendar)."""
+    import icalendar
+    try:
+        calendar = icalendar.Calendar.from_ical(data)
+    except ValueError:
+        return {}
+    zone = zone or _calendar_zone(calendar) or timezone.get_current_timezone()
+    found = {}
+    for component in calendar.walk("VEVENT"):
+        if component.get("RRULE") is None or component.get("RECURRENCE-ID") is not None:
+            continue
+        first = component.get("DTSTART").dt
+        if not isinstance(first, datetime):
+            continue  # all-day: markers
+        rrule = {str(key).upper(): list(value) for key, value in component.get("RRULE").items()}
+        found[str(component.get("UID"))] = Repeating(rrule=rrule, start=_aware(first, zone))
+    return found
+
+
 # --- Keeping them --------------------------------------------------------------
 
 @dataclass
@@ -227,6 +256,19 @@ OWN_WORDS = {"header", "description"}
 def _untouched(task: Task) -> bool:
     return (task.completed_at is None and task.time_spent == timedelta(0)
             and not TrackingSession.objects.filter(task=task).exists())
+
+
+def _bring(subscription: CalendarSubscription, event: Event, series: Optional[TaskSeries]) -> CalendarLink:
+    """A new event: an occurrence of the recurring task that follows it, if
+    it fits (else that switches to asking, README: Calendar), or a task or
+    marker of its own."""
+    if series is not None and series.calendar_auto:
+        reason = calendar_series.mismatch(series, calendar_series.slot_of(event.recurrence_id),
+                                          event.start, event.end, event.header)
+        if reason is None:
+            return calendar_series.place(subscription, series, event)
+        calendar_series.switch_off(series, reason)
+    return _create(subscription, event)
 
 
 def _create(subscription: CalendarSubscription, event: Event) -> CalendarLink:
@@ -336,27 +378,53 @@ def sync(subscription: CalendarSubscription, now: Optional[datetime] = None,
         data = fetch(subscription.url)
     window_start, window_end = now - LOOKBACK, now + timedelta(days=settings.PLANNING_HORIZON_DAYS)
     # The user's days, also before the app told the server its zone (then the calendar's).
-    events = read_events(data, window_start, window_end, zone=user_time_zone(), email=subscription.email)
+    zone = user_time_zone()
+    events = read_events(data, window_start, window_end, zone=zone, email=subscription.email)
+    repeating = read_repeating(data, zone=zone)
     result = SyncResult()
-    with transaction.atomic():
+    # Rules ("every tuesday at 10:00") mean the user's wall-clock time, also
+    # when no request activated their zone.
+    with timezone.override(zone or timezone.get_current_timezone()), transaction.atomic():
         links = {(link.uid, link.recurrence_id): link for link in
                  CalendarLink.objects.filter(subscription=subscription)
                  .select_related("task", "marker", "bucket_type")}
+        # Repeating events whose occurrences were all deleted: not again.
+        dismissed = {uid for uid, recurrence_id in links if recurrence_id == calendar_series.DISMISSED}
+        # The occurrences of a repeating event join one recurring task.
+        occurrences: Dict[str, List[Event]] = {}
+        for event in events:
+            if event.recurrence_id and not event.all_day and event.uid not in dismissed:
+                occurrences.setdefault(event.uid, []).append(event)
+        series_of = {uid: calendar_series.series_for(subscription, uid, found, repeating)
+                     for uid, found in occurrences.items()}
         seen = set()
         for event in events:
             if event.key in seen:
                 continue
             seen.add(event.key)
+            if event.uid in dismissed:
+                continue
             link = links.get(event.key)
             if link is None:
-                links[event.key] = _create(subscription, event)
+                links[event.key] = _bring(subscription, event, series_of.get(event.uid))
                 result.created += 1
             elif _update(link, event):
                 result.updated += 1
         for key, link in list(links.items()):
+            if key[1] == calendar_series.DISMISSED:
+                continue
             if key not in seen and link.start >= now:  # a coming event that is gone
                 remove_link(link)
                 result.removed += 1
+        # A repeating event gone from the calendar: its empty series too.
+        TaskSeries.objects.filter(calendar_subscription=subscription, occurrences__isnull=True) \
+            .exclude(calendar_uid__in=list(occurrences)).delete()
+        for uid, series in series_of.items():
+            if series is not None and series.calendar_auto:
+                calendar_series.adopt(series)
+                calendar_series.clear_unknown(
+                    series, [calendar_series.slot_of(event.recurrence_id) for event in occurrences[uid]],
+                    now, window_end)
         result.completed = _complete_past(
             CalendarLink.objects.filter(subscription=subscription, task__isnull=False).select_related("task"), now)
     if result.created:
@@ -398,7 +466,10 @@ def unsubscribe(subscription: CalendarSubscription) -> None:
     """Stop reading a calendar: its coming events that Plina made and nobody
     worked on go, everything else stays as yours."""
     now = timezone.now()
-    for link in CalendarLink.objects.filter(subscription=subscription).select_related("task", "marker"):
+    for link in CalendarLink.objects.filter(subscription=subscription).select_related("task__series", "marker"):
+        if link.task is not None and link.task.series is not None \
+                and link.task.series.calendar_subscription_id == subscription.id:
+            continue  # a recurring task now: its rule makes the occurrences from here on
         if link.start >= now:
             remove_link(link)
     subscription.delete()

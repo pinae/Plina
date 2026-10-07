@@ -135,6 +135,16 @@ class TaskSeries(Owned):
     anchor = models.DateTimeField()
     #: Occurrences deleted on their own (ISO timestamps): not made again.
     skipped = models.JSONField(default=list, blank=True)
+    #: The repeating calendar event it follows (README: Calendar): its
+    #: occurrences come from the calendar, not from the rule, which checks
+    #: them. Without a calendar (removed), the rule makes them again.
+    calendar_subscription = models.ForeignKey("CalendarSubscription", related_name="series", null=True,
+                                              blank=True, on_delete=models.SET_NULL)
+    calendar_uid = models.CharField(max_length=1024, default="", blank=True)
+    #: New occurrences from the calendar join without asking (while they fit the rule).
+    calendar_auto = models.BooleanField(default=True)
+    #: Why ``calendar_auto`` was switched off: an occurrence that did not fit.
+    calendar_mismatch = models.TextField(default="", blank=True)
 
     class Meta:
         verbose_name_plural = "task series"

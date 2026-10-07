@@ -13,6 +13,9 @@ tracked on its own.
 * A new occurrence copies the latest one (header, description, estimate,
   priority, tags, color, project); a deadline moves along with the date.
 * Deleting one occurrence skips its date; :func:`delete_series` deletes all.
+* A series that follows a repeating calendar event (README: Calendar,
+  services.calendar_series) makes no occurrences itself: the calendar
+  brings them, the rule checks them.
 
 Occurrences are made when tasks or plans are asked for
 (:func:`spawn_occurrences`), so no scheduler is needed; the unique
@@ -102,6 +105,10 @@ def make_recurring(task: Task, text: str, now: Optional[datetime] = None) -> Tas
     Raises :class:`RecurrenceError` with the reason if it cannot."""
     now = now or timezone.now()
     series = task.series
+    from tasks.services.calendar_series import followed
+    following = followed(task)  # a calendar's occurrence that came on its own: its series' rule
+    if following is not None and following.calendar_subscription_id is not None:
+        return _change_calendar_rule(task, following, text)
     if not text.strip():
         if series is not None:
             stop_series(task)
@@ -133,6 +140,26 @@ def make_recurring(task: Task, text: str, now: Optional[datetime] = None) -> Tas
     # Made now, not by the next requests — which may come at once (the Tasks
     # tab and the plan) and should not both write.
     _update_series(series, now)
+    return task
+
+
+def _change_calendar_rule(task: Task, series: TaskSeries, text: str) -> Task:
+    """The rule of a series that follows a calendar event: the calendar's
+    occurrences stay; the rule (counted from its first one) checks them."""
+    from tasks.services.calendar_series import recheck
+    if not text.strip():
+        raise RecurrenceError(
+            f"“{task.header}” follows a repeating event of {series.calendar_subscription.name}: its occurrences "
+            "come from there. Switch off “Include new occurrences” to get new ones as tasks of their own, "
+            "or delete all occurrences.")
+    parse_rule(text)
+    if series.recurrence == text.strip():
+        return task
+    first = Task.objects.filter(series=series).order_by("occurrence").first()
+    series.recurrence = text.strip()
+    series.anchor = first.occurrence if first is not None else series.anchor
+    series.save(update_fields=["recurrence", "anchor"])
+    recheck(series)
     return task
 
 
@@ -205,11 +232,14 @@ def _update_series(series: TaskSeries, now: datetime) -> Tuple[List[Task], int]:
         return [], 0  # a rule saved before it was refused: nothing to make
     template = Task.objects.filter(series=series).order_by("-occurrence").first()
     if template is None:
-        series.delete()  # every occurrence is gone
-        return [], 0
+        if series.calendar_subscription_id is None:
+            series.delete()  # every occurrence is gone
+        return [], 0  # following a calendar: its next occurrences may come
     completed = 0
     if template.is_appointment:
         completed = _complete_past_appointments(series, now)
+        if series.calendar_subscription_id is not None:
+            return [], completed  # its occurrences come from the calendar
         until = now + timedelta(days=settings.PLANNING_HORIZON_DAYS)
     else:
         until = now
@@ -244,7 +274,7 @@ def delete_occurrence(task: Task) -> None:
         return
     series.skipped = sorted(set(series.skipped) | {_key(task.occurrence)})
     series.save(update_fields=["skipped"])
-    if not Task.objects.filter(series=series).exclude(id=task.id).exists():
+    if not Task.objects.filter(series=series).exclude(id=task.id).exists() and series.calendar_subscription_id is None:
         try:
             rule = parse_rule(series.recurrence)
         except RecurrenceError:
