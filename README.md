@@ -158,10 +158,10 @@ invitations in Google Calendar or the invitation email. The code is in
 `apps/backend/tasks/services/calendar_sync.py`, `markers.py` and `merge.py`.
 
 * **Timed events** become appointments: top-level tasks in the calendar's
-  color, marked with a calendar icon in the Tasks tab; a repeating event
-  becomes a task per occurrence. Cancelled events and those you declined
-  (given your address in that calendar) are left out. An imported
-  appointment completes itself when it ends, unless it is being tracked.
+  color, marked with a calendar icon in the Tasks tab. Cancelled events and
+  those you declined (given your address in that calendar) are left out. An
+  imported appointment completes itself when it ends, unless it is being
+  tracked.
 * **All-day events** become **markers** (⚑ in the lane under the Week view's
   day headers): something on certain days — a conference, a holiday. A click
   on a free lane makes one by hand: all day (midnight to midnight), from a
@@ -188,6 +188,23 @@ invitations in Google Calendar or the invitation email. The code is in
   calendar); the other one's tracked time, dependencies, subtasks and
   calendar link move over, then it is deleted — updates of the event then go
   to the kept task. Overlapping cards share their column side by side.
+* A **repeating event** becomes one recurring task (↻, one row in the Tasks
+  tab; `apps/backend/tasks/services/calendar_series.py`): its rule in
+  Plina's words ("every tuesday at 10:00"), each occurrence a task of its
+  own. The calendar says which occurrences there are (exceptions, ones moved
+  on their own, the end); the rule checks that they fit. With "Include new
+  occurrences from … without asking" (in the task form, on by default) every
+  new occurrence that fits — on a date of the rule at its time, as long as
+  the others — joins by itself as it comes into the 60 days ahead, with your
+  tags, priority, color and project. One that does not fit (the meeting
+  moved to Wednesdays) switches it off with the reason and comes as a task
+  of its own; change the rule to fit, and with the switch on again they all
+  join. Plina says the common rules (daily, weekly on days, every n weeks,
+  monthly on a day or the first/last weekday, yearly); a rule it cannot say
+  leaves the occurrences as tasks of their own. Merging an occurrence into
+  a recurring task of yours makes yours follow the event. Deleting all
+  occurrences dismisses the event; removing the calendar leaves a recurring
+  task of yours whose rule makes the next occurrences.
 * Tasks have a **place** (an address, a room, a call link), filled from the
   event's location.
 

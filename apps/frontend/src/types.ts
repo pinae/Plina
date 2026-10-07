@@ -72,10 +72,21 @@ export interface Task {
     next_occurrence: string | null;
     /** How many occurrences the series has, done ones included. */
     occurrence_count: number;
+    /** The repeating calendar event its series follows (README: Calendar). */
+    series_calendar: SeriesCalendar | null;
     /** A named deadline (README: Calendar): the deadline is this marker's start. */
     deadline_marker: { id: string; title: string; start: string } | null;
     /** The calendar event it follows (README: Calendar), null for a task of yours. */
     calendar: TaskCalendar | null;
+}
+
+/** A recurring task that follows a repeating calendar event. */
+export interface SeriesCalendar {
+    name: string;
+    /** New occurrences join without asking (while they fit the rule). */
+    auto: boolean;
+    /** Why ``auto`` was switched off: an occurrence that did not fit. */
+    mismatch: string;
 }
 
 /** The calendar event behind a task, as last read. */
@@ -125,6 +136,8 @@ export interface TaskWrite {
     deadline_marker_id?: string | null;
     /** Compared with the calendar: what it changed and Plina kept is settled. */
     calendar_resolved?: boolean;
+    /** Of the series that follows a repeating calendar event. */
+    calendar_auto?: boolean;
 }
 
 /** Something on certain days or at a certain time (README: Calendar). */

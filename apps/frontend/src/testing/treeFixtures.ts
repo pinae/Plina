@@ -15,7 +15,7 @@ export const treeDefaults = {
     own_hex_color: null, inherited_hex_color: null,
     // Does not repeat.
     recurrence: null, recurrence_description: null, series_id: null, occurrence: null,
-    next_occurrence: null, occurrence_count: 0,
+    next_occurrence: null, occurrence_count: 0, series_calendar: null,
     // No place, no named deadline, not from a calendar (README: Calendar).
     place: '', deadline_marker: null, calendar: null,
 } satisfies Partial<Task>;
