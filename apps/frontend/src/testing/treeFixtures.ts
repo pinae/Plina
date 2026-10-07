@@ -16,6 +16,8 @@ export const treeDefaults = {
     // Does not repeat.
     recurrence: null, recurrence_description: null, series_id: null, occurrence: null,
     next_occurrence: null, occurrence_count: 0,
+    // No place, no named deadline, not from a calendar (README: Calendar).
+    place: '', deadline_marker: null, calendar: null,
 } satisfies Partial<Task>;
 
 export const makeTask = (id: string, over: Partial<Task> = {}): Task => ({

@@ -3,7 +3,8 @@ from django.utils import timezone
 from rest_framework import serializers
 from datetime import timedelta
 
-from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, UserSettings
+from .models import (CalendarSubscription, Marker, Task, Tag, TimeBucket, TimeBucketType, TaskDependency,
+                     UserSettings)
 from .services.colors import ensure_auto_colors, ensure_bucket_type_colors, from_hex, to_hex
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
                                  write_completion_snapshot)
@@ -74,6 +75,13 @@ class TaskSerializer(serializers.ModelSerializer):
     #: A recurring task's edit applies to this occurrence only, or to the
     #: following open ones too.
     scope = serializers.ChoiceField(choices=['this', 'following'], write_only=True, required=False)
+    #: A named deadline (README: Calendar): the deadline is the marker's
+    #: start and moves with it; read back as ``deadline_marker``.
+    deadline_marker_id = serializers.PrimaryKeyRelatedField(
+        queryset=Marker.objects.all(), source='deadline_marker', required=False, allow_null=True, write_only=True,
+    )
+    #: Compared with the calendar: its changes Plina kept back are settled.
+    calendar_resolved = serializers.BooleanField(write_only=True, required=False)
 
     #: What “this and the following” passes on to the following occurrences.
     FOLLOWING_FIELDS = ('header', 'description', 'duration', 'priority', 'color', 'tags', 'latest_finish_date',
@@ -107,7 +115,22 @@ class TaskSerializer(serializers.ModelSerializer):
         data['hex_color'] = tree.effective_color(task.id)
         data['inherited_hex_color'] = tree.inherited_color(task.id)
         data.update(self._recurrence(task))
+        marker = task.deadline_marker
+        data['deadline_marker'] = {
+            'id': marker.id, 'title': marker.title,
+            'start': serializers.DateTimeField().to_representation(marker.start),
+        } if marker is not None else None
+        data['calendar'] = self._calendar(task)
         return data
+
+    def _calendar(self, task):
+        """The calendar event the task follows (README: Calendar), with the
+        event as last read — for "Compare with the calendar"."""
+        link = next(iter(task.calendar_links.all()), None)
+        if link is None:
+            return None
+        return {'id': link.subscription_id, 'name': link.subscription.name, 'event': link.data,
+                'pending': link.pending}
 
     def _recurrence(self, task) -> dict:
         """The series a task is an occurrence of (README: Recurring tasks)."""
@@ -157,6 +180,13 @@ class TaskSerializer(serializers.ModelSerializer):
         if instance is None and new_parent not in (self._UNSET, None) and new_parent.series_id is not None:
             from .services.series import subtasks_refused
             raise serializers.ValidationError({'parent_id': [subtasks_refused(new_parent)]})
+        marker = attrs.get('deadline_marker')
+        if marker is not None:
+            attrs['latest_finish_date'] = marker.start  # due at the marker
+        elif ('latest_finish_date' in attrs and 'deadline_marker' not in attrs and instance is not None
+              and instance.deadline_marker is not None
+              and attrs['latest_finish_date'] != instance.deadline_marker.start):
+            attrs['deadline_marker'] = None  # a date of its own now
         if attrs.get('recurrence'):
             from .services.recurrence import RecurrenceError, parse_rule
             try:
@@ -221,6 +251,7 @@ class TaskSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('estimate_reason', None)
         validated_data.pop('scope', None)
+        validated_data.pop('calendar_resolved', None)
         recurrence = validated_data.pop('recurrence', '')
         self._pop_color(validated_data)
         if 'order' not in validated_data:
@@ -240,6 +271,8 @@ class TaskSerializer(serializers.ModelSerializer):
         reason = validated_data.pop('estimate_reason', 'edited')
         recurrence = validated_data.pop('recurrence', None)
         scope = validated_data.pop('scope', 'this')
+        if validated_data.pop('calendar_resolved', False):
+            instance.calendar_links.update(pending=[])
         self._pop_color(validated_data)
         following = {field: value for field, value in validated_data.items() if field in self.FOLLOWING_FIELDS}
         old_duration = instance.duration
@@ -271,8 +304,9 @@ class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            'id', 'header', 'description', 'start_date', 'duration',
-            'latest_finish_date', 'time_spent', 'priority', 'tags', 'tag_ids', 'own_hex_color', 'is_fixed',
+            'id', 'header', 'description', 'place', 'start_date', 'duration',
+            'latest_finish_date', 'deadline_marker_id', 'calendar_resolved', 'time_spent', 'priority', 'tags',
+            'tag_ids', 'own_hex_color', 'is_fixed',
             'is_appointment', 'completed_at', 'is_done', 'active_tracking_start',
             'parent_id', 'order', 'estimate_reason', 'recurrence', 'scope',
             'completion_estimate', 'completion_first_estimate', 'completion_time_spent',
@@ -431,6 +465,17 @@ class TimeBucketTypeSerializer(serializers.ModelSerializer):
         bucket_type.refresh_from_db(fields=['auto_color'])
         return bucket_type
 
+    def validate(self, attrs):
+        """A special bucket (README: Calendar) has both ends of its frame."""
+        instance = self.instance
+        start = attrs.get('special_start', instance.special_start if instance else None)
+        end = attrs.get('special_end', instance.special_end if instance else None)
+        if (start is None) != (end is None):
+            raise serializers.ValidationError({'special_end': ['A special bucket needs a start and an end.']})
+        if start is not None and end <= start:
+            raise serializers.ValidationError({'special_end': ['The end must be after the start.']})
+        return attrs
+
     def update(self, instance, validated_data):
         self._pop_color(validated_data)
         if validated_data.get('start_times', instance.start_times) != instance.start_times:
@@ -442,7 +487,16 @@ class TimeBucketTypeSerializer(serializers.ModelSerializer):
         model = TimeBucketType
         # Explicit: '__all__' leaked the raw rgb bytes as base64.
         fields = ['id', 'name', 'start_times', 'duration', 'tags', 'tag_ids',
-                  'hex_color', 'own_hex_color']
+                  'hex_color', 'own_hex_color', 'special_start', 'special_end', 'is_special', 'calendar']
+        # Empty: buckets placed by hand — or, special, the whole frame.
+        extra_kwargs = {'start_times': {'allow_blank': True}}
+
+    is_special = serializers.BooleanField(read_only=True)
+    calendar = serializers.SerializerMethodField()
+
+    def get_calendar(self, bucket_type):
+        link = bucket_type.calendar_links.select_related('subscription').first()
+        return {'id': link.subscription_id, 'name': link.subscription.name} if link is not None else None
 
 class TimeBucketSerializer(serializers.ModelSerializer):
     type = TimeBucketTypeSerializer(read_only=True)
@@ -495,3 +549,59 @@ class TaskDependencySerializer(serializers.ModelSerializer):
                 "cycle": cycle,
             })
         return attrs
+
+
+class MarkerSerializer(serializers.ModelSerializer):
+    """A marker (README: Calendar): a conference, a holiday, a deadline."""
+    end = serializers.DateTimeField(read_only=True)
+    all_day = serializers.SerializerMethodField()
+    calendar = serializers.SerializerMethodField()
+    #: How many tasks have it as their deadline.
+    deadline_task_count = serializers.SerializerMethodField()
+
+    def get_all_day(self, marker):
+        from .services.markers import is_all_day
+        return is_all_day(marker)
+
+    def get_calendar(self, marker):
+        link = marker.calendar_links.select_related('subscription').first()
+        return {'id': link.subscription_id, 'name': link.subscription.name} if link is not None else None
+
+    def get_deadline_task_count(self, marker):
+        return marker.deadline_tasks.count()
+
+    def validate_duration(self, value):
+        if value < timedelta(0):
+            raise serializers.ValidationError('The duration cannot be negative.')
+        return value
+
+    class Meta:
+        model = Marker
+        fields = ['id', 'title', 'description', 'place', 'start', 'duration', 'end', 'all_day', 'calendar',
+                  'deadline_task_count']
+
+
+class CalendarSubscriptionSerializer(serializers.ModelSerializer):
+    """A calendar Plina reads (README: Calendar). The address is secret: it
+    is written, never read back — ``url_hint`` names its host."""
+    url = serializers.CharField(write_only=True, max_length=2048)
+    url_hint = serializers.SerializerMethodField()
+    hex_color = serializers.RegexField(HEX_COLOR_PATTERN, required=False,
+                                       error_messages={"invalid": "Colors must look like #3357ff."})
+
+    def get_url_hint(self, subscription):
+        from urllib.parse import urlsplit
+        host = urlsplit(subscription.url).hostname or ''
+        return f'{host} …' if host else ''
+
+    def validate_url(self, value):
+        from .services.calendar_sync import CalendarError, normalize_url
+        try:
+            return normalize_url(value)
+        except CalendarError as error:
+            raise serializers.ValidationError(str(error))
+
+    class Meta:
+        model = CalendarSubscription
+        fields = ['id', 'name', 'url', 'url_hint', 'email', 'hex_color', 'last_synced_at', 'last_error']
+        read_only_fields = ['last_synced_at', 'last_error']

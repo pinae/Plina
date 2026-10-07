@@ -48,6 +48,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import AddIcon from '@mui/icons-material/Add';
 import RepeatIcon from '@mui/icons-material/Repeat';
+import EventIcon from '@mui/icons-material/Event';
 import type { AxiosError } from 'axios';
 import {
     closestCenter, DndContext, KeyboardSensor, MeasuringStrategy, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -989,6 +990,14 @@ function OutlineItemRow({
                             {dueFrom(task, new Date()) && (
                                 <Typography variant="caption" noWrap>{dueFrom(task, new Date())}</Typography>
                             )}
+                        </Box>
+                    </Tooltip>
+                )}
+                {item.kind === 'task' && task.calendar && !editing && (
+                    <Tooltip title={`From ${task.calendar.name}${task.calendar.pending.length ? ': changed there' : ''}`}>
+                        <Box component="span" data-testid="from-calendar" aria-label={`from ${task.calendar.name}`}
+                            sx={{ display: 'inline-flex', flexShrink: 0 }}>
+                            <EventIcon color={task.calendar.pending.length ? 'warning' : 'action'} sx={{ fontSize: 16 }} />
                         </Box>
                     </Tooltip>
                 )}

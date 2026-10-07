@@ -1,11 +1,22 @@
 import { useMemo, useState } from 'react';
 import {
     Alert, Box, Button, CircularProgress, Dialog, DialogActions,
-    DialogContent, DialogTitle, Snackbar, TextField,
+    DialogContent, DialogTitle, Snackbar, TextField, Tooltip,
 } from '@mui/material';
+import CallMergeIcon from '@mui/icons-material/CallMerge';
 
 import api from '../../api.ts';
-import { useCompleteTask, useSettings, usePlan, useStartTracking, useStopTracking, useTasks, queryKeys } from '../../queries.tsx';
+import {
+    useBucketTypes, useCompleteTask, useMarkers, useSettings, usePlan, useStartTracking, useStopTracking, useTasks,
+    queryKeys,
+} from '../../queries.tsx';
+import type { Task } from '../../types.ts';
+import { useDependencyDrawing } from '../../hooks/useDependencyDrawing.ts';
+import { DependencyDrawLayer } from '../DependencyDrawLayer/DependencyDrawLayer.tsx';
+import { MergeDialog } from '../MergeDialog/MergeDialog.tsx';
+import { keptOf } from '../../utils/merge.ts';
+import { MarkerDialog } from '../MarkerDialog/MarkerDialog.tsx';
+import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 import { usePlacement } from '../../hooks/usePlacement.ts';
 import { bucketsToZones, firstFreeDay, overlapsAutoTask, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
 import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
@@ -13,7 +24,7 @@ import { clockMinutes } from '../../utils/timeScale.ts';
 import { useNow } from '../../hooks/useNow.ts';
 import type { PlanAlternative } from '../../types.ts';
 import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
-import { WeekView } from '../WeekView/WeekView.tsx';
+import { WeekView, type DayMark } from '../WeekView/WeekView.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { WhatNextDialog } from '../WhatNextDialog/WhatNextDialog.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
@@ -100,6 +111,10 @@ function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => voi
  * start_date+is_fixed — the server enforces predecessor ordering and its
  * message surfaces as a snackbar; ▶/⏹/✓ drive tracking and completion,
  * with the WP-10 chooser opening when completion returns choices.
+ *
+ * Calendar (README: Calendar): markers and special buckets in the lane below
+ * the day headers (a click on a free lane makes a marker); "Merge tasks":
+ * drag from one card onto another to merge the two tasks.
  */
 interface PlannedWeekViewProps {
     initialDate?: Date;
@@ -108,6 +123,12 @@ interface PlannedWeekViewProps {
     /** A manual edit invalidated an auto task — the plan is now obsolete. */
     onPlanDirty?: () => void;
 }
+
+/** A whole day's start, local time (e.g. a special bucket made from an all-day marker). */
+const atMidnight = (iso: string) => {
+    const date = new Date(iso);
+    return date.getHours() === 0 && date.getMinutes() === 0;
+};
 
 export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanDirty }: PlannedWeekViewProps) {
     const plan = usePlan();
@@ -125,6 +146,33 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
     const [actionToast, setActionToast] = useState<string | null>(null);
     const [autoCompleted, setAutoCompleted] = useState<{ id: string; header: string }[] | null>(null);
     const [weekAnchor, setWeekAnchor] = useState<Date | undefined>(initialDate);
+    const markers = useMarkers();
+    const bucketTypes = useBucketTypes();
+    const [markerDialog, setMarkerDialog] = useState<{ id?: string; day?: Date } | null>(null);
+    const [specialId, setSpecialId] = useState<number | null>(null);
+    const [merging, setMerging] = useState<{ kept: Task; other: Task } | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
+    const marks = useMemo<DayMark[]>(() => [
+        ...(markers.data ?? []).map(marker => ({
+            id: marker.id, kind: 'marker' as const, title: marker.title, start: new Date(marker.start),
+            end: new Date(marker.end), color: '#b0bec5', allDay: marker.all_day,
+        })),
+        ...(bucketTypes.data ?? []).filter(type => type.is_special && type.special_start && type.special_end)
+            .map(type => ({
+                id: String(type.id), kind: 'special' as const, title: type.name,
+                start: new Date(type.special_start!), end: new Date(type.special_end!),
+                color: type.hex_color ?? '#539dad', allDay: atMidnight(type.special_start!) && atMidnight(type.special_end!),
+            })),
+    ], [markers.data, bucketTypes.data]);
+    // "Merge tasks": a line from one card onto another (README: Calendar).
+    const mergeDrawing = useDependencyDrawing((fromId, toId) => {
+        const byId = new Map((tasks.data ?? []).map(task => [task.id, task]));
+        const from = byId.get(fromId);
+        const to = byId.get(toId);
+        if (from && to) setMerging(keptOf(from, to));
+    }, { attribute: 'data-task-id', altGr: false });
+    const mergeLine = mergeDrawing.line;
+    const headerOf = (id: string | null | undefined) => tasks.data?.find(task => task.id === id)?.header ?? '';
 
     const viewTasks = useMemo(
         () => (plan.data ? planToViewTasks(plan.data) : []),
@@ -229,12 +277,35 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
         if (drag && overlapsAutoTask(viewTasks, drag)) onPlanDirty?.();
     };
 
+    // While merging, a press on a card draws the line instead of moving or
+    // opening the card.
+    const onCard = (target: EventTarget) => target instanceof Element && target.closest('[data-task-id]') !== null;
+    const mergeCapture = mergeDrawing.active ? {
+        onPointerDownCapture: (event: React.PointerEvent) => mergeDrawing.onPointerDown(event),
+        onMouseDownCapture: (event: React.MouseEvent) => { if (onCard(event.target)) event.stopPropagation(); },
+        onClickCapture: (event: React.MouseEvent) => { if (onCard(event.target)) event.stopPropagation(); },
+    } : {};
+    const editedSpecial = bucketTypes.data?.find(type => type.id === specialId);
+    const editedMarker = markers.data?.find(marker => marker.id === markerDialog?.id);
+
     return (
         <>
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 1 }}>
                 <Box sx={{ flexGrow: 1 }}>
                     <FeasibilityBanner warnings={plan.data?.warnings ?? []} />
+                    {mergeDrawing.active && (
+                        <Alert severity="info" sx={{ mt: 0.5 }}>
+                            Drag from one task onto another to merge them. Esc stops.
+                        </Alert>
+                    )}
                 </Box>
+                <Tooltip describeChild title="Merge two tasks, e.g. yours and the invitation of the same meeting: drag from one onto the other">
+                    <Button size="small" variant={mergeDrawing.active ? 'contained' : 'outlined'}
+                        startIcon={<CallMergeIcon />} aria-pressed={mergeDrawing.active}
+                        onClick={mergeDrawing.toggle}>
+                        Merge tasks
+                    </Button>
+                </Tooltip>
                 <Button
                     size="small" variant="outlined" startIcon={<SkipNextIcon />}
                     disabled={freeDay === null}
@@ -243,8 +314,13 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                     Jump to first free day
                 </Button>
             </Box>
+            <Box {...mergeCapture} data-merging={mergeDrawing.active ? 'true' : undefined}
+                sx={{ display: 'contents', ...(mergeDrawing.active ? { '& [data-task-id]': { cursor: 'crosshair' } } : {}) }}>
             <WeekView
                 key={weekAnchor?.toISOString() ?? 'initial'}
+                marks={marks}
+                onMarkClick={mark => (mark.kind === 'marker' ? setMarkerDialog({ id: mark.id }) : setSpecialId(Number(mark.id)))}
+                onMarkCreate={day => setMarkerDialog({ day })}
                 tasks={viewTasks.map(task => ({
                     ...task,
                     // The card of the actively tracked task offers ⏹.
@@ -263,6 +339,31 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                 onTaskDragChange={handleDragChange}
                 activeDrag={activeDrag}
             />
+            </Box>
+            {mergeLine && (
+                <DependencyDrawLayer from={mergeLine.from} to={mergeLine.to}
+                    onTarget={mergeLine.overKey !== null && mergeLine.overKey !== mergeLine.fromKey}
+                    label={mergeLine.overKey && mergeLine.overKey !== mergeLine.fromKey
+                        ? `Merge “${headerOf(mergeLine.fromKey)}” and “${headerOf(mergeLine.overKey)}”`
+                        : `Drop on the task to merge “${headerOf(mergeLine.fromKey)}” with`} />
+            )}
+            {merging && (
+                <MergeDialog kept={merging.kept} other={merging.other} onClose={() => setMerging(null)}
+                    onMerged={(task, notes) => {
+                        setNotice([`Merged into “${task.header}”.`, ...notes].join(' '));
+                        if (mergeDrawing.active) mergeDrawing.toggle(); // done merging
+                    }} />
+            )}
+            {markerDialog && (markerDialog.day || editedMarker) && (
+                <MarkerDialog marker={editedMarker} day={markerDialog.day} onClose={() => setMarkerDialog(null)} />
+            )}
+            {editedSpecial && (
+                <BucketTypeFormDialog open bucketType={editedSpecial} onClose={() => setSpecialId(null)} />
+            )}
+            <Snackbar open={notice !== null} autoHideDuration={6000} onClose={() => setNotice(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+                <Alert severity="success" variant="filled" onClose={() => setNotice(null)}>{notice}</Alert>
+            </Snackbar>
             {editingZone && (
                 <BucketEditDialog zone={editingZone} onClose={() => setEditingZone(null)} />
             )}

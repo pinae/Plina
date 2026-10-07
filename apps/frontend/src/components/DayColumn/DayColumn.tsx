@@ -1,8 +1,9 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { Box } from '@mui/material';
 import { WeekViewTask, type ViewTask, type TaskActions, type ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { BucketBlock } from '../BucketBlock/BucketBlock.tsx';
 import type { DayZone } from '../../utils/planToWeek.ts';
+import { overlapLanes } from '../../utils/overlapLanes.ts';
 
 interface DayColumnProps {
     date: Date;
@@ -38,6 +39,8 @@ export const DayColumn: React.FC<DayColumnProps> = ({
     actions, onZoneClick, onZoneChange, onTaskEdit, onTaskChange, resolveDay, resolveCursorHalf, onTaskDragChange,
 }) => {
     const dragStartRef = useRef<number | null>(null);
+    // Overlapping cards side by side, so each stays reachable.
+    const lanes = useMemo(() => overlapLanes(tasks), [tasks]);
 
     // Drag-create: a press-drag-release on an *empty* area of a column produces
     // a new task.  The `target === currentTarget` guard means pressing on a
@@ -126,6 +129,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({
                     <WeekViewTask
                         key={`${task.taskId ?? index}@${task.startTime}`}
                         task={task}
+                        lane={lanes[index]}
                         columnHeight={columnHeight}
                         actions={actions}
                         onEdit={onTaskEdit}

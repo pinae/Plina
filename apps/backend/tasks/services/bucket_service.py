@@ -45,10 +45,20 @@ def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
     plus, for each :class:`TimeBucketType`, the generated occurrences that do
     not overlap a persisted bucket.
     """
+    bucket_types = list(TimeBucketType.objects.all())
+    # Special buckets (README: Calendar): the regular buckets in their time
+    # frame give way — generated or placed by hand.
+    frames = [(t.special_start, t.special_end) for t in bucket_types
+              if t.is_special and t.special_start < finish and t.special_end > start]
+
+    def displaced(bucket: TimeBucket) -> bool:
+        return not bucket.type.is_special and any(
+            bucket.start_date < frame_end and frame_start < bucket.end_date for frame_start, frame_end in frames)
+
     persisted = [
         bucket
-        for bucket in TimeBucket.objects.filter(start_date__lt=finish).order_by("start_date")
-        if bucket.end_date > start
+        for bucket in TimeBucket.objects.filter(start_date__lt=finish).select_related("type").order_by("start_date")
+        if bucket.end_date > start and not displaced(bucket)
     ]
 
     # Occurrences that were individually moved/resized: their materialized
@@ -61,7 +71,7 @@ def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
     }
 
     generated: List[TimeBucket] = []
-    for bucket_type in TimeBucketType.objects.all():
+    for bucket_type in bucket_types:
         # Look back by one bucket length so an occurrence that started before
         # ``start`` but is still ongoing is generated too.
         lookback = bucket_type.duration
@@ -69,6 +79,8 @@ def gather_time_buckets(start: datetime, finish: datetime) -> List[TimeBucket]:
             generation_range=(finish - start) + lookback, start=start - lookback,
         ):
             if candidate.start_date >= finish or candidate.end_date <= start:
+                continue
+            if displaced(candidate):
                 continue
             if (bucket_type.id, candidate.start_date) in moved_origins:
                 continue

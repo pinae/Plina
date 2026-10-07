@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Tag, Task, TaskEstimateChange, TimeBucketType, TimeBucket, UserSettings
+from .models import (CalendarLink, CalendarSubscription, Marker, Tag, Task, TaskEstimateChange,
+                     TimeBucketType, TimeBucket, UserSettings)
 
 
 class EstimateChangeInline(admin.TabularInline):
@@ -34,3 +35,19 @@ class TimeBucketAdmin(admin.ModelAdmin):
 @admin.register(UserSettings)
 class UserSettingsAdmin(admin.ModelAdmin):
     list_display = ('default_duration', 'active_task')
+
+
+@admin.register(Marker)
+class MarkerAdmin(admin.ModelAdmin):
+    list_display = ('title', 'start', 'duration')
+
+
+@admin.register(CalendarSubscription)
+class CalendarSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ('name', 'last_synced_at', 'last_error')
+    exclude = ('url',)  # secret
+
+
+@admin.register(CalendarLink)
+class CalendarLinkAdmin(admin.ModelAdmin):
+    list_display = ('subscription', 'uid', 'recurrence_id', 'task', 'marker', 'bucket_type', 'owned')

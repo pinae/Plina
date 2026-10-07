@@ -2,7 +2,13 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type {
     AlternativesResponse,
     BucketTypeWrite,
+    CalendarSubscription,
+    CalendarSubscriptionWrite,
+    CalendarSyncResponse,
     CompleteResponse,
+    Marker,
+    MarkerWrite,
+    MergeResponse,
     Dependency,
     PlanResponse,
     RecurrencePreview,
@@ -18,6 +24,7 @@ import type {
     TaskWrite,
     TimeBucket,
     TimeBucketType,
+    TimeSheet,
     TrackingResponse,
     UserSettings,
     LoginRequest,
@@ -216,3 +223,50 @@ export const previewRecurrence = (startTimes: string) =>
 export const previewTaskRecurrence = (recurrence: string, start?: string | null) =>
     api.post<RecurrencePreview>('recurrence-preview/', { recurrence, ...(start ? { start } : {}) })
         .then(r => r.data);
+
+// ------------------------------------------------------- calendar (README: Calendar)
+
+export const fetchMarkers = () =>
+    api.get<Marker[]>('markers/').then(r => r.data);
+
+export const createMarker = (marker: MarkerWrite) =>
+    api.post<Marker>('markers/', marker).then(r => r.data);
+
+export const updateMarker = (markerId: string, patch: MarkerWrite) =>
+    api.patch<Marker>(`markers/${markerId}/`, patch).then(r => r.data);
+
+export const deleteMarker = (markerId: string) =>
+    api.delete(`markers/${markerId}/`).then(() => undefined);
+
+/** The marker becomes a special bucket (body as for a bucket type). */
+export const convertMarker = (markerId: string, bucketType: Partial<BucketTypeWrite>) =>
+    api.post<TimeBucketType>(`markers/${markerId}/convert/`, bucketType).then(r => r.data);
+
+export const deleteBucketType = (bucketTypeId: number) =>
+    api.delete(`buckettypes/${bucketTypeId}/`).then(() => undefined);
+
+export const fetchCalendars = () =>
+    api.get<CalendarSubscription[]>('calendars/').then(r => r.data);
+
+export const createCalendar = (calendar: CalendarSubscriptionWrite) =>
+    api.post<CalendarSubscription>('calendars/', calendar).then(r => r.data);
+
+export const updateCalendar = (calendarId: string, patch: CalendarSubscriptionWrite) =>
+    api.patch<CalendarSubscription>(`calendars/${calendarId}/`, patch).then(r => r.data);
+
+export const deleteCalendar = (calendarId: string) =>
+    api.delete(`calendars/${calendarId}/`).then(() => undefined);
+
+/** Reads the calendars not read for a while (``force``: all now). */
+export const syncCalendars = (force = false) =>
+    api.post<CalendarSyncResponse>('calendars/sync/', force ? { force } : {}).then(r => r.data);
+
+/** Merge ``otherId`` into ``keptId``: ``values`` are the merged fields. */
+export const mergeTasks = (keptId: string, otherId: string, values: TaskWrite) =>
+    api.post<MergeResponse>(`tasks/${keptId}/merge/`, { other_id: otherId, values }).then(r => r.data);
+
+// ------------------------------------------------------ time sheet (README: Time sheet)
+
+/** The days from ``from`` to ``to`` (YYYY-MM-DD, both included) with tracked work. */
+export const fetchTimeSheet = (from: string, to: string) =>
+    api.get<TimeSheet>('timesheet/', { params: { from, to } }).then(r => r.data);

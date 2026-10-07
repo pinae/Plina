@@ -9,7 +9,10 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 
 import { previewTaskRecurrence } from '../../api.ts';
-import { useCreateTask, useDeleteTask, useSettings, useTags, useTasks, useUpdateTask } from '../../queries.tsx';
+import {
+    useCreateTask, useDeleteTask, useMarkers, useSettings, useTags, useTasks, useUpdateTask,
+} from '../../queries.tsx';
+import { MergeDialog } from '../MergeDialog/MergeDialog.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import { RecurrenceField } from '../RecurrenceField/RecurrenceField.tsx';
 import type { Task, TaskWrite } from '../../types.ts';
@@ -107,6 +110,11 @@ function TaskForm({
 
     const [header, setHeader] = useState(task?.header ?? '');
     const [description, setDescription] = useState(task?.description ?? '');
+    const [place, setPlace] = useState(task?.place ?? '');
+    // A named deadline (README: Calendar): the deadline is the marker's start.
+    const markers = useMarkers();
+    const [deadlineMarkerId, setDeadlineMarkerId] = useState<string | null>(task?.deadline_marker?.id ?? null);
+    const [comparing, setComparing] = useState(false);
     // Empty = the user's default duration (UI-8).
     const [hours, setHours] = useState(() => {
         const minutes = task ? parseDurationMinutes(task.duration) : initialDurationMinutes ?? null;
@@ -134,7 +142,7 @@ function TaskForm({
     const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
     // Unsaved changes = the editable values differ from when the form opened.
     const snapshot = JSON.stringify([header, description, hours, estimateReason, deadline, priority,
-        tagIds, chosenParentId, ownColor, isAppointment, start, recurrence]);
+        tagIds, chosenParentId, ownColor, isAppointment, start, recurrence, place, deadlineMarkerId]);
     const [initialSnapshot] = useState(snapshot);
     const dirty = snapshot !== initialSnapshot;
 
@@ -170,6 +178,14 @@ function TaskForm({
         return earliest ? { header: earliest.header, date: new Date(earliest.latest_finish_date!) } : null;
     })();
     const defaultDuration = parseDurationMinutes(settings.data?.default_duration ?? null) ?? 60;
+    // Markers as named deadlines: those still ahead, and the chosen one.
+    const deadlineOptions = (markers.data ?? [])
+        .filter(marker => new Date(marker.start) >= now || marker.id === deadlineMarkerId)
+        .sort((a, b) => a.start.localeCompare(b.start));
+    const deadlineMarker = deadlineOptions.find(marker => marker.id === deadlineMarkerId)
+        ?? (task?.deadline_marker && task.deadline_marker.id === deadlineMarkerId
+            ? { ...task.deadline_marker, description: '', place: '', duration: '00:00:00', end: task.deadline_marker.start,
+                all_day: false, calendar: null, deadline_task_count: 0 } : null);
 
     const errors = validateTaskForm(
         {
@@ -228,6 +244,7 @@ function TaskForm({
         const payload: TaskWrite = {
             header: header.trim(),
             description,
+            place: place.trim(),
             duration: duration.kind === 'ok' ? minutesToDurationString(duration.minutes) : null,
             latest_finish_date: deadline ? new Date(deadline).toISOString() : null,
             priority,
@@ -238,6 +255,8 @@ function TaskForm({
             start_date: isAppointment && start ? new Date(start).toISOString() : task?.start_date ?? null,
         };
         if (editing && estimateReason) payload.estimate_reason = estimateReason;
+        if (deadlineMarkerId) payload.deadline_marker_id = deadlineMarkerId;
+        else if (editing && task.deadline_marker) payload.deadline_marker_id = null;
         if (recurrence.trim() !== (task?.recurrence ?? '')) payload.recurrence = recurrence.trim();
         if (recurring) payload.scope = scope;
         const options = {
@@ -325,6 +344,18 @@ function TaskForm({
                     onChange={event => { setDescription(event.target.value); edited('description'); }}
                     {...feedback('description', 'Optional')}
                 />
+                <TextField
+                    label="Place" value={place} placeholder="An address, a room, a video call link"
+                    onChange={event => setPlace(event.target.value)} helperText="Optional"
+                />
+                {task?.calendar && (
+                    <Alert severity={task.calendar.pending.length ? 'warning' : 'info'}
+                        action={<Button color="inherit" size="small" onClick={() => setComparing(true)}>Compare</Button>}>
+                        {task.calendar.pending.length
+                            ? `${task.calendar.name} changed the ${task.calendar.pending.map(field => (field === 'header' ? 'title' : field)).join(' and ')}; yours is kept.`
+                            : `From ${task.calendar.name}: time and place follow the event.`}
+                    </Alert>
+                )}
                 <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                     <Box sx={{ width: '100%' }}>
                         <TextField
@@ -354,17 +385,37 @@ function TaskForm({
                             </Typography>
                         )}
                     </Box>
-                    <TextField
-                        label="Deadline" type="datetime-local" value={deadline} fullWidth
-                        slotProps={{ inputLabel: { shrink: true } }}
-                        onChange={event => {
-                            setDeadline(event.target.value);
-                            setDeadlineIncomplete(isBadInput(event.target));
-                            edited('deadline');
-                        }}
-                        {...feedback('deadline', 'Optional')}
-                        onBlur={event => { setDeadlineIncomplete(isBadInput(event.target)); touch('deadline'); }}
-                    />
+                    <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <TextField
+                            label="Deadline" type="datetime-local" value={deadline} fullWidth
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            onChange={event => {
+                                setDeadline(event.target.value);
+                                setDeadlineIncomplete(isBadInput(event.target));
+                                setDeadlineMarkerId(null); // a date of its own
+                                edited('deadline');
+                            }}
+                            {...feedback('deadline', deadlineMarker
+                                ? `At “${deadlineMarker.title}” — moves with it` : 'Optional')}
+                            onBlur={event => { setDeadlineIncomplete(isBadInput(event.target)); touch('deadline'); }}
+                        />
+                        {deadlineOptions.length > 0 && (
+                            <Autocomplete
+                                size="small" options={deadlineOptions} value={deadlineMarker}
+                                getOptionLabel={option => `${option.title} · ${new Date(option.start).toLocaleDateString(undefined, {
+                                    weekday: 'short', day: 'numeric', month: 'short',
+                                })}`}
+                                isOptionEqualToValue={(a, b) => a.id === b.id}
+                                onChange={(_event, option) => {
+                                    setDeadlineMarkerId(option?.id ?? null);
+                                    if (option) setDeadline(toLocalInput(option.start));
+                                    setDeadlineIncomplete(false);
+                                    edited('deadline');
+                                }}
+                                renderInput={params => <TextField {...params} label="Deadline at a marker" />}
+                            />
+                        )}
+                    </Box>
                 </Box>
                 <FormControl error={Boolean(priorityFeedback)}>
                     <Typography gutterBottom variant="body2">Priority: {priority}</Typography>
@@ -489,6 +540,7 @@ function TaskForm({
                     {editing ? 'Save' : 'Create'}
                 </Button>
             </DialogActions>
+            {comparing && task && <MergeDialog kept={task} onClose={() => setComparing(false)} />}
             {editing && recurring && (
                 <Dialog open={confirmDeleteAll} onClose={() => setConfirmDeleteAll(false)} maxWidth="xs">
                     <DialogTitle>Delete all occurrences?</DialogTitle>

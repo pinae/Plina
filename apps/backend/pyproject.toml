@@ -12,4 +12,6 @@ dependencies = [
     "gunicorn>=26.2.0",
     "psycopg[binary]>=3.3.6",
     "mozilla-django-oidc>=5.0.2",
+    "icalendar>=7.3.0",
+    "recurring-ical-events>=3.8.2",
 ]

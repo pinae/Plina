@@ -12,6 +12,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import App from './App.tsx';
 import { API, makeTask, makerTag, settingsFor, treeTasks } from './testing/treeFixtures.ts';
 import type { Task, TaskWrite } from './types.ts';
+import { calendarHandlers, noBucketTypes } from './testing/calendarHandlers.ts';
 
 let tasks: Task[] = [];
 let posted: TaskWrite[] = [];
@@ -19,6 +20,8 @@ const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const settings = () => ({ ...settingsFor(tasks, 'hw'), time_zone: zone });
 
 const server = setupServer(
+    ...calendarHandlers(),
+    ...noBucketTypes(),
     http.get(`${API}/tasks/`, () => HttpResponse.json(tasks)),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),
     http.get(`${API}/settings/`, () => HttpResponse.json(settings())),
@@ -47,10 +50,23 @@ describe('Tabs (T-2)', () => {
     it('Tasks first, Week second — and the app opens on Tasks', async () => {
         renderApp();
         expect(tabs().map(t => t.getAttribute('aria-label'))).toEqual(
-            ['Tasks', 'Week Overview', 'Calendar Plan', 'Tags', 'Time Buckets', 'Dependencies']);
+            ['Tasks', 'Week Overview', 'Calendar Plan', 'Time Sheet', 'Tags', 'Time Buckets', 'Dependencies']);
         expect(screen.getByRole('tab', { name: 'Tasks' })).toHaveAttribute('aria-selected', 'true');
         expect(await screen.findByRole('tree', { name: /outline/i })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
+    });
+
+    it('the Time Sheet tab shows this month’s time sheet (README: Time sheet)', async () => {
+        server.use(http.get(`${API}/timesheet/`, ({ request }) => {
+            const params = new URL(request.url).searchParams;
+            return HttpResponse.json({ from: params.get('from'), to: params.get('to'), work_tags: ['Arbeit', 'Work'],
+                pause_tags: ['Freizeit', 'Freetime'], days: [] });
+        }));
+        renderApp();
+        fireEvent.click(screen.getByRole('tab', { name: 'Time Sheet' }));
+        expect(await screen.findByRole('table', { name: 'time sheet' })).toBeInTheDocument();
+        const month = new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+        expect(await screen.findByText(`No work tracked in ${month}.`, { exact: false })).toBeInTheDocument();
     });
 
     it('there is no separate Projects tab any more', () => {

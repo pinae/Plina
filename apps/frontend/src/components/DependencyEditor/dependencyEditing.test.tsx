@@ -22,6 +22,7 @@ import { TaskNodeCard } from '../TaskNode/TaskNode.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import type { Dependency, Task } from '../../types.ts';
 import { treeDefaults } from '../../testing/treeFixtures.ts';
+import { calendarHandlers } from '../../testing/calendarHandlers.ts';
 
 const API = 'http://localhost:8000/api';
 
@@ -42,6 +43,7 @@ function task(id: string, header: string): Task {
 let createdTasks: unknown[] = [];
 
 const server = setupServer(
+    ...calendarHandlers(),
     http.get(`${API}/dependencies/`, () => HttpResponse.json(serverEdges)),
     http.get(`${API}/tags/`, () => HttpResponse.json([])),
     http.get(`${API}/tasks/`, () => HttpResponse.json([])),

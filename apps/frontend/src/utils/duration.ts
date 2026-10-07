@@ -35,3 +35,13 @@ export function formatElapsed(totalSeconds: number): string {
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
 }
+
+/** Seconds -> "7h 50m" (whole minutes; "<1m" for a few seconds). */
+export function hoursAndMinutes(seconds: number): string {
+    if (seconds > 0 && seconds < 60) return '<1m';
+    const minutes = Math.round(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    if (!hours) return `${rest}m`;
+    return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}

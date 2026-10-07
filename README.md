@@ -139,6 +139,81 @@ repeat at most hourly. "every 4 weeks" counts from the first occurrence:
 made on a Wednesday, "every 4 weeks on tuesday" starts on the coming
 Tuesday.
 
+### Calendar
+
+Plina can replace Google Calendar while invitations keep arriving there: it
+reads the calendar's secret iCal address (Settings → Calendars → "Add a
+calendar"; in Google Calendar: Settings → your calendar → "Integrate
+calendar" → "Secret address in iCal format"). It only reads — answer
+invitations in Google Calendar or the invitation email. The code is in
+`apps/backend/tasks/services/calendar_sync.py`, `markers.py` and `merge.py`.
+
+* **Timed events** become appointments: top-level tasks in the calendar's
+  color, marked with a calendar icon in the Tasks tab; a repeating event
+  becomes a task per occurrence. Cancelled events and those you declined
+  (given your address in that calendar) are left out. An imported
+  appointment completes itself when it ends, unless it is being tracked.
+* **All-day events** become **markers** (⚑ in the lane under the Week view's
+  day headers): something on certain days — a conference, a holiday. A click
+  on a free lane makes one by hand: all day (midnight to midnight), from a
+  time for a while, or a moment (e.g. a deadline). "Deadline at a marker" in
+  the task form makes it a named deadline that moves with the marker.
+* **Special buckets** (◆; "Time Buckets" → "Add special bucket", or "Make
+  special bucket" on a marker): a time frame such as travel or a hackathon
+  in which the regular time buckets give way. Without a rule the whole frame
+  is one bucket; with one ("every day at 09:00", 8 hours) it holds those
+  buckets. A marker made a special bucket keeps following its event.
+* Every event is linked by its UID (and an occurrence's original time), so
+  reading again updates instead of duplicating. Time and place always follow
+  the event. Title and description follow until you change them in Plina;
+  then the task form says what the calendar changed, and "Compare" shows
+  both side by side to take over what you want. A coming event removed from
+  the calendar removes its task or marker, unless it was worked on (tracked
+  time), merged or made a special bucket. Deleting an imported task
+  dismisses the event: it does not come back.
+* **Merging** ("Merge tasks" in the Week view, then drag from one card onto
+  the other): your task and the invitation of the same meeting become one.
+  Like Meld, the kept task is on the left, the other on the right and the
+  result in the middle; arrows copy a field, and title, description and
+  place can be edited. Your own task is kept (when the other came from a
+  calendar); the other one's tracked time, dependencies, subtasks and
+  calendar link move over, then it is deleted — updates of the event then go
+  to the kept task. Overlapping cards share their column side by side.
+* Tasks have a **place** (an address, a room, a call link), filled from the
+  event's location.
+
+The open app reads the calendars when it starts and every 5 minutes; the
+server reads each at most every 10 minutes ("Read now" in the settings
+reads them at once), from a day back to 60 days ahead. All-day events are
+on the days of your time zone (else the calendar's own). The address is a
+secret: it is never sent back to the browser (the settings show only its
+host) and left out of the admin. Plina fetches only https (`webcal://`
+becomes `https://`) from public addresses — no private networks, also after
+a redirect — at most 10 MB within 15 seconds. Removing a calendar removes
+its coming events nobody worked on; the rest stays as your own tasks.
+
+### Time sheet
+
+The "Time Sheet" tab shows a month of tracked time (▶ on a task), a row
+per day (`apps/backend/tasks/services/timesheet.py`):
+
+* **Begin** and **End**: the start of the first and the end of the last
+  tracked time on a task tagged **#Arbeit** or **#Work** that day.
+* **Pause**: the time tracked on tasks tagged **#Freizeit** or
+  **#Freetime** (and not #Arbeit or #Work) between begin and end, added up.
+  Free time before work began or after it ended is no pause.
+* **Working time**: from begin to end without the pauses — time in between
+  that was not tracked at all counts as work. The month's total is below.
+* The arrow opens a day: the tasks counted on it, their tags and their time
+  that day.
+
+Only a task's own tags count (subtasks get their parent's tags when they
+are made). Tag names count in any case. Days are those of your time zone; a
+session counts on the day it began, also when it went on after midnight
+(its end then shows "+1"), and a running one until now. Days without work
+are left out. `GET /api/timesheet/?from=2026-10-01&to=2026-10-31` gives the
+same as JSON.
+
 
 ### Core Data Structures (Domain Model)
 
@@ -166,6 +241,13 @@ represent the scheduling domain:
 * TaskSeries: the rule of a recurring task; its occurrences are Tasks
   (`series`, `occurrence`), see Recurring tasks.
 
+* Marker: something on certain days or at a time (`start`, `duration`),
+  usable as a task's named deadline (`Task.deadline_marker`), see Calendar.
+
+* CalendarSubscription and CalendarLink: a calendar Plina reads, and the
+  link of each of its events (UID + occurrence) to the task, marker or
+  special bucket made of it, with the event as last read (`data`).
+
 * Tag: A label (with an optional color) used to categorize Tasks 
   and TimeBucketTypes. Tags are the primary mechanism for establishing 
    Affinity (e.g., mapping a #deep-work task to a #deep-work time bucket).
@@ -176,6 +258,8 @@ represent the scheduling domain:
     hours), and its accepted tags. The rule counts from when it was set
     ("every other week" keeps its weeks).
   * Its color is chosen, or else automatic: unlike the other bucket types'.
+  * A special one (`special_start`, `special_end`) exists only within its
+    time frame, where the regular buckets give way to it.
 
 * TimeBucket: A concrete, instantiated block of time in the calendar, 
   generated from a TimeBucketType. These are the "bins" into which the 

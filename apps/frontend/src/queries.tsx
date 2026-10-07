@@ -41,10 +41,23 @@ import {
     updateSettings,
     updateTag,
     updateTask,
+    convertMarker,
+    createCalendar,
+    createMarker,
+    deleteBucketType,
+    deleteCalendar,
+    deleteMarker,
+    fetchCalendars,
+    fetchMarkers,
+    mergeTasks,
+    syncCalendars,
+    updateCalendar,
+    updateMarker,
+    fetchTimeSheet,
 } from './api';
 import type {
-    BucketTypeWrite, Dependency, DependencyCycleError, SettingsWrite, SplitRequest,
-    TagWrite, Task, TaskWrite, TrackingBlockedError, UserSettings,
+    BucketTypeWrite, CalendarSubscriptionWrite, Dependency, DependencyCycleError, MarkerWrite, SettingsWrite,
+    SplitRequest, TagWrite, Task, TaskWrite, TrackingBlockedError, UserSettings,
 } from './types';
 import { applyMove } from './utils/treeDnd.ts';
 import { goTo } from './utils/navigation.ts';
@@ -57,6 +70,9 @@ export const queryKeys = {
     bucketTypes: ['bucketTypes'] as const,
     settings: ['settings'] as const,
     session: ['session'] as const,
+    markers: ['markers'] as const,
+    calendars: ['calendars'] as const,
+    timeSheet: ['timesheet'] as const,
 };
 
 /** Other devices pick up a changed active project this often (§3.1). */
@@ -166,7 +182,7 @@ export const useStartTracking = () => {
         mutationFn: startTracking,
         onSuccess: data => {
             if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
-            return invalidate(queryKeys.tasks, queryKeys.plan);
+            return invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet);
         },
     });
 };
@@ -192,7 +208,7 @@ export const useStopTracking = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: stopTracking,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet),
     });
 };
 
@@ -202,7 +218,7 @@ export const useCompleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: completeTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet),
     });
 };
 
@@ -228,7 +244,7 @@ export const useUpdateTask = () => {
     return useMutation({
         mutationFn: ({ taskId, patch }: { taskId: string; patch: TaskWrite }) =>
             updateTask(taskId, patch),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet),
     });
 };
 
@@ -283,7 +299,7 @@ export const useDeleteTask = () => {
             taskId: string; children?: 'lift' | 'delete'; occurrences?: 'all';
         }) => deleteTask(taskId, children, occurrences),
         onSuccess: () =>
-            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan),
+            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.timeSheet),
     });
 };
 
@@ -367,3 +383,141 @@ export const useUpdateBucketType = () => {
         onSuccess: () => invalidate(queryKeys.plan, queryKeys.bucketTypes),
     });
 };
+
+// ------------------------------------------------------- calendar (README: Calendar)
+
+export const useMarkers = () =>
+    useQuery({ queryKey: queryKeys.markers, queryFn: fetchMarkers });
+
+/** Markers move named deadlines: tasks and the plan follow. */
+export const useCreateMarker = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: createMarker,
+        onSuccess: () => invalidate(queryKeys.markers),
+    });
+};
+
+export const useUpdateMarker = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: MarkerWrite }) => updateMarker(id, patch),
+        onSuccess: () => invalidate(queryKeys.markers, queryKeys.tasks, queryKeys.plan),
+    });
+};
+
+export const useDeleteMarker = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: deleteMarker,
+        onSuccess: () => invalidate(queryKeys.markers, queryKeys.tasks),
+    });
+};
+
+/** The marker becomes a special bucket: new capacity, the regular buckets give way. */
+export const useConvertMarker = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ id, bucketType }: { id: string; bucketType: Partial<BucketTypeWrite> }) =>
+            convertMarker(id, bucketType),
+        onSuccess: () => invalidate(queryKeys.markers, queryKeys.bucketTypes, queryKeys.tasks, queryKeys.plan),
+    });
+};
+
+export const useDeleteBucketType = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: deleteBucketType,
+        onSuccess: () => invalidate(queryKeys.bucketTypes, queryKeys.plan),
+    });
+};
+
+export const useCalendars = () =>
+    useQuery({ queryKey: queryKeys.calendars, queryFn: fetchCalendars });
+
+/** Everything a read of the calendars can change. */
+const CALENDAR_DATA = [queryKeys.calendars, queryKeys.tasks, queryKeys.markers, queryKeys.bucketTypes,
+    queryKeys.plan] as const;
+
+export const useCreateCalendar = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: createCalendar,
+        onSuccess: () => invalidate(...CALENDAR_DATA),
+    });
+};
+
+export const useUpdateCalendar = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: CalendarSubscriptionWrite }) => updateCalendar(id, patch),
+        onSuccess: () => invalidate(...CALENDAR_DATA),
+    });
+};
+
+export const useDeleteCalendar = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: deleteCalendar,
+        onSuccess: () => invalidate(...CALENDAR_DATA),
+    });
+};
+
+/** "Read now": every calendar, at once. */
+export const useSyncCalendars = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: () => syncCalendars(true),
+        onSuccess: () => invalidate(...CALENDAR_DATA),
+    });
+};
+
+/** How often the open app asks for the calendars to be read (the server
+ *  reads one at most every 10 minutes). */
+export const CALENDAR_SYNC_MS = 5 * 60_000;
+
+/** Keeps the calendars read while the app is open (README: Calendar): when
+ *  it opens and every few minutes; what changed is fetched again. */
+export function useCalendarSync(enabled = true) {
+    const client = useQueryClient();
+    useQuery({
+        queryKey: ['calendar-sync'],
+        queryFn: async () => {
+            const result = await syncCalendars();
+            if (result.changed) {
+                await Promise.all(CALENDAR_DATA.map(queryKey => client.invalidateQueries({ queryKey })));
+            } else {
+                client.setQueryData(queryKeys.calendars, result.calendars);
+            }
+            return result;
+        },
+        enabled,
+        refetchInterval: CALENDAR_SYNC_MS,
+        refetchOnWindowFocus: false,
+        retry: false,
+    });
+}
+
+/** Merge another task into one (README: Calendar). */
+export const useMergeTasks = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ keptId, otherId, values }: { keptId: string; otherId: string; values: TaskWrite }) =>
+            mergeTasks(keptId, otherId, values),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet),
+    });
+};
+
+// ------------------------------------------------------------ time sheet
+
+/** While work is being tracked, the time sheet follows the clock. */
+export const TIME_SHEET_RUNNING_REFRESH_MS = 60_000;
+
+/** The time sheet (README: Time sheet) from ``from`` to ``to`` (YYYY-MM-DD). */
+export const useTimeSheet = (from: string, to: string) =>
+    useQuery({
+        queryKey: [...queryKeys.timeSheet, from, to],
+        queryFn: () => fetchTimeSheet(from, to),
+        refetchInterval: query => (query.state.data?.days.some(day => day.running)
+            ? TIME_SHEET_RUNNING_REFRESH_MS : false),
+    });
