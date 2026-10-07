@@ -53,6 +53,7 @@ import {
     syncCalendars,
     updateCalendar,
     updateMarker,
+    fetchTimeSheet,
 } from './api';
 import type {
     BucketTypeWrite, CalendarSubscriptionWrite, Dependency, DependencyCycleError, MarkerWrite, SettingsWrite,
@@ -71,6 +72,7 @@ export const queryKeys = {
     session: ['session'] as const,
     markers: ['markers'] as const,
     calendars: ['calendars'] as const,
+    timeSheet: ['timesheet'] as const,
 };
 
 /** Other devices pick up a changed active project this often (§3.1). */
@@ -180,7 +182,7 @@ export const useStartTracking = () => {
         mutationFn: startTracking,
         onSuccess: data => {
             if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
-            return invalidate(queryKeys.tasks, queryKeys.plan);
+            return invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet);
         },
     });
 };
@@ -206,7 +208,7 @@ export const useStopTracking = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: stopTracking,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet),
     });
 };
 
@@ -216,7 +218,7 @@ export const useCompleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: completeTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet),
     });
 };
 
@@ -242,7 +244,7 @@ export const useUpdateTask = () => {
     return useMutation({
         mutationFn: ({ taskId, patch }: { taskId: string; patch: TaskWrite }) =>
             updateTask(taskId, patch),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet),
     });
 };
 
@@ -297,7 +299,7 @@ export const useDeleteTask = () => {
             taskId: string; children?: 'lift' | 'delete'; occurrences?: 'all';
         }) => deleteTask(taskId, children, occurrences),
         onSuccess: () =>
-            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan),
+            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.timeSheet),
     });
 };
 
@@ -502,6 +504,20 @@ export const useMergeTasks = () => {
     return useMutation({
         mutationFn: ({ keptId, otherId, values }: { keptId: string; otherId: string; values: TaskWrite }) =>
             mergeTasks(keptId, otherId, values),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.settings),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet),
     });
 };
+
+// ------------------------------------------------------------ time sheet
+
+/** While work is being tracked, the time sheet follows the clock. */
+export const TIME_SHEET_RUNNING_REFRESH_MS = 60_000;
+
+/** The time sheet (README: Time sheet) from ``from`` to ``to`` (YYYY-MM-DD). */
+export const useTimeSheet = (from: string, to: string) =>
+    useQuery({
+        queryKey: [...queryKeys.timeSheet, from, to],
+        queryFn: () => fetchTimeSheet(from, to),
+        refetchInterval: query => (query.state.data?.days.some(day => day.running)
+            ? TIME_SHEET_RUNNING_REFRESH_MS : false),
+    });

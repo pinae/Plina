@@ -24,6 +24,7 @@ import type {
     TaskWrite,
     TimeBucket,
     TimeBucketType,
+    TimeSheet,
     TrackingResponse,
     UserSettings,
     LoginRequest,
@@ -263,3 +264,9 @@ export const syncCalendars = (force = false) =>
 /** Merge ``otherId`` into ``keptId``: ``values`` are the merged fields. */
 export const mergeTasks = (keptId: string, otherId: string, values: TaskWrite) =>
     api.post<MergeResponse>(`tasks/${keptId}/merge/`, { other_id: otherId, values }).then(r => r.data);
+
+// ------------------------------------------------------ time sheet (README: Time sheet)
+
+/** The days from ``from`` to ``to`` (YYYY-MM-DD, both included) with tracked work. */
+export const fetchTimeSheet = (from: string, to: string) =>
+    api.get<TimeSheet>('timesheet/', { params: { from, to } }).then(r => r.data);

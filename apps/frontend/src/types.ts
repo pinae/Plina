@@ -467,3 +467,39 @@ export interface PasswordChange {
     old_password: string;
     new_password: string;
 }
+
+/** A task counted on a day of the time sheet (README: Time sheet). */
+export interface TimeSheetEntry {
+    task_id: string;
+    header: string;
+    tags: Tag[];
+    /** #Arbeit/#Work: work; #Freizeit/#Freetime: a pause. */
+    kind: 'work' | 'pause';
+    /** Its time on that day (a pause: between begin and end only). */
+    seconds: number;
+    /** Being tracked right now. */
+    running: boolean;
+}
+
+export interface TimeSheetDay {
+    /** YYYY-MM-DD, the user's day. */
+    date: string;
+    /** The first and the last moment of work. */
+    begin: string;
+    end: string;
+    /** Work is being tracked: the end is now. */
+    running: boolean;
+    pause_seconds: number;
+    /** From begin to end without the pauses. */
+    working_seconds: number;
+    entries: TimeSheetEntry[];
+}
+
+export interface TimeSheet {
+    from: string;
+    to: string;
+    /** The tag names that count as work / as a pause. */
+    work_tags: string[];
+    pause_tags: string[];
+    days: TimeSheetDay[];
+}

@@ -7,6 +7,7 @@ import BucketTypeList from './components/BucketTypeList/BucketTypeList.tsx';
 import Calendar from './components/Calendar/Calendar.tsx';
 import PlannedWeekView from './components/PlannedWeekView/PlannedWeekView.tsx';
 import DependencyEditor from './components/DependencyEditor/DependencyEditor.tsx';
+import TimeSheet from './components/TimeSheet/TimeSheet.tsx';
 import { PlanChooserDialog } from './components/PlanChooserDialog/PlanChooserDialog.tsx';
 import { PlanMyWeekButton } from './components/PlanMyWeekButton/PlanMyWeekButton.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary.tsx';
@@ -15,7 +16,7 @@ import { useIsMobile } from './hooks/useResponsive.ts';
 import { useTimeZoneSync } from './hooks/useTimeZoneSync.ts';
 import { useCalendarSync } from './queries.tsx';
 
-type TabKey = 'tasks' | 'week' | 'calendar' | 'tags' | 'buckets' | 'dependencies';
+type TabKey = 'tasks' | 'week' | 'calendar' | 'timesheet' | 'tags' | 'buckets' | 'dependencies';
 
 // Tasks (the task tree) first, the Week next (docs/tasks-tab.md, T-2).
 // [key, desktop label, phone label] — short labels keep more tabs in view.
@@ -23,6 +24,7 @@ const TABS: [TabKey, string, string][] = [
   ['tasks', 'Tasks', 'Tasks'],
   ['week', 'Week Overview', 'Week'],
   ['calendar', 'Calendar Plan', 'Calendar'],
+  ['timesheet', 'Time Sheet', 'Times'],
   ['tags', 'Tags', 'Tags'],
   ['buckets', 'Time Buckets', 'Buckets'],
   ['dependencies', 'Dependencies', 'Deps'],
@@ -100,6 +102,7 @@ function App() {
             />
           )}
           {tab === 'calendar' && <Calendar />}
+          {tab === 'timesheet' && <TimeSheet />}
           {tab === 'tags' && <TagList />}
           {tab === 'buckets' && <BucketTypeList />}
           {tab === 'dependencies' && <DependencyEditor />}

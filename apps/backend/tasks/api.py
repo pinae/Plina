@@ -380,6 +380,41 @@ class RecurrencePreviewView(APIView):
         return Response({"description": description, "occurrences": [occ.isoformat() for occ in occurrences]})
 
 
+class TimeSheetView(APIView):
+    """The time sheet (README: Time sheet): ``?from=2026-10-01&to=2026-10-31``
+    (both days included), by default this month — per day the begin and end
+    of work, the pauses and the tasks counted."""
+
+    def get(self, request):
+        import calendar
+        from datetime import date
+        from .services import timesheet
+        today = timezone.localdate()
+        try:
+            first = date.fromisoformat(request.query_params.get("from") or today.replace(day=1).isoformat())
+            last = date.fromisoformat(request.query_params.get("to") or first.replace(
+                day=calendar.monthrange(first.year, first.month)[1]).isoformat())
+        except ValueError:
+            return Response({"detail": "Give the days like 2026-10-01."}, status=400)
+        if last < first:
+            return Response({"detail": "The last day is before the first."}, status=400)
+        if (last - first).days >= timesheet.MAX_DAYS:
+            return Response({"detail": f"At most {timesheet.MAX_DAYS} days at once."}, status=400)
+        moment = serializers.DateTimeField().to_representation
+        return Response({
+            "from": first.isoformat(), "to": last.isoformat(),
+            "work_tags": timesheet.WORK_TAGS, "pause_tags": timesheet.PAUSE_TAGS,
+            "days": [{
+                "date": day.date.isoformat(), "begin": moment(day.begin), "end": moment(day.end),
+                "running": day.running, "pause_seconds": day.pause_seconds, "working_seconds": day.working_seconds,
+                "entries": [{
+                    "task_id": entry.task_id, "header": entry.header, "tags": entry.tags, "kind": entry.kind,
+                    "seconds": entry.seconds, "running": entry.running,
+                } for entry in day.entries],
+            } for day in timesheet.time_sheet(first, last)],
+        })
+
+
 class TimeBucketViewSet(RecalculatingModelViewSet):
     queryset = TimeBucket.objects.all()
     serializer_class = TimeBucketSerializer

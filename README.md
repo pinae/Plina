@@ -192,6 +192,28 @@ becomes `https://`) from public addresses — no private networks, also after
 a redirect — at most 10 MB within 15 seconds. Removing a calendar removes
 its coming events nobody worked on; the rest stays as your own tasks.
 
+### Time sheet
+
+The "Time Sheet" tab shows a month of tracked time (▶ on a task), a row
+per day (`apps/backend/tasks/services/timesheet.py`):
+
+* **Begin** and **End**: the start of the first and the end of the last
+  tracked time on a task tagged **#Arbeit** or **#Work** that day.
+* **Pause**: the time tracked on tasks tagged **#Freizeit** or
+  **#Freetime** (and not #Arbeit or #Work) between begin and end, added up.
+  Free time before work began or after it ended is no pause.
+* **Working time**: from begin to end without the pauses — time in between
+  that was not tracked at all counts as work. The month's total is below.
+* The arrow opens a day: the tasks counted on it, their tags and their time
+  that day.
+
+Only a task's own tags count (subtasks get their parent's tags when they
+are made). Tag names count in any case. Days are those of your time zone; a
+session counts on the day it began, also when it went on after midnight
+(its end then shows "+1"), and a running one until now. Days without work
+are left out. `GET /api/timesheet/?from=2026-10-01&to=2026-10-31` gives the
+same as JSON.
+
 
 ### Core Data Structures (Domain Model)
 
