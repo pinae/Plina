@@ -130,6 +130,14 @@ not pass. On phones a filter button (with the number of filters on) opens
 every filter, and "Show completed", in a bottom sheet; what is on shows
 below the search as chips, each removed by its ✕.
 
+The **Dependencies** tab has the same bar and the same filter (set in one
+tab, it applies in the other). The graph shows the tasks that pass, laid out
+anew and fitted into view; "Show linked tasks" (on by default) adds the
+tasks one dependency away, greyed, so a chain stays readable at its ends.
+Tasks without any dependency sit in a grid below the graph. On phones the
+graph is not shrunk below a readable size (pan to see the rest, or filter)
+and the mini map gives way.
+
 ### Recurring tasks
 
 "Repeats" in the edit dialog takes a rule in plain language — "every tuesday

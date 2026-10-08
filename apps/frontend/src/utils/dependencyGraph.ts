@@ -23,6 +23,8 @@ export interface TaskNodeData extends Record<string, unknown> {
     projectName: string | null;
     isDone: boolean;
     inCycle?: boolean;
+    /** Filtered: shown only as a direct link of a task that passes (greyed). */
+    dimmed?: boolean;
 }
 
 export type TaskFlowNode = Node<TaskNodeData, 'task'>;
@@ -35,30 +37,58 @@ function projectOf(task: Task, byId: Map<string, Task>): Task | null {
     return task.children_ids?.length ? task : null;
 }
 
+/** Gaps of the grid of tasks without dependencies. */
+const GRID_GAP_X = 28;
+const GRID_GAP_Y = 24;
+
+/** dagre for the tasks with dependencies (left to right); the tasks without
+ *  any go below in a grid as wide as that graph — not one tall column, which
+ *  would shrink everything when fitted into view (phones above all). */
 function layout(nodes: TaskFlowNode[], edges: Edge[]): TaskFlowNode[] {
-    const graph = new dagre.graphlib.Graph();
-    graph.setDefaultEdgeLabel(() => ({}));
-    graph.setGraph({ rankdir: 'LR', nodesep: 28, ranksep: 70 });
-    for (const node of nodes) {
-        graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    const linked = new Set(edges.flatMap(edge => [edge.source, edge.target]));
+    const connected = nodes.filter(node => linked.has(node.id));
+    const isolated = nodes.filter(node => !linked.has(node.id));
+    const positions = new Map<string, { x: number; y: number }>();
+
+    if (connected.length) {
+        const graph = new dagre.graphlib.Graph();
+        graph.setDefaultEdgeLabel(() => ({}));
+        graph.setGraph({ rankdir: 'LR', nodesep: 28, ranksep: 70 });
+        for (const node of connected) {
+            graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+        }
+        for (const edge of edges) {
+            graph.setEdge(edge.source, edge.target);
+        }
+        dagre.layout(graph);
+        for (const node of connected) {
+            const { x, y } = graph.node(node.id);
+            // dagre positions node centers; React Flow expects top-left corners.
+            positions.set(node.id, { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 });
+        }
     }
-    for (const edge of edges) {
-        graph.setEdge(edge.source, edge.target);
+
+    if (isolated.length) {
+        const placed = [...positions.values()];
+        const left = placed.length ? Math.min(...placed.map(p => p.x)) : 0;
+        const width = placed.length ? Math.max(...placed.map(p => p.x)) + NODE_WIDTH - left : 0;
+        const top = placed.length ? Math.max(...placed.map(p => p.y)) + NODE_HEIGHT + 3 * GRID_GAP_Y : 0;
+        const fitting = Math.floor((width + GRID_GAP_X) / (NODE_WIDTH + GRID_GAP_X));
+        const columns = Math.min(isolated.length, Math.max(fitting, Math.ceil(Math.sqrt(isolated.length))));
+        isolated.forEach((node, index) => positions.set(node.id, {
+            x: left + (index % columns) * (NODE_WIDTH + GRID_GAP_X),
+            y: top + Math.floor(index / columns) * (NODE_HEIGHT + GRID_GAP_Y),
+        }));
     }
-    dagre.layout(graph);
-    return nodes.map(node => {
-        const { x, y } = graph.node(node.id);
-        // dagre positions node centers; React Flow expects top-left corners.
-        return {
-            ...node,
-            position: { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 },
-        };
-    });
+
+    return nodes.map(node => ({ ...node, position: positions.get(node.id)! }));
 }
 
 export function buildFlowGraph(
     tasks: Task[],
     dependencies: Dependency[],
+    /** Tasks shown greyed (the filter's linked tasks). */
+    dimmed: Set<string> = new Set(),
 ): { nodes: TaskFlowNode[]; edges: Edge[] } {
     const byId = new Map(tasks.map(task => [task.id, task]));
 
@@ -74,6 +104,7 @@ export function buildFlowGraph(
                 color: task.hex_color ?? null,
                 projectName: project?.header ?? null,
                 isDone: task.is_done,
+                ...(dimmed.has(task.id) ? { dimmed: true } : {}),
             },
         };
     });
@@ -88,6 +119,8 @@ export function buildFlowGraph(
             markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
             // Optimistic edges (not yet persisted) animate until confirmed.
             animated: dep.id.startsWith('optimistic-'),
+            // Between two greyed tasks: greyed too.
+            ...(dimmed.has(dep.predecessor) && dimmed.has(dep.successor) ? { style: { opacity: 0.35 } } : {}),
         }));
 
     return { nodes: layout(nodes, edges), edges };
@@ -123,4 +156,27 @@ export function applyCycleHighlight(
                 : edge,
         ),
     };
+}
+
+export interface GraphFilter {
+    /** The tasks shown: those that pass and, with ``showLinked``, their links. */
+    tasks: Task[];
+    /** The linked tasks that do not pass themselves: greyed. */
+    linked: Set<string>;
+}
+
+/** The filtered graph (README: Filtering tasks): the tasks that pass and,
+ *  with ``showLinked``, the tasks one dependency away — so a chain stays
+ *  readable at its ends. */
+export function filterGraph(
+    tasks: Task[], dependencies: Dependency[], matching: Set<string>, showLinked: boolean,
+): GraphFilter {
+    const linked = new Set<string>();
+    if (showLinked) {
+        for (const dep of dependencies) {
+            if (matching.has(dep.predecessor) && !matching.has(dep.successor)) linked.add(dep.successor);
+            if (matching.has(dep.successor) && !matching.has(dep.predecessor)) linked.add(dep.predecessor);
+        }
+    }
+    return { tasks: tasks.filter(task => matching.has(task.id) || linked.has(task.id)), linked };
 }

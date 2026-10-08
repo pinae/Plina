@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatDuration } from './duration';
-import { buildFlowGraph, NODE_HEIGHT, NODE_WIDTH } from './dependencyGraph';
+import { buildFlowGraph, filterGraph, NODE_HEIGHT, NODE_WIDTH } from './dependencyGraph';
 import type { Dependency, Task } from '../types';
 import { treeDefaults } from '../testing/treeFixtures';
 
@@ -69,6 +69,32 @@ describe('buildFlowGraph', () => {
         }
     });
 
+    it('puts tasks without dependencies in a grid below the graph, not in one column', () => {
+        const tasks = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'].map(id => task(id, id.toUpperCase()));
+        const deps = [dependency('e1', 'a', 'b'), dependency('e2', 'b', 'c')];
+
+        const { nodes } = buildFlowGraph(tasks, deps);
+
+        const at = Object.fromEntries(nodes.map(n => [n.id, n.position]));
+        const chainBottom = Math.max(at.a.y, at.b.y, at.c.y) + NODE_HEIGHT;
+        const loose = ['d', 'e', 'f', 'g', 'h', 'i'];
+        for (const id of loose) expect(at[id].y).toBeGreaterThan(chainBottom);
+        // As wide as the chain (three columns): two rows for six tasks.
+        expect(new Set(loose.map(id => at[id].y)).size).toBe(2);
+        expect(new Set(loose.map(id => at[id].x)).size).toBe(3);
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                expect(overlap(nodes[i].position, nodes[j].position), `${nodes[i].id} overlaps ${nodes[j].id}`).toBe(false);
+            }
+        }
+    });
+
+    it('arranges tasks without any dependency in a square-ish grid', () => {
+        const { nodes } = buildFlowGraph(['a', 'b', 'c', 'd', 'e'].map(id => task(id, id)), []);
+        expect(new Set(nodes.map(n => n.position.x)).size).toBe(3);
+        expect(new Set(nodes.map(n => n.position.y)).size).toBe(2);
+    });
+
     it('carries header, duration label, done flag, the task\'s color and its project into node data', () => {
         // Projects are top-level tasks (UI-1): the name comes from the root; the
         // color is the one each task shows (§4.4: its own, else inherited).
@@ -97,5 +123,30 @@ describe('buildFlowGraph', () => {
     it('tolerates tasks without tree fields instead of crashing', () => {
         const { nodes } = buildFlowGraph([{ ...task('a', 'A'), ancestor_ids: undefined } as unknown as Task], []);
         expect(nodes[0].data.color).toBeNull();
+    });
+});
+
+describe('filterGraph', () => {
+    const tasks = [task('a', 'A'), task('b', 'B'), task('c', 'C'), task('d', 'D'), task('x', 'X')];
+    const deps = [dependency('1', 'a', 'b'), dependency('2', 'b', 'c'), dependency('3', 'c', 'd')];
+
+    it('keeps the tasks that pass and greys their direct links', () => {
+        const result = filterGraph(tasks, deps, new Set(['b']), true);
+        expect(result.tasks.map(t => t.id)).toEqual(['a', 'b', 'c']);
+        expect([...result.linked].sort()).toEqual(['a', 'c']);
+    });
+
+    it('leaves the links out on request', () => {
+        const result = filterGraph(tasks, deps, new Set(['b', 'x']), false);
+        expect(result.tasks.map(t => t.id)).toEqual(['b', 'x']);
+        expect(result.linked.size).toBe(0);
+    });
+
+    it('marks greyed nodes, and edges between two of them', () => {
+        const { nodes, edges } = buildFlowGraph(tasks.slice(0, 4), deps, new Set(['a', 'b']));
+        expect(nodes.find(n => n.id === 'a')?.data.dimmed).toBe(true);
+        expect(nodes.find(n => n.id === 'c')?.data.dimmed).toBeUndefined();
+        expect(edges.find(e => e.id === '1')?.style).toEqual({ opacity: 0.35 });
+        expect(edges.find(e => e.id === '2')?.style).toBeUndefined();
     });
 });
