@@ -13,17 +13,20 @@ export interface TaskNodeCardProps {
     projectName: string | null;
     isDone: boolean;
     inCycle?: boolean;
+    /** Filtered: a link of a task that passes, not passing itself. */
+    dimmed?: boolean;
 }
 
 /** Pure presentational card — rendered inside the flow node and unit-tested
  *  standalone (React Flow context not required). */
 export function TaskNodeCard({
-    header, durationLabel, color, projectName, isDone, inCycle = false,
+    header, durationLabel, color, projectName, isDone, inCycle = false, dimmed = false,
 }: TaskNodeCardProps) {
     return (
         <Box
             data-testid="task-node-card"
             data-in-cycle={inCycle ? 'true' : 'false'}
+            data-dimmed={dimmed ? 'true' : undefined}
             sx={{
                 width: NODE_WIDTH,
                 height: NODE_HEIGHT,
@@ -34,7 +37,7 @@ export function TaskNodeCard({
                 border: inCycle ? 2 : 1,
                 borderColor: inCycle ? 'error.main' : 'divider',
                 boxShadow: 1,
-                opacity: isDone ? 0.45 : 1,
+                opacity: isDone || dimmed ? 0.45 : 1,
             }}
         >
             <Tooltip title={projectName ?? 'No project'}>

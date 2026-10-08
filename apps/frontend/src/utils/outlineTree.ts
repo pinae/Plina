@@ -8,7 +8,9 @@ import { parseDurationMinutes } from './duration.ts';
 export type OutlineItem =
     | { kind: 'task'; key: string; task: Task; depth: number; hasChildren: boolean; expanded: boolean; path: string;
         /** The active (sub-)project itself. */
-        active?: boolean }
+        active?: boolean;
+        /** Filtered: shown only because a subtask passes (greyed). */
+        context?: boolean }
     /** A parent's Rest, listed after its children. */
     | { kind: 'rest'; key: string; task: Task; depth: number };
 
@@ -34,6 +36,8 @@ export interface OutlineOptions {
     collapsed: Set<string>;
     /** Also list completed tasks, in their place in the tree. */
     showCompleted: boolean;
+    /** Filtered: the tasks shown only for their subtasks — greyed, no Rest. */
+    context?: Set<string>;
 }
 
 /** Visible rows: every project as a tree — the active project's top-level
@@ -52,10 +56,11 @@ export function outlineItems(tasks: Task[], options: OutlineOptions): OutlineIte
         items.push({
             kind: 'task', key: task.id, task, depth, hasChildren: kids.length > 0, expanded,
             path: pathOf(task, byId), ...(task.id === options.activeId ? { active: true } : {}),
+            ...(options.context?.has(task.id) ? { context: true } : {}),
         });
         if (kids.length === 0 || !expanded) return;
         for (const child of kids) visit(child, depth + 1);
-        if (!task.is_done && (parseDurationMinutes(task.rest ?? null) ?? 0) > 0) {
+        if (!task.is_done && !options.context?.has(task.id) && (parseDurationMinutes(task.rest ?? null) ?? 0) > 0) {
             items.push({ kind: 'rest', key: `rest:${task.id}`, task, depth: depth + 1 });
         }
     };

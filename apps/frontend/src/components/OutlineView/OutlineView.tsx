@@ -27,6 +27,10 @@
  * "Draw dependency" (or AltGr): a line dragged from one task to another
  * makes the first depend on the second (Undo in the toast); a refusal says
  * why in a toast.
+ *
+ * The filter bar (README: Filtering tasks) narrows the tree to the tasks
+ * that pass, with their parents greyed for context and every parent open;
+ * reordering waits until the filter is cleared.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -61,6 +65,7 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { DependencyDrawLayer } from '../DependencyDrawLayer/DependencyDrawLayer.tsx';
 import { ProjectPicker, type ProjectPick } from '../ProjectPicker/ProjectPicker.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
+import { TaskFilterBar } from '../TaskFilterBar/TaskFilterBar.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { parseDurationInput } from '../TaskFormDialog/taskFormValidation.ts';
 import { createTag, deleteTask as deleteTaskRequest } from '../../api.ts';
@@ -69,6 +74,8 @@ import {
     useSetPriority, useSettings, useStartTracking, useTags, useTasks, useUpdateTask,
 } from '../../queries.tsx';
 import { useDependencyDrawing } from '../../hooks/useDependencyDrawing.ts';
+import { useTaskFilter } from '../../hooks/useTaskFilter.ts';
+import { EMPTY_FILTER, filterTasks, isFiltering } from '../../utils/taskFilter.ts';
 import { dependencyCreated, dependencyRefusal } from '../../utils/dependencyMessages.ts';
 import { PrioritySlider } from '../PrioritySlider/PrioritySlider.tsx';
 import { titleColor } from '../../utils/taskColors.ts';
@@ -81,7 +88,7 @@ import {
 } from '../../utils/treeDnd.ts';
 import { projectOptions } from '../../utils/projects.ts';
 import { readCollapsed, readShowCompleted, storeCollapsed, storeShowCompleted } from '../../utils/taskTreePrefs.ts';
-import { formatDuration, minutesToDurationString } from '../../utils/duration.ts';
+import { formatDuration, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import { dueFrom, recurrenceSummary, withoutLaterOccurrences } from '../../utils/recurring.ts';
 import type { DependencyCycleError, Task, TaskWrite } from '../../types.ts';
 import { useIsMobile, useIsNarrow, useIsTouch } from '../../hooks/useResponsive.ts';
@@ -92,6 +99,7 @@ const END_OF_TREE = 'add:top';
 const INDENT_PX = 24;
 /** Hovering a collapsed parent this long while dragging opens it. */
 const EXPAND_ON_HOVER_MS = 700;
+const REORDER_HINT = 'Clear the filter to reorder.';
 const itemName = (item: OutlineItem) => (item.kind === 'rest' ? `Rest of ${item.task.header}` : item.task.header);
 
 type Editing = { key: string; field: 'header' | 'estimate'; text: string; error?: string };
@@ -146,6 +154,9 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const [creating, setCreating] = useState(false);
     const [move, setMove] = useState<{ task: Task; anchor: HTMLElement } | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+    const [hint, setHint] = useState<string | null>(null);
+    const [filter, setFilter] = useTaskFilter();
+    const filtering = isFiltering(filter);
 
     const container = useRef<HTMLDivElement>(null);
     const rowElements = useRef(new Map<string, HTMLElement>());
@@ -179,12 +190,27 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         }
     }
 
-    const items = useMemo(() => (sortMode
-        ? inboxItems(visibleTasks)
-        : outlineItems(visibleTasks, { activeId, collapsed, showCompleted })),
-    [sortMode, visibleTasks, activeId, collapsed, showCompleted]);
-    const inboxCount = useMemo(() => inboxItems(visibleTasks).length, [visibleTasks]);
     const defaultDuration = settings.data?.default_duration ?? '01:00:00';
+    const defaultMinutes = parseDurationMinutes(defaultDuration) ?? 60;
+    // The tasks the filter chooses from: those the tree would show (open
+    // ones keep open parents, so the greyed context is always complete).
+    const candidates = useMemo(() => (sortMode ? inboxItems(visibleTasks).map(i => i.task)
+        : showCompleted ? visibleTasks : visibleTasks.filter(t => !t.is_done)),
+    [sortMode, visibleTasks, showCompleted]);
+    const filtered = useMemo(() => (filtering
+        ? filterTasks(candidates, filter, { activeId, defaultMinutes }) : null),
+    [filtering, candidates, filter, activeId, defaultMinutes]);
+    const items = useMemo(() => {
+        if (sortMode) {
+            const inbox = inboxItems(visibleTasks);
+            return filtered ? inbox.filter(i => filtered.matching.has(i.task.id)) : inbox;
+        }
+        if (!filtered) return outlineItems(visibleTasks, { activeId, collapsed, showCompleted });
+        // Filtered: every parent of a match open, whatever was collapsed.
+        const kept = candidates.filter(t => filtered.matching.has(t.id) || filtered.context.has(t.id));
+        return outlineItems(kept, { activeId, collapsed: new Set(), showCompleted, context: filtered.context });
+    }, [sortMode, visibleTasks, candidates, filtered, activeId, collapsed, showCompleted]);
+    const inboxCount = useMemo(() => inboxItems(visibleTasks).length, [visibleTasks]);
     const context = useMemo(() => ({ now: new Date(), tags: tags.data ?? [], projects: [] }), [tags.data]);
 
     // The selected row; when it disappears (e.g. estimated in the inbox),
@@ -482,11 +508,14 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
             return;
         } else if (key === 'ArrowRight' && selected.kind === 'task' && selected.hasChildren) {
             event.preventDefault();
-            updateCollapsed(next => { next.delete(task.id); });
+            if (!filtering) updateCollapsed(next => { next.delete(task.id); }); // filtered: all open
         } else if (key === 'ArrowLeft' && selected.kind === 'task') {
             event.preventDefault();
-            if (selected.hasChildren && selected.expanded) updateCollapsed(next => { next.add(task.id); });
+            if (selected.hasChildren && selected.expanded && !filtering) updateCollapsed(next => { next.add(task.id); });
             else if (task.parent_id) select(items.findIndex(i => i.key === task.parent_id));
+        } else if ((key === 'Tab' || (event.altKey && (key === 'ArrowUp' || key === 'ArrowDown'))) && filtering && !sortMode) {
+            event.preventDefault();
+            setHint(REORDER_HINT);
         } else if (key === 'Tab' && !sortMode) {
             event.preventDefault();
             moveTo(task, event.shiftKey ? outdentMove(allTasks, task.id) : indentMove(allTasks, task.id));
@@ -550,7 +579,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         }
     }
     const projection = drag ? projectDrop(items, allTasks, drag.activeKey, drag.overKey, drag.offsetX, INDENT_PX) : null;
-    const sortableKeys = sortMode || drawing.active ? [] : items
+    const sortableKeys = sortMode || drawing.active || filtering ? [] : items
         .filter(i => i.kind === 'task' && !i.task.is_done && !draggedSubtree.has(i.key))
         .map(i => i.key);
 
@@ -570,7 +599,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
 
     /** "+ Add task" after the last row of an expanded project (Todoist). */
     const addRowAfter = (index: number) => {
-        if (sortMode) return null;
+        if (sortMode || filtering) return null; // a new task might not pass
         const next = items[index + 1];
         if (next && next.depth > 0) return null; // the project continues
         let start = index;
@@ -584,6 +613,12 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 onClick={() => setDraft({ parentId: root.task.id, depth: 1, afterKey: key, text: '' })} />
         );
     };
+
+    const showCompletedSwitch = (
+        <FormControlLabel sx={{ ml: mobile ? 0 : 'auto' }}
+            control={<Switch size="small" checked={showCompleted} onChange={event => toggleShowCompleted(event.target.checked)} />}
+            label={<Typography variant="body2">Show completed</Typography>} />
+    );
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0 }}>
@@ -613,12 +648,12 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         <IconButton size="small" aria-label="keyboard shortcuts"><HelpOutlineIcon fontSize="small" /></IconButton>
                     </Tooltip>
                 )}
-                {!sortMode && (
-                    <FormControlLabel sx={{ ml: 'auto' }}
-                        control={<Switch size="small" checked={showCompleted} onChange={event => toggleShowCompleted(event.target.checked)} />}
-                        label={<Typography variant="body2">Show completed</Typography>} />
-                )}
+                {!sortMode && !mobile && showCompletedSwitch}
             </Box>
+            <TaskFilterBar filter={filter} onChange={setFilter}
+                projects={projectOptions(visibleTasks)} tags={tags.data ?? []}
+                matchCount={filtered ? filtered.matching.size : candidates.length} totalCount={candidates.length}
+                sheetExtras={!sortMode && mobile ? showCompletedSwitch : undefined} />
             {drawing.active && (
                 <Alert severity="info" role="status" sx={{ py: 0 }}>
                     Drag from a task to the task it depends on.{rowButtons
@@ -634,7 +669,13 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 onPointerDown={drawing.onPointerDown}
                 sx={{ outline: 'none', border: 1, borderColor: 'divider', borderRadius: 1, '&:focus-visible': { borderColor: 'primary.main' } }}
             >
-                {items.length === 0 && (
+                {items.length === 0 && filtering && (
+                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography color="text.secondary">No tasks match the filter.</Typography>
+                        <Button size="small" onClick={() => setFilter(EMPTY_FILTER)}>Clear filter</Button>
+                    </Box>
+                )}
+                {items.length === 0 && !filtering && (
                     <Typography sx={{ p: 2 }} color="text.secondary">
                         {sortMode ? 'The inbox is empty — every task has an estimate.' : 'No open tasks here yet. Use the quick add (N) above.'}
                     </Typography>
@@ -668,6 +709,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         onPriority={priority => setPriority(item.task, priority)}
                         compact={mobile}
                         narrow={narrow}
+                        filtered={filtering}
                         canComplete={item.task.is_done || !(item.task.children_ids ?? []).some(id => openIds.has(id))}
                         onTrack={() => startTracking.mutate(item.task.id, { onError: error => setMessage(serverMessage(error)) })}
                         onEditChange={text => editing && setEditing({ ...editing, text, error: undefined })}
@@ -683,6 +725,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                             key={`${item.key}-tools`}
                             item={item}
                             sortMode={sortMode}
+                            canReorder={!filtering}
                             canOutdent={outdentMove(allTasks, item.task.id) !== null}
                             canIndent={indentMove(allTasks, item.task.id) !== null}
                             canMoveUp={neighbourMove(allTasks, item.task.id, -1) !== null}
@@ -701,7 +744,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 ])}
                 </SortableContext>
                 </DndContext>
-                {!sortMode && (draft?.afterKey === END_OF_TREE ? renderDraft() : (
+                {!sortMode && !filtering && (draft?.afterKey === END_OF_TREE ? renderDraft() : (
                     <AddTaskRow key="add-top" depth={0} label="add task at the top level"
                         onClick={() => setDraft({ parentId: null, depth: 0, afterKey: END_OF_TREE, text: '' })} />
                 ))}
@@ -754,6 +797,10 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                         onClick={() => { undoToast?.undo(); setUndoToast(null); }}>Undo</Button>}>
                     {undoToast?.text}
                 </Alert>
+            </Snackbar>
+            <Snackbar open={hint !== null} autoHideDuration={4000} onClose={() => setHint(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+                <Alert severity="info" variant="filled" onClose={() => setHint(null)}>{hint}</Alert>
             </Snackbar>
             <Snackbar open={message !== null} autoHideDuration={6000} onClose={() => setMessage(null)}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
@@ -832,6 +879,8 @@ interface OutlineItemRowProps {
      *  task's color instead of a dot, no tags, the estimate only as wide as
      *  it is, the active project marked by its name. */
     narrow: boolean;
+    /** The filter is on: every parent open (no expand/collapse toggle). */
+    filtered?: boolean;
     /** False for parents with open subtasks (they complete with the last one). */
     canComplete: boolean;
     onTrack: () => void;
@@ -843,7 +892,7 @@ interface OutlineItemRowProps {
 
 function OutlineItemRow({
     item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compact,
-    narrow, canComplete, onTrack,
+    narrow, filtered, canComplete, onTrack,
     onEditChange, onEditKeyDown, onEditBlur, onElement, drag, drawMode, drawRole,
 }: OutlineItemRowProps) {
     const task = item.task;
@@ -854,6 +903,8 @@ function OutlineItemRow({
     // Narrow screens: the title shows the task's color (§4.4) instead of a dot.
     const tint = narrow ? titleColor(task.hex_color) : undefined;
     const activeName = narrow && item.kind === 'task' && item.active;
+    // Filtered: a parent shown only for the subtasks that pass.
+    const context = item.kind === 'task' && item.context;
 
     const estimate = (() => {
         if (item.kind === 'rest') return <Typography variant="body2">{human(task.rest ?? null)}</Typography>;
@@ -889,6 +940,7 @@ function OutlineItemRow({
             aria-expanded={item.kind === 'task' && item.hasChildren ? item.expanded : undefined}
             data-active={item.kind === 'task' && item.active ? 'true' : undefined}
             data-done={done ? 'true' : undefined}
+            data-context={context ? 'true' : undefined}
             ref={(element: HTMLElement | null) => { onElement(element); drag?.attachRow(element); }}
             onClick={() => { onSelect(); onOpen(); }}
             style={drag?.style}
@@ -899,7 +951,7 @@ function OutlineItemRow({
                 display: 'flex', alignItems: 'center', gap: compact ? 0.5 : 1, minHeight: 32, pr: compact ? 0.5 : 1,
                 pl: 0.5 + depth * 3, borderBottom: 1, borderColor: 'divider', cursor: 'default',
                 bgcolor: drag?.dragging ? 'background.paper' : selected ? 'action.selected' : undefined,
-                opacity: done ? 0.55 : 1,
+                opacity: context ? 0.5 : done ? 0.55 : 1,
                 position: 'relative', zIndex: drag?.dragging ? 2 : undefined,
                 boxShadow: drag?.dragging ? 6 : undefined,
                 outline: drag?.dragging ? '2px dashed' : drawRole ? '2px solid' : undefined, outlineColor: 'primary.main',
@@ -919,7 +971,7 @@ function OutlineItemRow({
                 )}
             </Box>
             <Box sx={{ width: 28, flexShrink: 0 }}>
-                {item.kind === 'task' && item.hasChildren && (
+                {item.kind === 'task' && item.hasChildren && !filtered && (
                     <IconButton size="small" aria-label={item.expanded ? `collapse ${task.header}` : `expand ${task.header}`}
                         onClick={event => { event.stopPropagation(); onToggle(); }}>
                         {item.expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
@@ -1059,6 +1111,8 @@ function AddTaskRow({ depth, label, onClick }: { depth: number; label: string; o
 interface RowToolsProps {
     item: OutlineItem;
     sortMode: boolean;
+    /** False while filtered: moving waits until the filter is cleared. */
+    canReorder: boolean;
     canOutdent: boolean;
     canIndent: boolean;
     canMoveUp: boolean;
@@ -1072,13 +1126,16 @@ interface RowToolsProps {
 
 /** Touch: the keys of the selected row as buttons (UI-9). */
 function RowTools({
-    item, sortMode, canOutdent, canIndent, canMoveUp, canMoveDown, onOutdent, onIndent, onMove, onDetails, onSplit,
+    item, sortMode, canReorder, canOutdent, canIndent, canMoveUp, canMoveDown, onOutdent, onIndent, onMove, onDetails, onSplit,
 }: RowToolsProps) {
     const isTask = item.kind === 'task';
     return (
         <Box role="toolbar" aria-label={itemName(item)}
             sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, pl: 1 + item.depth * 3 + 4.5, pr: 1, py: 0.25, bgcolor: 'action.selected' }}>
-            {isTask && !sortMode && (
+            {isTask && !sortMode && !canReorder && (
+                <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 1 }}>{REORDER_HINT}</Typography>
+            )}
+            {isTask && !sortMode && canReorder && (
                 <>
                     <IconButton aria-label="outdent" disabled={!canOutdent} onClick={onOutdent}><FormatIndentDecreaseIcon fontSize="small" /></IconButton>
                     <IconButton aria-label="indent" disabled={!canIndent} onClick={onIndent}><FormatIndentIncreaseIcon fontSize="small" /></IconButton>

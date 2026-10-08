@@ -30,3 +30,23 @@ export function storeShowCompleted(show: boolean) {
         // Storage unavailable: a convenience only.
     }
 }
+
+const SHOW_LINKED_KEY = 'plina.showLinkedTasks';
+
+/** Dependency editor, filtered: also show the tasks linked to the matches
+ *  (greyed). On unless turned off. */
+export function readShowLinked(): boolean {
+    try {
+        return localStorage.getItem(SHOW_LINKED_KEY) !== 'false';
+    } catch {
+        return true;
+    }
+}
+
+export function storeShowLinked(show: boolean) {
+    try {
+        localStorage.setItem(SHOW_LINKED_KEY, String(show));
+    } catch {
+        // Storage unavailable: a convenience only.
+    }
+}
