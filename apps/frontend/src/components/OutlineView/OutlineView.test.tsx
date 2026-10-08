@@ -505,6 +505,137 @@ describe('sorting session', () => {
     });
 });
 
+describe('filtering (README: Filtering tasks)', () => {
+    const search = () => screen.getByRole('textbox', { name: 'Search tasks' });
+
+    it('narrows the tree to the matches, their parents greyed for context', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.change(search(), { target: { value: 'cad' } });
+        // No Rest rows and no "Add task" while filtered: a new task might not pass.
+        await waitFor(() => expect(rowNames()).toEqual(['T250', 'Hardware Design', 'CAD']));
+        expect(row('T250')).toHaveAttribute('data-context', 'true');
+        expect(row('Hardware Design')).toHaveAttribute('data-context', 'true');
+        expect(row('CAD')).not.toHaveAttribute('data-context');
+        expect(screen.getByText('1 of 8 tasks')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /add task/i })).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+        await waitFor(() => expect(rowNames()).toContain('Rest of T250'));
+        expect(screen.queryByText(/of 8 tasks/)).toBeNull();
+    });
+
+    it('filters by a tag from its dropdown, and the button says what is chosen', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.click(screen.getByRole('button', { name: 'Tag' }));
+        const choices = await screen.findByRole('dialog', { name: 'Tag' });
+        fireEvent.click(within(choices).getByRole('button', { name: '#maker' }));
+        expect(within(choices).getByRole('button', { name: '#maker' })).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.keyDown(choices, { key: 'Escape' });
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tag' })).toBeNull());
+        await waitFor(() => expect(rowNames()).toEqual(['T250', 'Hardware Design']));
+        expect(screen.getByRole('button', { name: 'Tag: #maker' })).toBeInTheDocument();
+    });
+
+    it('opens collapsed parents of matches, and keeps them collapsed for later', async () => {
+        renderOutline();
+        fireEvent.click(await screen.findByRole('button', { name: 'collapse Hardware Design' }));
+        await waitFor(() => expect(rowNames()).not.toContain('CAD'));
+        fireEvent.change(search(), { target: { value: 'cad' } });
+        await waitFor(() => expect(rowNames()).toContain('CAD'));
+        expect(screen.queryByRole('button', { name: /collapse|expand/ })).toBeNull();
+        fireEvent.keyDown(search(), { key: 'Escape' }); // Esc empties the search
+        await waitFor(() => expect(rowNames()).not.toContain('CAD'));
+    });
+
+    it('turns off reordering while filtered', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        expect(within(outline()).getAllByRole('button', { name: /^drag / }).length).toBeGreaterThan(0);
+        fireEvent.change(search(), { target: { value: 'prints' } });
+        await waitFor(() => expect(rowNames()).toContain('test prints'));
+        expect(within(outline()).queryAllByRole('button', { name: /^drag / })).toHaveLength(0);
+        await select('test prints');
+        press('Tab');
+        press('ArrowUp', { altKey: true });
+        expect(await screen.findByText('Clear the filter to reorder.')).toBeInTheDocument();
+        expect(log.filter(entry => entry.startsWith('move'))).toEqual([]);
+    });
+
+    it('is remembered in the browser', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.change(search(), { target: { value: 'milk' } });
+        cleanup();
+        renderOutline();
+        await waitFor(() => expect(rowNames()).toEqual(['Buy milk']));
+        expect(search()).toHaveValue('milk');
+    });
+
+    it('says when nothing matches', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.change(search(), { target: { value: 'nothing like this' } });
+        expect(await screen.findByText('No tasks match the filter.')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Clear filter' }));
+        await waitFor(() => expect(rowNames()).toContain('CAD'));
+    });
+
+    it('"/" jumps to the search', async () => {
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'CAD' });
+        fireEvent.keyDown(document.body, { key: '/' });
+        expect(search()).toHaveFocus();
+    });
+
+    it('filters the sorting session too', async () => {
+        renderOutline();
+        fireEvent.click(await screen.findByRole('button', { name: /sort/i }));
+        await waitFor(() => expect(rowNames()).toEqual(['Buy milk', 'Write article']));
+        fireEvent.change(search(), { target: { value: 'article' } });
+        await waitFor(() => expect(rowNames()).toEqual(['Write article']));
+        expect(screen.getByText('1 of 2 tasks')).toBeInTheDocument();
+    });
+
+    describe('on phones', () => {
+        let restore: () => void;
+        beforeEach(() => { restore = fakeScreen(PHONE); });
+        afterEach(() => restore());
+
+        it('puts the filters into a bottom sheet and shows what is on as removable chips', async () => {
+            renderOutline();
+            await within(outline()).findByRole('treeitem', { name: 'CAD' });
+            // "Show completed" moves into the sheet.
+            expect(screen.queryByRole('switch', { name: 'Show completed' })).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'filters' }));
+            const sheet = await screen.findByRole('dialog', { name: 'Filters' });
+            expect(within(sheet).getByRole('switch', { name: 'Show completed' })).toBeInTheDocument();
+            fireEvent.click(within(sheet).getByRole('button', { name: 'Not estimated' }));
+            fireEvent.click(within(sheet).getByRole('button', { name: 'Show 2 tasks' }));
+            await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Filters' })).toBeNull());
+            await waitFor(() => expect(rowNames()).toEqual(['Company Blog', 'Write article', 'Buy milk']));
+
+            const chips = screen.getByTestId('active-filters');
+            expect(within(chips).getByText('2 of 8 tasks')).toBeInTheDocument();
+            const chip = within(chips).getByRole('button', { name: 'Estimate: Not estimated' });
+            fireEvent.click(within(chip).getByTestId('CancelIcon')); // the chip's ✕
+            await waitFor(() => expect(rowNames()).toContain('CAD'));
+            expect(screen.queryByTestId('active-filters')).toBeNull();
+        });
+
+        it('hides the move buttons of the selected row while filtered', async () => {
+            renderOutline();
+            await within(outline()).findByRole('treeitem', { name: 'CAD' });
+            fireEvent.change(search(), { target: { value: 'prints' } });
+            await select('test prints');
+            const bar = within(outline()).getByRole('toolbar', { name: 'test prints' });
+            expect(within(bar).queryByRole('button', { name: 'indent' })).toBeNull();
+            expect(within(bar).getByText('Clear the filter to reorder.')).toBeInTheDocument();
+        });
+    });
+});
+
 describe('touch screens (UI-9)', () => {
     let restore: () => void;
     beforeEach(() => { restore = fakeScreen(PHONE); });

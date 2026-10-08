@@ -105,6 +105,31 @@ estimates that add up. On phones the header is compact, quick add opens as a
 bottom sheet from ⊕, rows are dragged after a long-press and the selected
 row offers indent/outdent buttons (docs/task-entry-ui.md §7).
 
+#### Filtering tasks
+
+The filter bar above the tree narrows it down; it is remembered in the
+browser and works in the sorting session too.
+
+* **Search** (`/` jumps there, Esc empties it): every word must appear in
+  the title or the description, in any case.
+* **Project**: a project or sub-project with all its subtasks; "Active
+  project" follows the project switcher in the header.
+* **Tag**: tasks with any of the chosen tags; "No tag" finds untagged ones.
+* **Estimate**: ≤ 15 min, ≤ 1 h, 1–4 h, > 4 h or not estimated.
+* **Time worked**: not started, started (tracked time or tracking now), or
+  over its estimate (the default duration when it has none).
+* **Priority**: a range, both ends included.
+
+Different filters must all hold; the choices within one are alternatives
+(#maker or #writing). The tree keeps its shape: the parents of the tasks
+that pass appear greyed for context, every parent is open whatever was
+collapsed, and the bar says how many tasks pass ("12 of 87 tasks ·
+Clear"). Reordering — dragging, Tab/Shift+Tab, Alt+↑/↓ — waits until the
+filter is cleared; "+ Add task" rows are hidden too, as a new task might
+not pass. On phones a filter button (with the number of filters on) opens
+every filter, and "Show completed", in a bottom sheet; what is on shows
+below the search as chips, each removed by its ✕.
+
 ### Recurring tasks
 
 "Repeats" in the edit dialog takes a rule in plain language — "every tuesday
