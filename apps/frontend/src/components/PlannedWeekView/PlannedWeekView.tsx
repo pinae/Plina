@@ -4,12 +4,15 @@ import {
     DialogContent, DialogTitle, Snackbar, TextField, Tooltip,
 } from '@mui/material';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 import api from '../../api.ts';
 import {
-    useBucketTypes, useCompleteTask, useMarkers, useSettings, usePlan, useStartTracking, useStopTracking, useTasks,
+    useBucketTypes, useCompleteTask, useMarkers, useReplan, useSettings, useStartTracking, useStopTracking, useTasks,
     queryKeys,
 } from '../../queries.tsx';
+import { useLightPlan } from '../../hooks/useLightPlan.ts';
+import { needsReplan, type LightPlanNote } from '../../utils/lightPlan.ts';
 import type { Task } from '../../types.ts';
 import { useDependencyDrawing } from '../../hooks/useDependencyDrawing.ts';
 import { DependencyDrawLayer } from '../DependencyDrawLayer/DependencyDrawLayer.tsx';
@@ -18,15 +21,13 @@ import { keptOf } from '../../utils/merge.ts';
 import { MarkerDialog } from '../MarkerDialog/MarkerDialog.tsx';
 import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 import { usePlacement } from '../../hooks/usePlacement.ts';
-import { bucketsToZones, firstFreeDay, overlapsAutoTask, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
-import { minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
+import { bucketsToZones, firstFreeDay, planToViewTasks, type DayZone } from '../../utils/planToWeek.ts';
+import { formatDuration, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 import { clockMinutes } from '../../utils/timeScale.ts';
 import { useNow } from '../../hooks/useNow.ts';
-import type { PlanAlternative } from '../../types.ts';
 import type { ActiveDrag } from '../WeekViewTask/WeekViewTask.tsx';
 import { WeekView, type DayMark } from '../WeekView/WeekView.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
-import { WhatNextDialog } from '../WhatNextDialog/WhatNextDialog.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import { CompletionSnackbar } from '../CompletionSnackbar/CompletionSnackbar.tsx';
 import { FeasibilityBanner } from '../FeasibilityBanner/FeasibilityBanner.tsx';
@@ -104,7 +105,9 @@ function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => voi
 }
 
 /**
- * WP-11: the Week view on the real (accepted) plan.
+ * WP-11: the Week view on the real (accepted) plan — as planning light
+ * fits it to what happened (README: Planning light); "Re-plan" asks the
+ * server for a fresh one.
  *
  * Fluid items render pastel, anchored ones solid; buckets are background
  * zones (click to edit/materialize per A8); dropping a task PATCHes
@@ -118,11 +121,11 @@ function BucketEditDialog({ zone, onClose }: { zone: DayZone; onClose: () => voi
  */
 interface PlannedWeekViewProps {
     initialDate?: Date;
-    /** True while a task is being dragged (gates the re-plan countdown). */
-    onDraggingChange?: (dragging: boolean) => void;
-    /** A manual edit invalidated an auto task — the plan is now obsolete. */
-    onPlanDirty?: () => void;
 }
+
+/** "CAD (1 h), Firmware (30 min)". */
+const listed = (notes: LightPlanNote[]) =>
+    notes.map(note => `${note.header} (${formatDuration(minutesToDurationString(note.minutes))})`).join(', ');
 
 /** A whole day's start, local time (e.g. a special bucket made from an all-day marker). */
 const atMidnight = (iso: string) => {
@@ -130,15 +133,17 @@ const atMidnight = (iso: string) => {
     return date.getHours() === 0 && date.getMinutes() === 0;
 };
 
-export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanDirty }: PlannedWeekViewProps) {
-    const plan = usePlan();
+export default function PlannedWeekView({ initialDate }: PlannedWeekViewProps) {
+    const light = useLightPlan();
+    const plan = { ...light, data: light.data?.plan };
+    const notes = light.data?.notes ?? { overflow: [], dropped: [] };
+    const replan = useReplan();
     const tasks = useTasks();
     const placement = usePlacement();
     const startTracking = useStartTracking();
     const stopTracking = useStopTracking();
     const complete = useCompleteTask();
     const client = useQueryClient();
-    const [choices, setChoices] = useState<PlanAlternative[] | null>(null);
     const [editingZone, setEditingZone] = useState<DayZone | null>(null);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [newTaskDraft, setNewTaskDraft] = useState<{ start: Date; durationMinutes: number } | null>(null);
@@ -243,7 +248,6 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
         onComplete: (taskId: string) =>
             complete.mutate(taskId, {
                 onSuccess: data => {
-                    if (data.alternatives.length > 0) setChoices(data.alternatives);
                     if (data.auto_completed?.length) setAutoCompleted(data.auto_completed);
                 },
                 onError: error => surface(error, 'Could not complete the task.'),
@@ -269,13 +273,12 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
     const changeTask = (taskId: string, start: Date, durationMinutes: number) =>
         placement.placeTask(taskId, start, durationMinutes);
 
-    // Track the live drag: signal dragging (gates the countdown) and mark the
-    // plan obsolete the moment the drag invalidates an auto-planned task.
-    const handleDragChange = (drag: ActiveDrag | null) => {
-        setActiveDrag(drag);
-        onDraggingChange?.(drag !== null);
-        if (drag && overlapsAutoTask(viewTasks, drag)) onPlanDirty?.();
-    };
+    // The card being dragged (planning light moves the others once it lands).
+    const handleDragChange = (drag: ActiveDrag | null) => setActiveDrag(drag);
+    const runReplan = () => replan.mutate(undefined, {
+        onSuccess: () => setNotice('Re-planned.'),
+        onError: error => surface(error, 'Could not re-plan.'),
+    });
 
     // While merging, a press on a card draws the line instead of moving or
     // opening the card.
@@ -293,6 +296,18 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 1 }}>
                 <Box sx={{ flexGrow: 1 }}>
                     <FeasibilityBanner warnings={plan.data?.warnings ?? []} />
+                    {needsReplan(notes) && (
+                        <Alert severity="warning" data-testid="light-plan-notes" sx={{ mt: 0.5 }}
+                            action={plan.data?.accepted_plan_id ? (
+                                <Button color="inherit" size="small" onClick={runReplan} disabled={replan.isPending}>
+                                    Re-plan
+                                </Button>
+                            ) : undefined}>
+                            {notes.overflow.length > 0 && <>No longer fits its day: {listed(notes.overflow)}. </>}
+                            {notes.dropped.length > 0 && <>Its planned days are over: {listed(notes.dropped)}. </>}
+                            {plan.data?.accepted_plan_id ? 'Re-plan to find a place for it.' : 'Plan your week to find a place for it.'}
+                        </Alert>
+                    )}
                     {mergeDrawing.active && (
                         <Alert severity="info" sx={{ mt: 0.5 }}>
                             Drag from one task onto another to merge them. Esc stops.
@@ -306,6 +321,14 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                         Merge tasks
                     </Button>
                 </Tooltip>
+                {plan.data?.accepted_plan_id && (
+                    <Tooltip describeChild title="Plan again from now, the way the accepted plan was made. Until then the plan only moves tasks within their day.">
+                        <Button size="small" variant="outlined" startIcon={<RefreshIcon />}
+                            onClick={runReplan} disabled={replan.isPending}>
+                            Re-plan
+                        </Button>
+                    </Tooltip>
+                )}
                 <Button
                     size="small" variant="outlined" startIcon={<SkipNextIcon />}
                     disabled={freeDay === null}
@@ -383,10 +406,7 @@ export default function PlannedWeekView({ initialDate, onDraggingChange, onPlanD
                     onClose={() => setNewTaskDraft(null)}
                 />
             )}
-            {/* With choices, the Undo sits in the dialog (see WhatNextDialog). */}
-            <WhatNextDialog alternatives={choices} autoCompleted={autoCompleted}
-                onClose={() => { setChoices(null); setAutoCompleted(null); }} />
-            <CompletionSnackbar autoCompleted={choices ? null : autoCompleted}
+            <CompletionSnackbar autoCompleted={autoCompleted}
                 onClose={() => setAutoCompleted(null)} />
             <Snackbar
                 open={toast !== null} autoHideDuration={6000} onClose={clearToast}

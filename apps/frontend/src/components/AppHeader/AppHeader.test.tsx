@@ -44,6 +44,8 @@ const plan = (): PlanResponse => ({
 });
 
 const server = setupServer(
+    // Planning light keeps tasks apart from their predecessors.
+    http.get(`${API}/dependencies/`, () => HttpResponse.json([])),
     ...calendarHandlers(),
     ...noBucketTypes(),
     http.get(`${API}/plan/`, () => HttpResponse.json(plan())),

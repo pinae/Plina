@@ -36,10 +36,6 @@ const FULL_BLEED: TabKey[] = ['week', 'dependencies'];
 function App() {
   const [tab, setTab] = useState<TabKey>('tasks');
   const [chooserOpen, setChooserOpen] = useState(false);
-  // Re-plan coordination: a manual edit marks the plan dirty; a countdown on
-  // the "Plan my week" button then triggers planning once dragging settles.
-  const [planDirty, setPlanDirty] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const compact = useIsMobile();
   // Recurring buckets ("every day at 14:00") follow the device's time zone.
   useTimeZoneSync();
@@ -50,10 +46,8 @@ function App() {
     setTab(newValue);
   };
 
-  const triggerPlan = useCallback(() => {
-    setPlanDirty(false);
-    setChooserOpen(true);
-  }, []);
+  // Only a click plans (README: Planning light).
+  const triggerPlan = useCallback(() => setChooserOpen(true), []);
 
 
   return (
@@ -66,9 +60,6 @@ function App() {
         }}
         actions={
           <PlanMyWeekButton
-            dirty={planDirty}
-            dragging={dragging}
-            onTrigger={triggerPlan}
             onClick={triggerPlan}
             compact={compact}
           />
@@ -96,10 +87,7 @@ function App() {
         <ErrorBoundary key={tab}>
           {tab === 'tasks' && <OutlineView />}
           {tab === 'week' && (
-            <PlannedWeekView
-              onDraggingChange={setDragging}
-              onPlanDirty={() => setPlanDirty(true)}
-            />
+            <PlannedWeekView />
           )}
           {tab === 'calendar' && <Calendar />}
           {tab === 'timesheet' && <TimeSheet />}

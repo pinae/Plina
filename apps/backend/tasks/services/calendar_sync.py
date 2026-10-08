@@ -430,10 +430,6 @@ def sync(subscription: CalendarSubscription, now: Optional[datetime] = None,
     if result.created:
         from tasks.services.colors import ensure_auto_colors
         ensure_auto_colors()
-    if result.created or result.updated or result.removed or result.completed:
-        # The accepted plan takes the events in where they are now.
-        from tasks.services.plan_store import recalculate_accepted_plan
-        recalculate_accepted_plan(now=now)
     return result
 
 

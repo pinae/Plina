@@ -6,7 +6,8 @@ an accepted plan kept the old entry of an appointment that moved, never took
 in appointments made after it was accepted (a calendar read, an occurrence
 of a recurring appointment), kept a task that is being tracked at the place
 it was planned before; and two time buckets at the same time were both
-filled."""
+filled. Since README: Planning light the accepted plan takes such changes in
+on "Re-plan" (the browser fits them in until then)."""
 from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest import mock
 
@@ -44,9 +45,14 @@ class OverlapCase(TestCase):
         alternatives = self.api.post("/api/plan/alternatives/").json()["alternatives"]
         self.assertEqual(self.api.post(f"/api/plans/{alternatives[0]['id']}/accept/").status_code, 200)
 
-    def cards(self):
+    def replan(self):
+        """"Re-plan" (README: Planning light): nothing re-plans by itself."""
+        response = self.api.post("/api/plan/recalculate/")
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def cards(self, data=None):
         """What the Week view shows: (title, start, end), by start."""
-        data = self.api.get("/api/plan/").json()
+        data = data or self.api.get("/api/plan/").json()
         items = data["appointments"] + [item for bucket in data["buckets"] for item in bucket["items"]]
         cards = []
         for item in items:
@@ -75,6 +81,7 @@ class AcceptedPlanTest(OverlapCase):
         response = self.api.patch(f"/api/tasks/{meeting.id}/", {"start_date": at(5, 10).isoformat()}, format="json")
         self.assertEqual(response.status_code, 200)
 
+        self.replan()
         cards = self.cards()
         self.assertEqual(self.shown(cards, "Meeting"), [(at(5, 10), at(5, 11))])
         self.assertNoOverlaps(cards)
@@ -86,6 +93,7 @@ class AcceptedPlanTest(OverlapCase):
         }, format="json")
         self.assertEqual(response.status_code, 201)
 
+        self.replan()
         cards = self.cards()
         self.assertEqual(self.shown(cards, "Dentist"), [(at(5, 11), at(5, 12))])
         self.assertNoOverlaps(cards)
@@ -98,6 +106,7 @@ class AcceptedPlanTest(OverlapCase):
         }, format="json")
         self.assertEqual(response.status_code, 201, response.content)
 
+        self.replan()
         cards = self.cards()
         self.assertIn((at(5, 9, 30), at(5, 9, 45)), self.shown(cards, "Standup"))
         self.assertIn((at(6, 9, 30), at(6, 9, 45)), self.shown(cards, "Standup"))
@@ -110,6 +119,7 @@ class AcceptedPlanTest(OverlapCase):
                 "DTSTART:20261005T100000Z\r\nDTEND:20261005T113000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").encode()
         calendar_sync.sync(calendar, data=data)
 
+        self.replan()
         cards = self.cards()
         self.assertEqual(self.shown(cards, "Review"), [(at(5, 10), at(5, 11, 30))])
         self.assertNoOverlaps(cards)
@@ -123,6 +133,7 @@ class AcceptedPlanTest(OverlapCase):
         stop_tracking(docs, now=self.now)
 
         # What is left of it goes on from now, not where it was planned before.
+        self.replan()
         cards = self.cards()
         self.assertEqual(self.shown(cards, "Docs")[0], (at(5, 10, 30), at(5, 12)))
         self.assertNoOverlaps(cards)
@@ -133,6 +144,7 @@ class AcceptedPlanTest(OverlapCase):
         self.now = at(5, 9, 0)
         self.api.post(f"/api/tasks/{docs.id}/track/start/")
 
+        self.replan()
         cards = self.cards()
         self.assertEqual(self.shown(cards, "Docs")[0][0], at(5, 9))
         self.assertNoOverlaps(cards)

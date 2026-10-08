@@ -136,28 +136,25 @@ class TrackingApiTest(TestCase):
         named = [pred["header"] for pred in response.data["predecessors"]]
         self.assertEqual(named, ["Blocker"])
 
-    @patch("tasks.services.tracking.recalculate_accepted_plan")
-    def test_stop_updates_time_spent_and_triggers_recalculation(self, recalc):
+    @patch("tasks.services.plan_store.recalculate_accepted_plan")
+    def test_stop_updates_time_spent_and_does_not_replan(self, recalc):
         self.client.post(f"/api/tasks/{self.task.id}/track/start/")
-        recalc.assert_called_once()  # the task is anchored where it is worked on
-        recalc.reset_mock()
-
         response = self.client.post(f"/api/tasks/{self.task.id}/track/stop/")
 
         self.assertEqual(response.status_code, 200)
         self.task.refresh_from_db()
         self.assertGreaterEqual(self.task.time_spent, timedelta(0))
         self.assertIsNone(response.data["task"]["active_tracking_start"])
-        recalc.assert_called_once()
+        recalc.assert_not_called()  # README: Planning light
 
     def test_stop_without_session_returns_400(self):
         response = self.client.post(f"/api/tasks/{self.task.id}/track/stop/")
         self.assertEqual(response.status_code, 400)
 
 
-class CompletionChoicesTest(TestCase):
-    """Completing a task recalculates and, when the new frontier offers a real
-    choice (>= 2 branches), embeds freshly stored alternatives."""
+class CompletionTest(TestCase):
+    """Completing a task neither re-plans nor computes alternatives (README:
+    Planning light): the next "Re-plan" leaves it out."""
 
     def setUp(self):
         self.client = APIClient()
@@ -173,47 +170,32 @@ class CompletionChoicesTest(TestCase):
                                        (self.left, self.merge), (self.right, self.merge)]:
             TaskDependency.objects.create(predecessor=predecessor, successor=successor)
 
-    def test_completing_a_diamond_root_returns_choices(self):
+    def test_completing_computes_no_plans(self):
         response = self.client.post(f"/api/tasks/{self.root.id}/complete/")
 
         self.assertEqual(response.status_code, 200)
         self.root.refresh_from_db()
         self.assertTrue(self.root.is_done)
-        alternatives = response.data["alternatives"]
-        self.assertGreaterEqual(len(alternatives), 2)
-        first_tasks = set()
-        for alternative in alternatives:
-            self.assertIn("id", alternative)
-            items = [i for b in alternative["buckets"] for i in b["items"]]
-            first_tasks.add(min(items, key=lambda i: i["start_time"])["header"])
-        self.assertEqual(first_tasks, {"Left", "Right"})
-        # Choices are stored as candidates so the user can accept one.
-        self.assertEqual(
-            Plan.objects.filter(is_accepted=False).count(), len(alternatives)
-        )
-
-    def test_completing_with_a_single_branch_returns_no_choices(self):
-        # Finish everything except the strict tail Left -> Merge.
-        for task in (self.root, self.right):
-            task.completed_at = timezone.now()
-            task.save()
-
-        response = self.client.post(f"/api/tasks/{self.left.id}/complete/")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["alternatives"], [])
+        self.assertNotIn("alternatives", response.data)
+        self.assertFalse(Plan.objects.exists())
 
     def test_completing_an_already_completed_task_returns_400(self):
         self.client.post(f"/api/tasks/{self.root.id}/complete/")
         response = self.client.post(f"/api/tasks/{self.root.id}/complete/")
         self.assertEqual(response.status_code, 400)
 
-    def test_completion_removes_the_tasks_fluid_entries_from_the_accepted_plan(self):
+    def test_replan_removes_a_completed_tasks_fluid_entries(self):
         alternatives = self.client.post("/api/plan/alternatives/").data["alternatives"]
         self.client.post(f"/api/plans/{alternatives[0]['id']}/accept/")
         accepted = Plan.objects.get(is_accepted=True)
         self.assertTrue(accepted.entries.filter(task=self.root).exists())
 
         self.client.post(f"/api/tasks/{self.root.id}/complete/")
-
+        self.assertTrue(accepted.entries.filter(task=self.root).exists())  # untouched until…
+        self.assertEqual(self.client.post("/api/plan/recalculate/").status_code, 200)
         self.assertFalse(accepted.entries.filter(task=self.root).exists())
+
+    def test_replan_needs_an_accepted_plan(self):
+        response = self.client.post("/api/plan/recalculate/")
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Plan my week", response.data["detail"])

@@ -22,7 +22,6 @@ from django.db import transaction
 from django.utils import timezone
 
 from tasks.models import Task, TrackingSession
-from tasks.services.plan_store import recalculate_accepted_plan
 
 #: Clocks differ a little: an end this far ahead still counts as now.
 CLOCK_SLACK = timedelta(minutes=1)
@@ -117,7 +116,6 @@ def add_session(task: Task, start: datetime, end: Optional[datetime],
     check(start, end, now=now)
     session = TrackingSession.objects.create(task=task, start=start, end=end)
     _book(task, booked(session))
-    recalculate_accepted_plan(now=now)
     return session
 
 
@@ -130,7 +128,6 @@ def change_session(session: TrackingSession, start: datetime, end: Optional[date
     session.start, session.end = start, end
     session.save(update_fields=["start", "end"])
     _book(session.task, booked(session) - before)
-    recalculate_accepted_plan(now=now)
     return session
 
 
@@ -139,5 +136,4 @@ def remove_session(session: TrackingSession, now: Optional[datetime] = None) -> 
     task, before = session.task, booked(session)
     session.delete()
     _book(task, -before)
-    recalculate_accepted_plan(now=now)
 

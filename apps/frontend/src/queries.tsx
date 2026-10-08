@@ -30,6 +30,7 @@ import {
     login,
     logout,
     fetchPlan,
+    recalculatePlan,
     fetchSettings,
     fetchTags,
     fetchTasks,
@@ -172,6 +173,15 @@ function useInvalidate() {
 export const useComputeAlternatives = () =>
     useMutation({ mutationFn: computeAlternatives });
 
+/** "Re-plan": the answer is the new plan. */
+export const useReplan = () => {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: recalculatePlan,
+        onSuccess: plan => client.setQueryData(queryKeys.plan, plan),
+    });
+};
+
 export const useAcceptPlan = () => {
     const invalidate = useInvalidate();
     return useMutation({
@@ -194,7 +204,7 @@ export const useStartTracking = () => {
         mutationFn: startTracking,
         onSuccess: data => {
             if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
-            return invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions);
+            return invalidate(queryKeys.tasks, queryKeys.timeSheet, queryKeys.sessions);
         },
     });
 };
@@ -204,7 +214,7 @@ export const useSplitTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: ({ taskId, body }: { taskId: string; body: SplitRequest }) => splitTask(taskId, body),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.dependencies),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies),
     });
 };
 
@@ -220,17 +230,17 @@ export const useStopTracking = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: stopTracking,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
-/** Completing may return fresh choices; consume them from `data.alternatives`.
- *  Parents may complete too, and a completed active project hands over. */
+/** Parents may complete too, and a completed active project hands over; the
+ *  plan is not touched (README: Planning light). */
 export const useCompleteTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: completeTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet, queryKeys.sessions),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.settings, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -239,7 +249,7 @@ export const useReopenTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: reopenTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.settings),
     });
 };
 
@@ -247,7 +257,7 @@ export const useCreateTask = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: createTask,
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tasks),
     });
 };
 
@@ -256,7 +266,7 @@ export const useUpdateTask = () => {
     return useMutation({
         mutationFn: ({ taskId, patch }: { taskId: string; patch: TaskWrite }) =>
             updateTask(taskId, patch),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -278,7 +288,7 @@ export const useSetPriority = () => {
         onError: (_error, _variables, context) => {
             if (context?.previous) client.setQueryData(queryKeys.tasks, context.previous);
         },
-        onSettled: () => invalidate(queryKeys.tasks, queryKeys.plan),
+        onSettled: () => invalidate(queryKeys.tasks),
     });
 };
 
@@ -300,7 +310,7 @@ export const useMoveTask = () => {
             if (context?.previous) client.setQueryData(queryKeys.tasks, context.previous);
         },
         // The active project may hand over (T-1).
-        onSettled: () => invalidate(queryKeys.tasks, queryKeys.plan, queryKeys.settings),
+        onSettled: () => invalidate(queryKeys.tasks, queryKeys.settings),
     });
 };
 
@@ -311,7 +321,7 @@ export const useDeleteTask = () => {
             taskId: string; children?: 'lift' | 'delete'; occurrences?: 'all';
         }) => deleteTask(taskId, children, occurrences),
         onSuccess: () =>
-            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.timeSheet, queryKeys.sessions),
+            invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -345,7 +355,6 @@ export const useCreateDependency = () => {
         onSettled: () =>
             Promise.all([
                 client.invalidateQueries({ queryKey: queryKeys.dependencies }),
-                client.invalidateQueries({ queryKey: queryKeys.plan }),
             ]),
     });
 };
@@ -354,7 +363,7 @@ export const useDeleteDependency = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: deleteDependency,
-        onSuccess: () => invalidate(queryKeys.dependencies, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.dependencies),
     });
 };
 
@@ -372,7 +381,7 @@ export const useUpdateTag = () => {
         mutationFn: ({ id, patch }: { id: string; patch: Partial<TagWrite> }) =>
             updateTag(id, patch),
         // Tag colour/affinity can influence planning, so refresh the plan too.
-        onSuccess: () => invalidate(queryKeys.tags, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tags),
     });
 };
 
@@ -381,7 +390,7 @@ export const useDeleteTag = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: deleteTag,
-        onSuccess: () => invalidate(queryKeys.tags, queryKeys.tasks, queryKeys.bucketTypes, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.tags, queryKeys.tasks, queryKeys.bucketTypes),
     });
 };
 
@@ -423,7 +432,7 @@ export const useUpdateMarker = () => {
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: ({ id, patch }: { id: string; patch: MarkerWrite }) => updateMarker(id, patch),
-        onSuccess: () => invalidate(queryKeys.markers, queryKeys.tasks, queryKeys.plan),
+        onSuccess: () => invalidate(queryKeys.markers, queryKeys.tasks),
     });
 };
 
@@ -525,7 +534,7 @@ export const useMergeTasks = () => {
     return useMutation({
         mutationFn: ({ keptId, otherId, values }: { keptId: string; otherId: string; values: TaskWrite }) =>
             mergeTasks(keptId, otherId, values),
-        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.plan, queryKeys.settings, queryKeys.timeSheet, queryKeys.sessions),
+        onSuccess: () => invalidate(queryKeys.tasks, queryKeys.dependencies, queryKeys.settings, queryKeys.timeSheet, queryKeys.sessions),
     });
 };
 
@@ -549,8 +558,9 @@ export const useTimeSheet = (from: string, to: string) =>
 export const useSessions = (params: { task?: string; from?: string; to?: string }) =>
     useQuery({ queryKey: [...queryKeys.sessions, params], queryFn: () => fetchSessions(params) });
 
-/** What a change of tracked time changes: the task's time, the plan, the time sheet. */
-const TRACKED_TIME = [queryKeys.sessions, queryKeys.tasks, queryKeys.plan, queryKeys.timeSheet] as const;
+/** What a change of tracked time changes: the task's time, the time sheet (the
+ *  plan only through planning light, README: Planning light). */
+const TRACKED_TIME = [queryKeys.sessions, queryKeys.tasks, queryKeys.timeSheet] as const;
 
 export const useCreateSession = () => {
     const invalidate = useInvalidate();

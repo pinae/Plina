@@ -273,10 +273,6 @@ export interface PlanItem {
     hex_color: string | null;
     /** Present on entries of the accepted (stored) plan only. */
     order?: number;
-    /** Client-only: false when a manual placement made this auto-planned item
-     *  impossible as planned; it fades until the next re-plan. Server omits it
-     *  (treated as valid). */
-    valid?: boolean;
 }
 
 export interface PlannedBucket {
@@ -433,10 +429,9 @@ export interface SplitResponse {
     children: Task[];
 }
 
-/** Response of complete: choices are embedded when the frontier forks. */
+/** Response of complete (nothing is re-planned, README: Planning light). */
 export interface CompleteResponse {
     task: Task;
-    alternatives: PlanAlternative[];
     /** Parents completed because their last open child was (bottom-up, UI-2). */
     auto_completed?: { id: string; header: string }[];
 }

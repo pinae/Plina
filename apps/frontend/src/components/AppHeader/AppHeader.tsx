@@ -15,14 +15,12 @@ import { HeaderTracker } from '../HeaderTracker/HeaderTracker.tsx';
 import { QuickAdd } from '../QuickAdd/QuickAdd.tsx';
 import { QuickAddSheet } from '../QuickAddSheet/QuickAddSheet.tsx';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
-import { WhatNextDialog } from '../WhatNextDialog/WhatNextDialog.tsx';
 import { SettingsPage } from '../SettingsPage/SettingsPage.tsx';
 import { CompletionSnackbar } from '../CompletionSnackbar/CompletionSnackbar.tsx';
 import { useGlobalShortcuts } from '../../hooks/useGlobalShortcuts.ts';
 import { useTracker } from '../../hooks/useTracker.ts';
 import { useIsMobile } from '../../hooks/useResponsive.ts';
 import { useTasks } from '../../queries.tsx';
-import type { PlanAlternative } from '../../types.ts';
 
 export interface AppHeaderProps {
     /** "Show all tasks" in the project picker: opens the Tasks tab. */
@@ -34,12 +32,11 @@ export interface AppHeaderProps {
 export function AppHeader({ onShowAllProjects, actions }: AppHeaderProps) {
     const tasks = useTasks();
     const [pickerOpen, setPickerOpen] = useState(false);
-    const [choices, setChoices] = useState<PlanAlternative[] | null>(null);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const quickAddInput = useRef<HTMLInputElement>(null);
     const [autoCompleted, setAutoCompleted] = useState<{ id: string; header: string }[] | null>(null);
-    const tracker = useTracker(setChoices, setAutoCompleted);
+    const tracker = useTracker(setAutoCompleted);
     const compact = useIsMobile();
     const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -87,10 +84,7 @@ export function AppHeader({ onShowAllProjects, actions }: AppHeaderProps) {
             {editingTask && (
                 <TaskFormDialog open task={editingTask} onClose={() => setEditingTaskId(null)} />
             )}
-            {/* With choices, the Undo sits in the dialog (see WhatNextDialog). */}
-            <WhatNextDialog alternatives={choices} autoCompleted={autoCompleted}
-                onClose={() => { setChoices(null); setAutoCompleted(null); }} />
-            <CompletionSnackbar autoCompleted={choices ? null : autoCompleted}
+            <CompletionSnackbar autoCompleted={autoCompleted}
                 onClose={() => setAutoCompleted(null)} />
         </Box>
     );

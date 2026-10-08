@@ -119,6 +119,11 @@ export const changePassword = (change: PasswordChange) =>
 export const fetchPlan = () =>
     api.get<PlanResponse>('plan/').then(r => r.data);
 
+/** "Re-plan" (README: Planning light): the accepted plan reflowed around
+ *  what happened; nothing else re-plans. */
+export const recalculatePlan = () =>
+    api.post<PlanResponse>('plan/recalculate/').then(r => r.data);
+
 /** Stateless preview — computes without storing candidates. */
 export const previewAlternatives = () =>
     api.get<AlternativesResponse>('plan/alternatives/').then(r => r.data);

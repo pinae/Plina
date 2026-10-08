@@ -75,6 +75,16 @@ export const DayColumn: React.FC<DayColumnProps> = ({
         onCreateTask(start, duration);
     }, [columnHeight, date, onCreateTask]);
 
+    // Stable while planning light moves a card (README: Planning light): the
+    // task and which of its slices this is, by start.
+    const seen = new Map<string, number>();
+    const keys = tasks.map((task, index) => {
+        if (!task.taskId) return `card-${index}`;
+        const ordinal = seen.get(task.taskId) ?? 0;
+        seen.set(task.taskId, ordinal + 1);
+        return `${task.taskId}#${ordinal}`;
+    });
+
     return (
         <Box sx={{ position: 'relative', height: columnHeight, display: 'flex' }}>
             {/* Decorative background: hour dividers + current time line. */}
@@ -127,7 +137,7 @@ export const DayColumn: React.FC<DayColumnProps> = ({
             >
                 {tasks.map((task, index) => (
                     <WeekViewTask
-                        key={`${task.taskId ?? index}@${task.startTime}`}
+                        key={keys[index]}
                         task={task}
                         lane={lanes[index]}
                         columnHeight={columnHeight}
