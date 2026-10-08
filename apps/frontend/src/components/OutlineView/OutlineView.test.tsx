@@ -15,6 +15,7 @@ import type { Task, TaskWrite } from '../../types.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 import { applyMove } from '../../utils/treeDnd.ts';
 import { calendarHandlers } from '../../testing/calendarHandlers.ts';
+import { savedFilterHandlers } from '../../testing/savedFilterHandlers.ts';
 
 let tasks: Task[] = [];
 let activeId: string | null = 'hw';
@@ -56,6 +57,7 @@ const initialTasks = (): Task[] => [
 
 const server = setupServer(
     ...calendarHandlers(),
+    ...savedFilterHandlers(),
     http.get(`${API}/tasks/`, () => HttpResponse.json(withTree(tasks))),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),
     http.get(`${API}/settings/`, () => HttpResponse.json(settingsFor(withTree(tasks), activeId))),

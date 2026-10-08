@@ -13,6 +13,7 @@ import App from './App.tsx';
 import { API, makeTask, makerTag, settingsFor, treeTasks } from './testing/treeFixtures.ts';
 import type { Task, TaskWrite } from './types.ts';
 import { calendarHandlers, noBucketTypes } from './testing/calendarHandlers.ts';
+import { savedFilterHandlers } from './testing/savedFilterHandlers.ts';
 
 let tasks: Task[] = [];
 let posted: TaskWrite[] = [];
@@ -21,6 +22,7 @@ const settings = () => ({ ...settingsFor(tasks, 'hw'), time_zone: zone });
 
 const server = setupServer(
     ...calendarHandlers(),
+    ...savedFilterHandlers(),
     ...noBucketTypes(),
     http.get(`${API}/tasks/`, () => HttpResponse.json(tasks)),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),

@@ -12,6 +12,8 @@ import type {
     Dependency,
     PlanResponse,
     RecurrencePreview,
+    SavedFilter,
+    SavedFilterWrite,
     MoveResponse,
     ReopenResponse,
     SettingsWrite,
@@ -289,3 +291,17 @@ export const updateSession = (sessionId: string, patch: TrackedSessionWrite) =>
 
 export const deleteSession = (sessionId: string) =>
     api.delete(`sessions/${sessionId}/`).then(() => undefined);
+
+// ------------------------------------------- saved filters (README: Filtering tasks)
+
+export const fetchSavedFilters = () =>
+    api.get<SavedFilter[]>('saved-filters/').then(r => r.data);
+
+export const createSavedFilter = (saved: SavedFilterWrite) =>
+    api.post<SavedFilter>('saved-filters/', saved).then(r => r.data);
+
+export const updateSavedFilter = (savedId: string, patch: SavedFilterWrite) =>
+    api.patch<SavedFilter>(`saved-filters/${savedId}/`, patch).then(r => r.data);
+
+export const deleteSavedFilter = (savedId: string) =>
+    api.delete(`saved-filters/${savedId}/`).then(() => undefined);

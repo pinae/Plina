@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makeTask, makerTag, treeTasks } from '../testing/treeFixtures.ts';
 import {
     ACTIVE_PROJECT, EMPTY_FILTER, NO_TAG, activeFilterCount, filterTasks, kindSummary, matchesTask, normalizeFilter,
-    readFilter, storeFilter, toggled, withoutKind, type FilterContext, type TaskFilter,
+    filtersEqual, readFilter, storeFilter, toggled, withoutKind, type FilterContext, type TaskFilter,
 } from './taskFilter.ts';
 
 const context: FilterContext = { activeId: null, defaultMinutes: 60 };
@@ -128,5 +128,14 @@ describe('the labels', () => {
         expect(withoutKind(filter({ tags: ['x'], search: 'a' }), 'tags')).toEqual(filter({ search: 'a' }));
         expect(toggled(['a', 'b'], 'a')).toEqual(['b']);
         expect(toggled(['a'], 'b')).toEqual(['a', 'b']);
+    });
+});
+
+describe('filtersEqual', () => {
+    it('ignores the order of choices and surrounding spaces of the search', () => {
+        expect(filtersEqual(filter({ tags: ['a', 'b'], search: 'cad ' }), filter({ tags: ['b', 'a'], search: 'cad' })))
+            .toBe(true);
+        expect(filtersEqual(filter({ tags: ['a'] }), filter({ tags: ['a', 'b'] }))).toBe(false);
+        expect(filtersEqual(filter({ priority: [3, 10] }), EMPTY_FILTER)).toBe(false);
     });
 });

@@ -11,6 +11,7 @@ import { TaskNodeCard } from '../TaskNode/TaskNode.tsx';
 import DependencyEditor from './DependencyEditor.tsx';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 import { makeTask, makerTag, settingsFor } from '../../testing/treeFixtures.ts';
+import { savedFilterHandlers } from '../../testing/savedFilterHandlers.ts';
 import { EMPTY_FILTER, storeFilter } from '../../utils/taskFilter.ts';
 import type { Dependency, Task } from '../../types.ts';
 
@@ -55,6 +56,7 @@ let tasks: Task[] = twoTasks();
 let dependencies: Dependency[] = [{ id: 'd1', predecessor: 't1', successor: 't2' }];
 
 const server = setupServer(
+    ...savedFilterHandlers(),
     http.get(`${API}/tasks/`, () => HttpResponse.json(tasks)),
     http.get(`${API}/dependencies/`, () => HttpResponse.json(dependencies)),
     http.get(`${API}/tags/`, () => HttpResponse.json([makerTag])),

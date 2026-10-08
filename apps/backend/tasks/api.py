@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
 from .services.colors import FALLBACK_COLOR, ensure_auto_colors
-from .serializers import (MarkerSerializer, TaskSerializer, TagSerializer,
+from .serializers import (MarkerSerializer, SavedFilterSerializer, TaskSerializer, TagSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer, TrackingSessionSerializer)
 
@@ -331,6 +331,16 @@ class TagViewSet(viewsets.ModelViewSet):
         """A deleted tag leaves its tasks and time buckets: affinity changes."""
         super().perform_destroy(instance)
         recalculate_accepted_plan()
+
+class SavedFilterViewSet(viewsets.ModelViewSet):
+    """Named filters of the Tasks tab and the dependency editor (README:
+    Filtering tasks); they change no plan."""
+    serializer_class = SavedFilterSerializer
+
+    def get_queryset(self):
+        from tasks.models import SavedFilter
+        return SavedFilter.objects.all()
+
 
 class TimeBucketTypeViewSet(RecalculatingModelViewSet):
     queryset = TimeBucketType.objects.all()
