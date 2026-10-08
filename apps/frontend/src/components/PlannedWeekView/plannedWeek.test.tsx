@@ -73,6 +73,14 @@ describe('planToViewTasks', () => {
         expect(planToViewTasks(planPayload).every(t => !t.isRest)).toBe(true);
     });
 
+    it('keeps the seconds of a duration (rounding made cards overlap)', () => {
+        const plan: PlanResponse = {
+            ...planPayload,
+            appointments: [{ ...planPayload.appointments[0], duration: 75 * 60 + 37 }],
+        };
+        expect(planToViewTasks(plan).find(task => task.taskId === 'meet')!.duration).toBeCloseTo(75 + 37 / 60, 10);
+    });
+
     it('maps plan items and appointments to ViewTasks', () => {
         const tasks = planToViewTasks(planPayload);
 

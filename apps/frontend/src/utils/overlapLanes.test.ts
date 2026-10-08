@@ -22,4 +22,11 @@ describe('overlapLanes', () => {
             { index: 0, count: 2 }, { index: 1, count: 2 }, { index: 1, count: 2 }, { index: 0, count: 1 },
         ]);
     });
+
+    it('counts an overlap of seconds as touching', () => {
+        // Tracked live until 10:15:37, the next one typed in from 10:15.
+        const first = { startTime: new Date(2026, 9, 8, 9).toISOString(), duration: 75 + 37 / 60 };
+        const second = { startTime: new Date(2026, 9, 8, 10, 15).toISOString(), duration: 45 };
+        expect(overlapLanes([first, second])).toEqual([{ index: 0, count: 1 }, { index: 0, count: 1 }]);
+    });
 });

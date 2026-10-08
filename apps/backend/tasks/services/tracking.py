@@ -101,8 +101,9 @@ def start_tracking(task: Task, now: Optional[datetime] = None
     session = TrackingSession.objects.create(task=task, start=now)
     if project_for_tracking(task) is not None:  # a recurring task keeps the active project
         activate(project_for_tracking(task))
-    if stopped is not None:
-        recalculate_accepted_plan(now=now)  # the stopped task's time changed
+    # The task is anchored where it is worked on now (and a stopped one's
+    # time changed): the plan shows it there, not where it was planned.
+    recalculate_accepted_plan(now=now)
     return session, stopped
 
 

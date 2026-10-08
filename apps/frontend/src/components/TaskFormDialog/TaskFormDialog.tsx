@@ -3,7 +3,7 @@ import type { AxiosError } from 'axios';
 import {
     Alert, Autocomplete, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent,
     DialogContentText, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton,
-    InputLabel, MenuItem, Radio, RadioGroup, Select, Slider, TextField, Tooltip, Typography,
+    InputLabel, MenuItem, Radio, RadioGroup, Select, Slider, Switch, TextField, Tooltip, Typography,
 } from '@mui/material';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -142,9 +142,13 @@ function TaskForm({
     const recurring = Boolean(task?.series_id);
     const [scope, setScope] = useState<'this' | 'following'>('this');
     const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+    // A repeating calendar event (README: Calendar): new occurrences join
+    // the recurring task without asking, while they fit its rule.
+    const seriesCalendar = task?.series_calendar ?? null;
+    const [calendarAuto, setCalendarAuto] = useState(seriesCalendar?.auto ?? true);
     // Unsaved changes = the editable values differ from when the form opened.
     const snapshot = JSON.stringify([header, description, hours, estimateReason, deadline, priority,
-        tagIds, chosenParentId, ownColor, isAppointment, start, recurrence, place, deadlineMarkerId]);
+        tagIds, chosenParentId, ownColor, isAppointment, start, recurrence, place, deadlineMarkerId, calendarAuto]);
     const [initialSnapshot] = useState(snapshot);
     const dirty = snapshot !== initialSnapshot;
 
@@ -260,6 +264,7 @@ function TaskForm({
         if (deadlineMarkerId) payload.deadline_marker_id = deadlineMarkerId;
         else if (editing && task.deadline_marker) payload.deadline_marker_id = null;
         if (recurrence.trim() !== (task?.recurrence ?? '')) payload.recurrence = recurrence.trim();
+        if (seriesCalendar && calendarAuto !== seriesCalendar.auto) payload.calendar_auto = calendarAuto;
         if (recurring) payload.scope = scope;
         const options = {
             onSuccess: after,
@@ -502,13 +507,38 @@ function TaskForm({
                 )}
                 <RecurrenceField
                     label="Repeats" value={recurrence} placeholder="every tuesday at 20:00"
-                    onChange={value => { setRecurrence(value); edited('recurrence'); }}
+                    onChange={value => {
+                        setRecurrence(value);
+                        edited('recurrence');
+                        // Fixing a rule that did not fit: include again.
+                        if (seriesCalendar?.mismatch) setCalendarAuto(true);
+                    }}
                     preview={text => previewTaskRecurrence(text, startIso)} previewKey={startIso ?? ''}
                     error={shown('recurrence')}
-                    helperText={recurring
-                        ? 'Empty = no further occurrences after this one'
-                        : 'Empty = once. E.g. “every tuesday at 20:00”, “every 4 weeks on tuesday 14:00”, “every first sunday of the month at 12:30”'}
+                    helperText={seriesCalendar
+                        ? `${seriesCalendar.name} says which occurrences there are; this rule checks that they fit`
+                        : recurring
+                            ? 'Empty = no further occurrences after this one'
+                            : 'Empty = once. E.g. “every tuesday at 20:00”, “every 4 weeks on tuesday 14:00”, “every first sunday of the month at 12:30”'}
                 />
+                {seriesCalendar && (
+                    <Box data-testid="series-calendar">
+                        <FormControlLabel
+                            control={<Switch checked={calendarAuto} onChange={event => setCalendarAuto(event.target.checked)} />}
+                            label={`Include new occurrences from ${seriesCalendar.name} without asking`} />
+                        <FormHelperText sx={{ mt: 0 }}>
+                            {recurring
+                                ? (calendarAuto
+                                    ? 'New occurrences that fit the rule join this recurring task by themselves.'
+                                    : 'New occurrences come as tasks of their own.')
+                                : `This occurrence repeats in ${seriesCalendar.name} but is not part of the recurring task:`
+                                    + ' make the rule fit and switch this on to include it.'}
+                        </FormHelperText>
+                        {seriesCalendar.mismatch && (
+                            <Alert severity="warning" sx={{ mt: 1 }}>{seriesCalendar.mismatch}</Alert>
+                        )}
+                    </Box>
+                )}
                 {recurring && task?.occurrence && (
                     <FormControl>
                         <FormLabel id="task-scope-label" sx={{ typography: 'body2' }}>
@@ -560,6 +590,7 @@ function TaskForm({
                             {task.occurrence_count === 1
                                 ? `“${task.header}” will not repeat any more.`
                                 : `All ${task.occurrence_count} occurrences of “${task.header}” are deleted, completed ones too, and it will not repeat any more.`}
+                            {seriesCalendar ? ` Later ones from ${seriesCalendar.name} do not come either.` : ''}
                             {' '}This cannot be undone. To delete only this occurrence, delete it in the Tasks tab.
                         </DialogContentText>
                     </DialogContent>

@@ -1,52 +1,30 @@
 import type { ViewTask } from '../components/WeekViewTask/WeekViewTask.tsx';
 
+/** A card over midnight becomes one per day. The Week view's days are the
+ *  device's days, so it is split at local midnight (not UTC's: in Berlin a
+ *  task from 23:00 to 01:00 would otherwise hang out of the bottom of its
+ *  day, and one from 01:00 to 03:00 be cut in two at 02:00). */
 export const splitTaskAcrossDays = (task: ViewTask): ViewTask[] => {
     const segments: ViewTask[] = [];
-
-    // Use UTC consistently
     let currentStart = new Date(task.startTime);
-    let remainingDuration = task.duration; // in minutes
+    let remaining = task.duration; // minutes, maybe with fractions (seconds)
 
-    while (remainingDuration > 0) {
-        // Calculate end of the current day (UTC)
-        const endOfDay = new Date(currentStart);
-        endOfDay.setUTCHours(24, 0, 0, 0); // Jump to next day 00:00 UTC
-
-        // Calculate duration until end of day (UTC)
-        const diffMs = endOfDay.getTime() - currentStart.getTime();
-        const minsUntilMidnight = Math.round(diffMs / (1000 * 60));
-
-        if (minsUntilMidnight <= 0) {
-            // Should not happen if logic is correct, but safety break
-            break;
-        }
-
-        let segmentDuration = 0;
-        let continues = false;
-
-        if (remainingDuration <= minsUntilMidnight) {
-            // Fits in current day
-            segmentDuration = remainingDuration;
-            remainingDuration = 0;
-            // Respect original 'continues' if this is the last segment
-            if (task.continues) continues = true;
-        } else {
-            // Spans over midnight
-            segmentDuration = minsUntilMidnight;
-            remainingDuration -= minsUntilMidnight;
-            continues = true;
-        }
-
+    while (remaining > 1e-6) {
+        const midnight = new Date(currentStart);
+        midnight.setHours(24, 0, 0, 0); // the next local midnight
+        const untilMidnight = (midnight.getTime() - currentStart.getTime()) / 60000;
+        if (untilMidnight <= 0) break; // safety
+        const fits = remaining <= untilMidnight;
+        const length = fits ? remaining : untilMidnight;
         segments.push({
             ...task,
             startTime: currentStart.toISOString(),
-            duration: segmentDuration,
-            continues: continues,
+            duration: length,
+            // Continues on the next day, or (last one) as the task said.
+            continues: fits ? task.continues : true,
         });
-
-        // Setup next iteration
-        currentStart = new Date(endOfDay); // Start next segment at 00:00 UTC
+        remaining -= length;
+        currentStart = midnight;
     }
-
     return segments;
 };

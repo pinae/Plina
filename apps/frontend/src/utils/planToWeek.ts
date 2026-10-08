@@ -14,7 +14,8 @@ function toViewTask(item: PlanItem): PlacedViewTask {
         taskId: item.task_id,
         title: item.header,
         startTime: item.start_time,
-        duration: Math.round(item.duration / 60),
+        // Exact (seconds are fractions): rounding made back-to-back cards overlap.
+        duration: item.duration / 60,
         color: item.hex_color ?? FALLBACK_COLOR,
         // Solid = anchored (fixed or appointment); pastel = fluid.
         manuallySet: item.is_fixed || item.is_appointment,

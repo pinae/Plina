@@ -85,7 +85,10 @@ const isClipped = (el: HTMLElement | null) => Boolean(el && el.scrollHeight > el
 
 export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, actions, onEdit, onChange, resolveDay, resolveCursorHalf, onDragChange, lane }) => {
     const date = new Date(task.startTime);
+    // Whole minutes for dragging (it snaps); the card itself is drawn at the
+    // exact time, so a task starting when another ends (10:15:37) touches it.
     const startMinutes = date.getHours() * 60 + date.getMinutes();
+    const exactStartMinutes = startMinutes + date.getSeconds() / 60 + date.getMilliseconds() / 60000;
     const [dragMode, setDragMode] = useState<DragMode | null>(null);
     // Hover overlay: only opened when the card is too small to show its
     // content, measured at hover time so it follows zoom and resizes.
@@ -135,7 +138,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
     const moving = dragMode === 'move';
     const resizing = dragMode === 'resize-bottom';
     const height = minutesToPixels(resizing ? (preview?.durationMinutes ?? task.duration) : task.duration, columnHeight);
-    const top = minutesToPixels(startMinutes, columnHeight);
+    const top = minutesToPixels(exactStartMinutes, columnHeight);
 
     const backgroundColor = task.manuallySet ? task.color : `${task.color}80`;
     const borderBackground = task.tags.length > 0

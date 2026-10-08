@@ -634,3 +634,71 @@ describe('TaskFormDialog — tracked time (README: Time sheet)', () => {
         expect(screen.queryByRole('button', { name: /tracked time/i })).toBeNull();
     });
 });
+
+describe('TaskFormDialog — a repeating calendar event (README: Calendar)', () => {
+    const event = { header: 'Team call', description: '', place: 'Room 4', start: '2026-10-13T08:00:00Z',
+        end: '2026-10-13T09:00:00Z', all_day: false };
+    const member = {
+        id: 'call', header: 'Team call', description: '', start_date: '2026-10-13T08:00:00Z', duration: '01:00:00',
+        latest_finish_date: null, time_spent: '00:00:00', priority: 5, tags: [], hex_color: null, is_fixed: false,
+        is_appointment: true, completed_at: null, is_done: false, active_tracking_start: null, ...treeDefaults,
+        recurrence: 'every tuesday at 10:00', recurrence_description: 'every Tuesday at 10:00', series_id: 's1',
+        occurrence: '2026-10-13T08:00:00Z', occurrence_count: 8,
+        calendar: { id: 'link-1', name: 'Google', event, pending: [] },
+        series_calendar: { name: 'Google', auto: true, mismatch: '' },
+    };
+    const previewHandler = http.post(`${API}/recurrence-preview/`, () => HttpResponse.json({
+        description: 'every Wednesday at 10:00', occurrences: ['2026-10-28T09:00:00Z'],
+    }));
+    const patching = (patches: Record<string, unknown>[]) => http.patch(`${API}/tasks/:id/`, async ({ request }) => {
+        patches.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(member);
+    });
+
+    it('switches off including new occurrences without asking', async () => {
+        const patches: Record<string, unknown>[] = [];
+        server.use(previewHandler, patching(patches));
+        render(<TaskFormDialog open onClose={() => { }} task={member} />, { wrapper });
+
+        const toggle = screen.getByRole('switch', { name: 'Include new occurrences from Google without asking' });
+        expect(toggle).toBeChecked();
+        expect(screen.getByText(/join this recurring task by themselves/)).toBeInTheDocument();
+        fireEvent.click(toggle);
+        expect(screen.getByText('New occurrences come as tasks of their own.')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({ calendar_auto: false });
+        expect(patches[0]).not.toHaveProperty('recurrence');
+    });
+
+    it('shows why an occurrence did not fit; a rule that fits includes it again', async () => {
+        const patches: Record<string, unknown>[] = [];
+        server.use(previewHandler, patching(patches));
+        const loose = {
+            ...member, id: 'loose', series_id: null, occurrence: null, occurrence_count: 0,
+            series_calendar: { name: 'Google', auto: false,
+                mismatch: 'Google has “Team call” on Wed 28/10 10:00, which “every tuesday at 10:00” does not have.' },
+        };
+        render(<TaskFormDialog open onClose={() => { }} task={loose} />, { wrapper });
+
+        expect(screen.getByText(/which “every tuesday at 10:00” does not have/)).toBeInTheDocument();
+        expect(screen.getByText(/is not part of the recurring task/)).toBeInTheDocument();
+        const toggle = screen.getByRole('switch', { name: /include new occurrences/i });
+        expect(toggle).not.toBeChecked();
+
+        fireEvent.change(screen.getByRole('textbox', { name: /repeats/i }), { target: { value: 'every wednesday at 10:00' } });
+        expect(toggle).toBeChecked();
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({ recurrence: 'every wednesday at 10:00', calendar_auto: true });
+    });
+
+    it('says that deleting all occurrences keeps later ones away', async () => {
+        server.use(previewHandler);
+        render(<TaskFormDialog open onClose={() => { }} task={member} />, { wrapper });
+        fireEvent.click(screen.getByRole('button', { name: /delete all occurrences/i }));
+        expect(await screen.findByText(/Later ones from Google do not come either/)).toBeInTheDocument();
+    });
+});
