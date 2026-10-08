@@ -59,9 +59,14 @@ import {
     createSession,
     updateSession,
     deleteSession,
+    fetchSavedFilters,
+    createSavedFilter,
+    updateSavedFilter,
+    deleteSavedFilter,
 } from './api';
 import type {
-    BucketTypeWrite, CalendarSubscriptionWrite, Dependency, DependencyCycleError, MarkerWrite, SettingsWrite,
+    BucketTypeWrite, CalendarSubscriptionWrite, Dependency, DependencyCycleError, MarkerWrite, SavedFilterWrite,
+    SettingsWrite,
     SplitRequest, TagWrite, Task, TaskWrite, TrackedSessionWrite, TrackingBlockedError, UserSettings,
 } from './types';
 import { applyMove } from './utils/treeDnd.ts';
@@ -79,6 +84,7 @@ export const queryKeys = {
     calendars: ['calendars'] as const,
     timeSheet: ['timesheet'] as const,
     sessions: ['sessions'] as const,
+    savedFilters: ['savedFilters'] as const,
 };
 
 /** Other devices pick up a changed active project this often (§3.1). */
@@ -567,5 +573,28 @@ export const useDeleteSession = () => {
     return useMutation({
         mutationFn: deleteSession,
         onSuccess: () => invalidate(...TRACKED_TIME),
+    });
+};
+
+// ------------------------------------------- saved filters (README: Filtering tasks)
+
+export const useSavedFilters = () =>
+    useQuery({ queryKey: queryKeys.savedFilters, queryFn: fetchSavedFilters });
+
+export const useSaveFilter = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        /** With an id: that filter is replaced; otherwise a new one. */
+        mutationFn: ({ id, ...saved }: SavedFilterWrite & { id?: string }) =>
+            (id ? updateSavedFilter(id, saved) : createSavedFilter(saved)),
+        onSuccess: () => invalidate(queryKeys.savedFilters),
+    });
+};
+
+export const useDeleteSavedFilter = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: deleteSavedFilter,
+        onSuccess: () => invalidate(queryKeys.savedFilters),
     });
 };

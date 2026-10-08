@@ -7,6 +7,8 @@
  * - Planner item durations are plain seconds (numbers) — see _serialize_item.
  */
 
+import type { TaskFilter } from './utils/taskFilter.ts';
+
 // ---------------------------------------------------------------- entities
 
 export interface Tag {
@@ -535,4 +537,18 @@ export interface TrackedSessionWrite {
     task_id?: string;
     start?: string;
     end?: string | null;
+}
+
+/** A named filter of the Tasks tab and the dependency editor (README:
+ *  Filtering tasks), synced to all devices. */
+export interface SavedFilter {
+    id: string;
+    name: string;
+    filter: TaskFilter;
+    created_at: string;
+}
+
+export interface SavedFilterWrite {
+    name?: string;
+    filter?: TaskFilter;
 }

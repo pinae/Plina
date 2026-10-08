@@ -489,3 +489,21 @@ class UserSettings(Owned):
 
     def __str__(self) -> str:
         return f"Settings (default {minutely_str(self.default_duration)})"
+
+
+class SavedFilter(Owned):
+    """A named filter of the Tasks tab and the dependency editor (README:
+    Filtering tasks), synced to all devices. ``filter`` holds what the
+    frontend filters by (search, projects, tags, estimates, worked,
+    priority); the filtering itself happens in the browser."""
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    name = models.CharField(max_length=128)
+    filter = models.JSONField(default=dict)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        ordering = [models.functions.Lower("name")]
+        constraints = [models.UniqueConstraint(fields=["owner", "name"], name="unique_saved_filter_name")]
+
+    def __str__(self) -> str:
+        return self.name

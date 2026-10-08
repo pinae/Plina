@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import (CalendarLink, CalendarSubscription, Marker, Tag, Task, TaskEstimateChange,
+from .models import (CalendarLink, CalendarSubscription, Marker, SavedFilter, Tag, Task, TaskEstimateChange,
                      TimeBucketType, TimeBucket, UserSettings)
 
 
@@ -51,3 +51,8 @@ class CalendarSubscriptionAdmin(admin.ModelAdmin):
 @admin.register(CalendarLink)
 class CalendarLinkAdmin(admin.ModelAdmin):
     list_display = ('subscription', 'uid', 'recurrence_id', 'task', 'marker', 'bucket_type', 'owned')
+
+
+@admin.register(SavedFilter)
+class SavedFilterAdmin(admin.ModelAdmin):
+    list_display = ('name', 'created_at')

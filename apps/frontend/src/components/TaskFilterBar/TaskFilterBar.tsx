@@ -8,7 +8,9 @@
  * to and opening its choices in a popover; then "12 of 87 tasks · Clear".
  * Phones: the search and a filter button (with the number of filters on)
  * that opens every filter in a bottom sheet; below, what is on as removable
- * chips. "/" jumps to the search, Esc empties it.
+ * chips. "/" jumps to the search, Esc empties it. Saved filters
+ * (SavedFilters.tsx): a "Saved" menu after the search, on phones the top of
+ * the sheet.
  */
 import { useRef, useState, type ReactNode } from 'react';
 import {
@@ -20,6 +22,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import SearchIcon from '@mui/icons-material/Search';
 
+import { SavedFiltersButton, SavedFiltersSection } from './SavedFilters.tsx';
 import { useGlobalShortcuts } from '../../hooks/useGlobalShortcuts.ts';
 import { useIsMobile } from '../../hooks/useResponsive.ts';
 import type { Tag } from '../../types.ts';
@@ -125,6 +128,7 @@ export function TaskFilterBar({
                             <IconButton aria-label="close filters" onClick={() => setSheetOpen(false)}><CloseIcon /></IconButton>
                         </Box>
                         <Box sx={{ overflowY: 'auto', px: 2, pb: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <SavedFiltersSection filter={filter} onChange={onChange} />
                             {KINDS.map(kind => (
                                 <Box key={kind} component="section" aria-label={FILTER_KIND_LABELS[kind]}>
                                     <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{FILTER_KIND_LABELS[kind]}</Typography>
@@ -148,6 +152,7 @@ export function TaskFilterBar({
     return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             {searchField}
+            <SavedFiltersButton filter={filter} onChange={onChange} />
             {KINDS.map(kind => {
                 const summary = kindSummary(filter, kind, sources);
                 return (

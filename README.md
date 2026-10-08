@@ -130,6 +130,15 @@ not pass. On phones a filter button (with the number of filters on) opens
 every filter, and "Show completed", in a bottom sheet; what is on shows
 below the search as chips, each removed by its ✕.
 
+**Saved filters** keep a filter under a name ("Deep work", "Admin this
+week") and are synced to all your devices: "Saved" next to the search lists
+them — a click applies one, the button then shows its name — and saves the
+current filter ("Save current filter…"; an existing name replaces that
+saved filter). The trash icon deletes one after asking. On phones they lead
+the filter sheet as chips. Only the filter is stored on the server
+(`/api/saved-filters/`); the filtering itself happens in the browser, and a
+saved project or tag that no longer exists simply matches nothing.
+
 The **Dependencies** tab has the same bar and the same filter (set in one
 tab, it applies in the other). The graph shows the tasks that pass, laid out
 anew and fitted into view; "Show linked tasks" (on by default) adds the

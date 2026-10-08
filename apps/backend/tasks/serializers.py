@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from datetime import timedelta
 
-from .models import (CalendarSubscription, Marker, Task, Tag, TimeBucket, TimeBucketType, TaskDependency,
+from .models import (CalendarSubscription, Marker, SavedFilter, Task, Tag, TimeBucket, TimeBucketType, TaskDependency,
                      TrackingSession, UserSettings)
 from .services.colors import ensure_auto_colors, ensure_bucket_type_colors, from_hex, to_hex
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
@@ -668,3 +668,63 @@ class TrackingSessionSerializer(serializers.ModelSerializer):
     def get_seconds(self, session) -> int:
         from django.utils import timezone
         return max(0, round(((session.end or timezone.now()) - session.start).total_seconds()))
+
+
+ESTIMATE_PRESETS = {"le15", "le60", "1to4", "gt4", "none"}
+WORKED_PRESETS = {"not_started", "started", "over"}
+
+
+class SavedFilterSerializer(serializers.ModelSerializer):
+    """A named filter (README: Filtering tasks). The filter is checked for
+    its shape only — project and tag ids that no longer exist simply match
+    nothing in the browser."""
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError('Give the filter a name.')
+        others = SavedFilter.objects.filter(name__iexact=name)
+        if self.instance is not None:
+            others = others.exclude(pk=self.instance.pk)
+        if others.exists():
+            raise serializers.ValidationError(f'There is already a filter named “{name}”.')
+        return name
+
+    def validate_filter(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('The filter must be an object.')
+        result = {}
+
+        def strings(key, allowed=None):
+            items = value.get(key, [])
+            if not isinstance(items, list) or not all(isinstance(item, str) for item in items):
+                raise serializers.ValidationError(f'“{key}” must be a list of strings.')
+            unknown = [item for item in items if allowed is not None and item not in allowed]
+            if unknown:
+                raise serializers.ValidationError(f'“{key}” has unknown choices: {", ".join(unknown)}.')
+            return list(dict.fromkeys(items))
+
+        search = value.get('search', '')
+        if not isinstance(search, str) or len(search) > 512:
+            raise serializers.ValidationError('“search” must be a text of at most 512 characters.')
+        result['search'] = search
+        result['projects'] = strings('projects')
+        result['tags'] = strings('tags')
+        result['estimates'] = strings('estimates', ESTIMATE_PRESETS)
+        result['worked'] = strings('worked', WORKED_PRESETS)
+        priority = value.get('priority', [0, 10])
+        if (not isinstance(priority, list) or len(priority) != 2
+                or not all(isinstance(n, (int, float)) and not isinstance(n, bool) and 0 <= n <= 10 for n in priority)
+                or priority[0] > priority[1]):
+            raise serializers.ValidationError('“priority” must be [from, to] within 0–10.')
+        result['priority'] = priority
+        unknown = sorted(set(value) - set(result))
+        if unknown:
+            raise serializers.ValidationError(f'Unknown filter parts: {", ".join(unknown)}.')
+        return result
+
+    class Meta:
+        model = SavedFilter
+        fields = ["id", "name", "filter", "created_at"]
+        read_only_fields = ["created_at"]
+        extra_kwargs = {"name": {"error_messages": {"blank": "Give the filter a name."}}}

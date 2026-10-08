@@ -221,3 +221,13 @@ export function withoutKind(filter: TaskFilter, kind: FilterKind): TaskFilter {
 /** ``list`` with ``item`` added or removed. */
 export const toggled = <T,>(list: T[], item: T): T[] =>
     (list.includes(item) ? list.filter(other => other !== item) : [...list, item]);
+
+/** Whether two filters choose the same tasks (order of choices aside). */
+export function filtersEqual(a: TaskFilter, b: TaskFilter): boolean {
+    const key = (filter: TaskFilter) => {
+        const f = normalizeFilter(filter);
+        return JSON.stringify([f.search.trim(), ...(['projects', 'tags', 'estimates', 'worked'] as const)
+            .map(kind => [...f[kind]].sort()), f.priority]);
+    };
+    return key(a) === key(b);
+}

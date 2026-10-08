@@ -20,6 +20,7 @@ import { TaskFormDialog } from './TaskFormDialog.tsx';
 import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
 import type { Tag, Task } from '../../types.ts';
 import { calendarHandlers } from '../../testing/calendarHandlers.ts';
+import { savedFilterHandlers } from '../../testing/savedFilterHandlers.ts';
 
 const API = 'http://localhost:8000/api';
 
@@ -29,6 +30,7 @@ let patched: Record<string, unknown>[] = [];
 
 const server = setupServer(
     ...calendarHandlers(),
+    ...savedFilterHandlers(),
     http.get(`${API}/tasks/`, () => HttpResponse.json([] as Task[])),
     http.get(`${API}/tags/`, () => HttpResponse.json(tags)),
     http.get(`${API}/buckettypes/`, () => HttpResponse.json([])),
