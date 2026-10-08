@@ -8,7 +8,7 @@ import type { AxiosError } from 'axios';
 
 import { previewRecurrence } from '../../api.ts';
 import {
-    useConvertMarker, useCreateBucketType, useCreateTag, useDeleteBucketType, useSettings,
+    useConvertMarker, useCreateBucketType, useCreateTag, useDeleteBucketType, useDeleteTag, useSettings,
     useTags, useUpdateBucketType, useUpdateTag,
 } from '../../queries.tsx';
 import type { BucketTypeWrite, Marker, Tag, TimeBucketType } from '../../types.ts';
@@ -29,6 +29,8 @@ export function TagFormDialog({ open, onClose, tag }: FormDialogProps & { tag?: 
     const [color, setColor] = useState(tag?.hex_color ?? '#539dad');
     const create = useCreateTag();
     const update = useUpdateTag();
+    const remove = useDeleteTag();
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
 
     const submit = () => {
         if (!name.trim()) return;
@@ -55,7 +57,27 @@ export function TagFormDialog({ open, onClose, tag }: FormDialogProps & { tag?: 
                     onChange={event => setColor(event.target.value)}
                 />
             </DialogContent>
+            {editing && confirmingDelete && (
+                <Alert severity="warning" sx={{ mx: 3 }} action={
+                    <>
+                        <Button color="inherit" size="small" disabled={remove.isPending}
+                            onClick={() => remove.mutate(tag.id, { onSuccess: () => { setConfirmingDelete(false); onClose(); } })}>
+                            Delete
+                        </Button>
+                        <Button color="inherit" size="small" onClick={() => setConfirmingDelete(false)}>Keep</Button>
+                    </>
+                }>
+                    Delete #{tag.name}? Its tasks and time buckets lose the tag, nothing else.
+                </Alert>
+            )}
+            {remove.isError && <Alert severity="error" sx={{ mx: 3, mt: 1 }}>The tag could not be deleted.</Alert>}
             <DialogActions>
+                {editing && (
+                    <Button color="error" sx={{ mr: 'auto' }} onClick={() => setConfirmingDelete(true)}
+                        disabled={confirmingDelete}>
+                        Delete
+                    </Button>
+                )}
                 <Button onClick={onClose}>Cancel</Button>
                 <Button variant="contained" onClick={submit} disabled={create.isPending || update.isPending}>
                     {editing ? 'Save' : 'Create'}

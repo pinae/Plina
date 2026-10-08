@@ -209,6 +209,10 @@ export const createTag = (tag: TagWrite) =>
 export const updateTag = (tagId: string, patch: Partial<TagWrite>) =>
     api.patch<Tag>(`tags/${tagId}/`, patch).then(r => r.data);
 
+/** The tag goes; its tasks and time buckets keep everything else. */
+export const deleteTag = (tagId: string) =>
+    api.delete(`tags/${tagId}/`).then(() => undefined);
+
 
 export const createBucketType = (bucketType: BucketTypeWrite) =>
     api.post('buckettypes/', bucketType).then(r => r.data);

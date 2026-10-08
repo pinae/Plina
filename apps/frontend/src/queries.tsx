@@ -54,6 +54,7 @@ import {
     updateCalendar,
     updateMarker,
     fetchTimeSheet,
+    deleteTag,
     fetchSessions,
     createSession,
     updateSession,
@@ -366,6 +367,15 @@ export const useUpdateTag = () => {
             updateTag(id, patch),
         // Tag colour/affinity can influence planning, so refresh the plan too.
         onSuccess: () => invalidate(queryKeys.tags, queryKeys.plan),
+    });
+};
+
+/** Its tasks and time buckets lose it: they and the plan are fetched again. */
+export const useDeleteTag = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: deleteTag,
+        onSuccess: () => invalidate(queryKeys.tags, queryKeys.tasks, queryKeys.bucketTypes, queryKeys.plan),
     });
 };
 

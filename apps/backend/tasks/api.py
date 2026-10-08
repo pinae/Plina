@@ -327,6 +327,11 @@ class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
 
+    def perform_destroy(self, instance):
+        """A deleted tag leaves its tasks and time buckets: affinity changes."""
+        super().perform_destroy(instance)
+        recalculate_accepted_plan()
+
 class TimeBucketTypeViewSet(RecalculatingModelViewSet):
     queryset = TimeBucketType.objects.all()
     serializer_class = TimeBucketTypeSerializer
