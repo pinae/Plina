@@ -83,4 +83,37 @@ describe('TagList', () => {
         await waitFor(() => expect(patched).toHaveLength(1));
         expect(patched[0]).toMatchObject({ name: 'focus' });
     });
+
+    it('deletes a tag from its edit dialog after asking', async () => {
+        let deleted = 0;
+        server.use(http.delete(`${API}/tags/tag-1/`, () => {
+            deleted += 1;
+            tags = [];
+            return new HttpResponse(null, { status: 204 });
+        }));
+        tags = [{ id: 'tag-1', name: 'deep-work', hex_color: '#123456' }];
+        render(<TagList />, { wrapper });
+        fireEvent.click(await screen.findByText(/deep-work/));
+        const dialog = await screen.findByRole('dialog');
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+        expect(within(dialog).getByText(/Delete #deep-work\?/)).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Keep' }));
+        expect(deleted).toBe(0);
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+        const alert = within(dialog).getByRole('alert');
+        fireEvent.click(within(alert).getByRole('button', { name: 'Delete' }));
+
+        await waitFor(() => expect(deleted).toBe(1));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        await waitFor(() => expect(screen.queryByText(/deep-work/)).toBeNull());
+    });
+
+    it('offers no delete for a new tag', async () => {
+        render(<TagList />, { wrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /add tag/i }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).queryByRole('button', { name: 'Delete' })).toBeNull();
+    });
 });

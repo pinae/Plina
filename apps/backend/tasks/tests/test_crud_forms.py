@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest import mock
 
 from tasks.tests.support import TestCase
 from tasks.tests.support import APIClient
@@ -140,3 +141,23 @@ class GeneratedTimesAreCleanTest(TestCase):
         self.assertTrue(buckets)
         for bucket in buckets:
             self.assertEqual((bucket.start_date.second, bucket.start_date.microsecond), (0, 0))
+
+
+class TagDeletionTest(TestCase):
+    """Deleting a tag (the edit tag dialog): its tasks and time buckets lose
+    it, nothing else; the accepted plan is recalculated (affinity)."""
+
+    def test_delete_a_tag(self):
+        tag = Tag.objects.create(name="deep-work")
+        task = Task.objects.create(header="Write")
+        task.tags.set([tag])
+        bucket_type = TimeBucketType.objects.create(name="Mornings", start_times="every day at 09:00",
+                                                    duration=timedelta(hours=3))
+        bucket_type.tags.set([tag])
+        with mock.patch("tasks.api.recalculate_accepted_plan") as recalc:
+            response = APIClient().delete(f"/api/tags/{tag.id}/")
+        self.assertEqual(response.status_code, 204)
+        recalc.assert_called_once()
+        self.assertFalse(Tag.objects.exists())
+        self.assertTrue(Task.objects.filter(id=task.id, tags__isnull=True).exists())
+        self.assertTrue(TimeBucketType.objects.filter(id=bucket_type.id, tags__isnull=True).exists())
