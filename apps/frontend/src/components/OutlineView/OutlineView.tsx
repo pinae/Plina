@@ -53,6 +53,7 @@ import CallSplitIcon from '@mui/icons-material/CallSplit';
 import AddIcon from '@mui/icons-material/Add';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import EventIcon from '@mui/icons-material/Event';
+import EventBusyIcon from '@mui/icons-material/EventBusy';
 import type { AxiosError } from 'axios';
 import {
     closestCenter, DndContext, KeyboardSensor, MeasuringStrategy, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -1042,6 +1043,14 @@ function OutlineItemRow({
                             {dueFrom(task, new Date()) && (
                                 <Typography variant="caption" noWrap>{dueFrom(task, new Date())}</Typography>
                             )}
+                        </Box>
+                    </Tooltip>
+                )}
+                {item.kind === 'task' && task.is_unplanned && !editing && (
+                    <Tooltip title="Unplanned: only a reminder — not planned, blocks no time until you join">
+                        <Box component="span" data-testid="unplanned" aria-label="unplanned: blocks no time"
+                            sx={{ display: 'inline-flex', flexShrink: 0, color: 'text.secondary' }}>
+                            <EventBusyIcon sx={{ fontSize: 16 }} />
                         </Box>
                     </Tooltip>
                 )}

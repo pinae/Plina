@@ -1071,3 +1071,15 @@ describe('tasks from a calendar (README: Calendar)', () => {
         expect(within(row('CAD')).queryByTestId('from-calendar')).toBeNull();
     });
 });
+
+describe('unplanned appointments (README: Unplanned appointments)', () => {
+    it('marks them in the tree', async () => {
+        tasks = [...tasks, makeTask('defense', {
+            header: 'PhD defense', order: 4, is_appointment: true, is_unplanned: true, start_date: '2026-10-19T12:00:00Z',
+        })];
+        renderOutline();
+        await within(outline()).findByRole('treeitem', { name: 'PhD defense' });
+        expect(within(row('PhD defense')).getByTestId('unplanned')).toHaveAccessibleName('unplanned: blocks no time');
+        expect(within(row('CAD')).queryByTestId('unplanned')).toBeNull();
+    });
+});

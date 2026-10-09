@@ -83,6 +83,9 @@ class Task(OptionallyColored):
     tags = models.ManyToManyField(to=Tag, related_name="tasks", blank=True)
     is_fixed = models.BooleanField(default=False)
     is_appointment = models.BooleanField(default=False)
+    #: Only a reminder (README: Unplanned appointments): shown in the Week
+    #: view, but neither planned nor blocking time — an event you may join.
+    is_unplanned = models.BooleanField(default=False)
     completed_at = models.DateTimeField("completed at", blank=True, null=True, default=None)
     #: Task tree (UI-1): every top-level task is a project; tasks can be split
     #: indefinitely. RESTRICT so children are never deleted by accident — the

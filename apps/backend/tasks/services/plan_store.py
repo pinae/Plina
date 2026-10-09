@@ -147,10 +147,10 @@ def _anchored_task_ids() -> set:
     """Tasks whose plan entries must never be rewritten by a recalculation:
     appointments and anchored fixed tasks (A8)."""
     return set(
-        Task.objects.filter(is_appointment=True, start_date__isnull=False)
+        Task.objects.filter(is_appointment=True, start_date__isnull=False, is_unplanned=False)
         .values_list("id", flat=True)
     ) | set(
-        Task.objects.filter(is_fixed=True, start_date__isnull=False)
+        Task.objects.filter(is_fixed=True, start_date__isnull=False, is_unplanned=False)
         .values_list("id", flat=True)
     )
 

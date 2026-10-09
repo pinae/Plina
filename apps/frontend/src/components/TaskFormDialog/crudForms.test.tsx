@@ -251,6 +251,21 @@ describe('TaskFormDialog', () => {
             .toBe(new Date('2026-07-09T10:00').getTime());
     });
 
+    it('marks an appointment as unplanned: only a reminder (README: Unplanned appointments)', async () => {
+        render(<TaskFormDialog open onClose={() => { }} />, { wrapper });
+
+        expect(screen.queryByRole('checkbox', { name: /unplanned/i })).toBeNull(); // for appointments
+        fireEvent.click(screen.getByRole('checkbox', { name: /^appointment/i }));
+        fireEvent.click(screen.getByRole('checkbox', { name: /unplanned/i }));
+        fireEvent.change(screen.getByLabelText(/header/i), { target: { value: "Claire's PhD defense" } });
+        fireEvent.change(screen.getByLabelText(/start/i), { target: { value: '2026-07-20T14:00' } });
+        fireEvent.change(screen.getByLabelText(/duration/i), { target: { value: '2' } });
+        fireEvent.click(screen.getByRole('button', { name: /create/i }));
+
+        await waitFor(() => expect(created.tasks).toHaveLength(1));
+        expect(created.tasks[0]).toMatchObject({ is_appointment: true, is_unplanned: true });
+    });
+
     it('edit mode prefills and PATCHes the task', async () => {
         const existing: Partial<Task> = {
             id: 'task-7', header: 'Old header', description: 'desc',

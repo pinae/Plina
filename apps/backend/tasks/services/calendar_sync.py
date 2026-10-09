@@ -107,15 +107,19 @@ class Event:
     start: datetime
     end: datetime
     all_day: bool
+    #: You answered "maybe": it comes in unplanned (README: Unplanned appointments).
+    maybe: bool = False
 
     @property
     def key(self) -> Tuple[str, str]:
         return self.uid, self.recurrence_id
 
     def data(self) -> Dict:
-        """As stored in ``CalendarLink.data``."""
+        """As stored in ``CalendarLink.data`` ("maybe" only when so: links
+        read before it stay unchanged)."""
         return {"header": self.header, "description": self.description, "place": self.place,
-                "start": _iso(self.start), "end": _iso(self.end), "all_day": self.all_day}
+                "start": _iso(self.start), "end": _iso(self.end), "all_day": self.all_day,
+                **({"maybe": True} if self.maybe else {})}
 
 
 def _iso(moment: datetime) -> str:
@@ -157,7 +161,9 @@ def _calendar_zone(calendar):
 
 def read_events(data: bytes, start: datetime, end: datetime, zone=None, email: str = "") -> List[Event]:
     """The events from ``start`` to ``end``, repeating ones as their
-    occurrences; cancelled ones and those ``email`` declined left out.
+    occurrences; cancelled ones and those ``email`` declined left out, those
+    it answered "maybe" marked. Without ``email``: the calendar's name if it
+    is an address (Google names your main calendar so).
     All-day events and floating times are in ``zone``, else the calendar's
     zone, else the current one."""
     import icalendar
@@ -170,6 +176,8 @@ def read_events(data: bytes, start: datetime, end: datetime, zone=None, email: s
     repeating: Set[str] = {str(component.get("UID")) for component in calendar.walk("VEVENT")
                            if any(key in component for key in ("RRULE", "RDATE", "RECURRENCE-ID"))}
     email = email.strip().lower()
+    if not email and "@" in str(calendar.get("X-WR-CALNAME") or ""):
+        email = str(calendar.get("X-WR-CALNAME")).strip().lower()
     events = []
     try:
         components = recurring_ical_events.of(calendar).between(start, end)
@@ -179,7 +187,8 @@ def read_events(data: bytes, start: datetime, end: datetime, zone=None, email: s
         uid = str(component.get("UID") or "")
         if not uid or str(component.get("STATUS", "")).upper() == "CANCELLED":
             continue
-        if email and _attendee_answers(component).get(email) == "DECLINED":
+        answer = _attendee_answers(component).get(email) if email else None
+        if answer == "DECLINED":
             continue
         first = component.get("DTSTART").dt
         last = component.get("DTEND").dt if component.get("DTEND") is not None else None
@@ -201,6 +210,7 @@ def read_events(data: bytes, start: datetime, end: datetime, zone=None, email: s
             description=str(component.get("DESCRIPTION") or "").strip(),
             place=str(component.get("LOCATION") or "").strip(),
             start=event_start, end=max(event_end, event_start), all_day=all_day,
+            maybe=answer == "TENTATIVE",
         ))
     return events
 
@@ -283,8 +293,8 @@ def _create(subscription: CalendarSubscription, event: Event) -> CalendarLink:
     else:
         task = Task.objects.create(
             header=event.header, description=event.description, place=event.place, is_appointment=True,
-            start_date=event.start, duration=event.end - event.start, color=from_hex(subscription.hex_color),
-            order=next_sibling_order(None))
+            is_unplanned=event.maybe, start_date=event.start, duration=event.end - event.start,
+            color=from_hex(subscription.hex_color), order=next_sibling_order(None))
         record_estimate_change(task, None, task.duration, "created")
         link.task = task
     link.save()
@@ -310,6 +320,9 @@ def _update(link: CalendarLink, event: Event) -> bool:
                 pending.discard(key)
         if changed & {"start", "end"}:
             task.start_date, task.duration = event.start, event.end - event.start
+        if "maybe" in changed or (base.get("maybe") and "maybe" not in new):
+            # A new answer there; a decision in Plina stays until then.
+            task.is_unplanned = bool(new.get("maybe"))
         task.save()
     elif link.marker is not None:
         marker = link.marker

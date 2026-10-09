@@ -132,6 +132,8 @@ function TaskForm({
     // The chosen color (§4.4); null = from the parent / automatic.
     const [ownColor, setOwnColor] = useState<string | null>(task?.own_hex_color ?? null);
     const [isAppointment, setIsAppointment] = useState(task?.is_appointment ?? defaultAppointment ?? false);
+    // Only a reminder (README: Unplanned appointments): shown, not planned.
+    const [isUnplanned, setIsUnplanned] = useState(task?.is_unplanned ?? false);
     const [start, setStart] = useState(
         toLocalInput(task?.start_date ?? (initialStart ? initialStart.toISOString() : null)),
     );
@@ -148,7 +150,8 @@ function TaskForm({
     const [calendarAuto, setCalendarAuto] = useState(seriesCalendar?.auto ?? true);
     // Unsaved changes = the editable values differ from when the form opened.
     const snapshot = JSON.stringify([header, description, hours, estimateReason, deadline, priority,
-        tagIds, chosenParentId, ownColor, isAppointment, start, recurrence, place, deadlineMarkerId, calendarAuto]);
+        tagIds, chosenParentId, ownColor, isAppointment, isUnplanned, start, recurrence, place, deadlineMarkerId,
+        calendarAuto]);
     const [initialSnapshot] = useState(snapshot);
     const dirty = snapshot !== initialSnapshot;
 
@@ -258,6 +261,7 @@ function TaskForm({
             parent_id: parentId,
             own_hex_color: ownColor,
             is_appointment: isAppointment,
+            is_unplanned: isAppointment && isUnplanned,
             start_date: isAppointment && start ? new Date(start).toISOString() : task?.start_date ?? null,
         };
         if (editing && estimateReason) payload.estimate_reason = estimateReason;
@@ -503,6 +507,12 @@ function TaskForm({
                         }}
                         {...feedback('start')}
                         onBlur={event => { setStartIncomplete(isBadInput(event.target)); touch('start'); }}
+                    />
+                )}
+                {isAppointment && (
+                    <FormControlLabel
+                        control={<Checkbox checked={isUnplanned} onChange={event => setIsUnplanned(event.target.checked)} />}
+                        label="Unplanned — only a reminder: not planned, blocks no time until you join"
                     />
                 )}
                 <RecurrenceField

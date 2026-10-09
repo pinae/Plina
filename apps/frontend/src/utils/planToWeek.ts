@@ -21,6 +21,7 @@ function toViewTask(item: PlanItem): PlacedViewTask {
         manuallySet: item.is_fixed || item.is_appointment,
         isAppointment: item.is_appointment,
         isRest: Boolean(item.is_rest),
+        unplanned: Boolean(item.is_unplanned),
         description: item.warnings.join(', '),
         tags: [],
         continues: false,

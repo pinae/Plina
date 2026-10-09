@@ -37,6 +37,9 @@ export interface Task {
     inherited_hex_color: string | null;
     is_fixed: boolean;
     is_appointment: boolean;
+    /** Only a reminder: shown, but neither planned nor blocking time
+     *  (README: Unplanned appointments). */
+    is_unplanned: boolean;
     completed_at: string | null;
     is_done: boolean;
     active_tracking_start: string | null;
@@ -122,6 +125,7 @@ export interface TaskWrite {
     tag_ids?: string[];
     is_fixed?: boolean;
     is_appointment?: boolean;
+    is_unplanned?: boolean;
     completed_at?: string | null;
     parent_id?: string | null;
     order?: number;
@@ -270,6 +274,8 @@ export interface PlanItem {
     warnings: string[];
     is_fixed: boolean;
     is_appointment: boolean;
+    /** Only a reminder, blocking nothing (README: Unplanned appointments). */
+    is_unplanned?: boolean;
     hex_color: string | null;
     /** Present on entries of the accepted (stored) plan only. */
     order?: number;

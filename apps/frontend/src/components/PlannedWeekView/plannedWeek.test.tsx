@@ -412,7 +412,7 @@ function dragTasks(patched: Array<Record<string, unknown>>) {
         }),
     ];
 }
-const cardOf = (title: string) => screen.getByText(title).closest('[data-testid="week-view-task"]')!;
+const cardOf = (title: string) => screen.getByText(title).closest<HTMLElement>('[data-testid="week-view-task"]')!;
 
 describe('dragging a task (regression: sticky; planning light moves what it covers)', () => {
     beforeThePlan();
@@ -535,6 +535,40 @@ describe('planning light (README: Planning light)', () => {
         fireEvent.click(within(notes).getByRole('button', { name: 'Re-plan' }));
         await waitFor(() => expect(replans).toEqual(['recalculate']));
         expect(await screen.findByText('Re-planned.')).toBeInTheDocument();
+    });
+});
+
+describe('unplanned appointments (README: Unplanned appointments)', () => {
+    beforeThePlan();
+
+    it('shows a maybe that blocks nothing; Join makes it block its time', async () => {
+        const patched: Array<Record<string, unknown>> = [];
+        let tasks = [
+            makeTask('t-move', { header: 'MoveMe', is_appointment: true, start_date: '2026-07-08T08:00:00' }),
+            makeTask('t-other', { header: 'OtherAuto' }),
+            makeTask('defense', {
+                header: 'PhD defense', is_appointment: true, is_unplanned: true,
+                start_date: '2026-07-08T09:00:00', duration: '01:00:00',
+            }),
+        ];
+        server.use(dragPlan(),
+            http.get(`${API}/tasks/`, () => HttpResponse.json(tasks)),
+            http.patch(`${API}/tasks/defense/`, async ({ request }) => {
+                const body = (await request.json()) as Record<string, unknown>;
+                patched.push(body);
+                tasks = tasks.map(task => (task.id === 'defense' ? { ...task, ...body } : task));
+                return HttpResponse.json(tasks[2]);
+            }),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        await waitFor(() => expect(cardOf('PhD defense')).toHaveAttribute('data-unplanned', 'true'));
+        expect(cardOf('OtherAuto')).toHaveStyle({ top: '270px' }); // 9:00, as planned
+
+        fireEvent.click(within(cardOf('PhD defense')).getByRole('button', { name: 'join' }));
+        await waitFor(() => expect(patched).toEqual([{ is_unplanned: false }]));
+        await waitFor(() => expect(cardOf('PhD defense')).not.toHaveAttribute('data-unplanned'));
+        expect(cardOf('OtherAuto')).toHaveStyle({ top: '300px' }); // 10:00, after the defense
     });
 });
 
