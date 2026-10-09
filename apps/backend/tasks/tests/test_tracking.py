@@ -19,12 +19,13 @@ class TrackingServiceTest(TestCase):
         self.now = timezone.now().replace(microsecond=0)
         self.task = Task.objects.create(header="Work", duration=timedelta(hours=2))
 
-    def test_start_opens_session_and_anchors_the_task(self):
+    def test_start_opens_session_and_leaves_the_task_free(self):
         session, _ = start_tracking(self.task, now=self.now)
 
         self.task.refresh_from_db()
-        self.assertTrue(self.task.is_fixed)
-        self.assertEqual(self.task.start_date, self.now)
+        # Plans put the running task first by its session (docs/plan-chooser.md).
+        self.assertFalse(self.task.is_fixed)
+        self.assertIsNone(self.task.start_date)
         self.assertEqual(session.start, self.now)
         self.assertIsNone(session.end)
 
@@ -110,11 +111,11 @@ class TrackingApiTest(TestCase):
         self.client = APIClient()
         self.task = Task.objects.create(header="Work", duration=timedelta(hours=2))
 
-    def test_start_endpoint_anchors_and_returns_the_task(self):
+    def test_start_endpoint_returns_the_task(self):
         response = self.client.post(f"/api/tasks/{self.task.id}/track/start/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data["task"]["is_fixed"])
+        self.assertFalse(response.data["task"]["is_fixed"])
         self.assertIsNotNone(response.data["task"]["active_tracking_start"])
 
     def test_start_while_another_runs_switches_over(self):

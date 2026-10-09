@@ -7,7 +7,7 @@ models.  The allocator never mutates ``Task`` instances; it works on immutable
 from __future__ import annotations
 
 from bisect import bisect_right
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 from uuid import UUID
@@ -105,15 +105,17 @@ class PlanningTask:
         )
 
 
-def build_planning_tasks(tasks: Iterable[Task]) -> List[PlanningTask]:
+def build_planning_tasks(tasks: Iterable[Task], now: datetime | None = None) -> List[PlanningTask]:
     """Snapshot all tasks that still need planning.
 
     Units are the open leaves plus, for every open parent with a positive
     Rest, one Rest unit under the parent's id (UI-2). Leaves and Rests carry
     the effective (earliest ancestor) deadline. Completed tasks and units
-    without remaining work are excluded.
+    without remaining work are excluded. With ``now``, the running tracking
+    session counts as time spent (docs/plan-chooser.md).
     """
     tree = TreeIndex.load()
+    running = _running_session(now) if now is not None else None
     snapshots = []
     for task in tasks:
         if task.is_done:
@@ -131,7 +133,20 @@ def build_planning_tasks(tasks: Iterable[Task]) -> List[PlanningTask]:
         else:
             snapshots.append(PlanningTask.from_task(task, project_id=root, deadline=deadline,
                                                     default_duration=tree.default_duration))
+    if running is not None:
+        task_id, elapsed = running
+        snapshots = [replace(snapshot, remaining_duration=snapshot.remaining_duration - elapsed)
+                     if snapshot.id == task_id else snapshot for snapshot in snapshots]
     return [snapshot for snapshot in snapshots if snapshot.remaining_duration > timedelta(0)]
+
+
+def _running_session(now: datetime):
+    """``(task id, time worked so far)`` of the open tracking session, if any."""
+    from tasks.models import TrackingSession
+    session = TrackingSession.objects.filter(end=None).first()
+    if session is None:
+        return None
+    return session.task_id, max(timedelta(0), now - session.start)
 
 
 def planning_edges(snapshots: Iterable[PlanningTask]) -> List[tuple]:
@@ -333,14 +348,15 @@ def _build_segments(buckets: List, appointments: List[PlanningTask]) -> List[_Se
 
 def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
                     run: _AllocationRun, plan: Dict[object, List[PlanItem]],
-                    occupied: _Occupied) -> None:
+                    occupied: _Occupied, start: datetime | None = None,
+                    any_bucket: bool = False) -> None:
     """Anchored fixed tasks fill capacity from their start_date onward,
     splitting across segments and buckets until their duration is placed.
 
     ``segments`` stays sorted by start; consumed parts are cut out in place
     so flexible allocation later only sees genuinely free capacity."""
-    for snapshot in sorted(anchored, key=lambda s: s.start_date):
-        cursor = snapshot.start_date
+    for snapshot in sorted(anchored, key=lambda s: s.start_date or start):
+        cursor = start or snapshot.start_date
         while run.remaining[snapshot.id] > timedelta(0):
             # Only spill into buckets whose affinity accepts the task — a split
             # task must not fill unsuitable time buckets just because they are
@@ -349,7 +365,7 @@ def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
                 (
                     i for i, segment in enumerate(segments)
                     if segment.end > cursor
-                    and _matches_affinity(snapshot, segment.tag_ids)
+                    and (any_bucket or _matches_affinity(snapshot, segment.tag_ids))
                 ),
                 None,
             )
@@ -411,7 +427,8 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
 
 def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
                    edges: Iterable = (),
-                   config: AllocationConfig = DEFAULT_CONFIG) -> Dict[object, List[PlanItem]]:
+                   config: AllocationConfig = DEFAULT_CONFIG,
+                   running_id=None, now: datetime | None = None) -> Dict[object, List[PlanItem]]:
     """Pack ranked tasks into buckets, honoring dependencies and pre-placements.
 
     * Appointments (``is_appointment`` + ``start_date``) occupy exactly their
@@ -423,6 +440,10 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
       stickiness, a minimum quantum, and finish-to-start dependency
       eligibility (``edges`` as ``(predecessor_id, successor_id)`` pairs).
 
+    * The running task (``running_id``, being tracked) goes first: from
+      ``now`` on, before anything else, in whatever bucket comes (affinity
+      does not hold back what is already being worked on).
+
     Input model instances are snapshotted and never modified.
     """
     snapshots = [
@@ -432,9 +453,11 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
     ]
     snapshots = [s for s in snapshots if s.remaining_duration > timedelta(0)]
 
+    running = next((s for s in snapshots if s.id == running_id and _split_role(s) != "appointment"), None)
     by_role: Dict[str, List[PlanningTask]] = {"appointment": [], "anchored": [], "flexible": []}
     for snapshot in snapshots:
-        by_role[_split_role(snapshot)].append(snapshot)
+        if snapshot is not running:
+            by_role[_split_role(snapshot)].append(snapshot)
 
     run = _AllocationRun(snapshots, edges)
     plan: Dict[object, List[PlanItem]] = {UNBUCKETED: []}
@@ -451,6 +474,10 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
 
     segments = _build_segments(buckets, by_role["appointment"])
     occupied = _Occupied()
+    if running is not None and segments:
+        _place_anchored([running], segments, run, plan, occupied,
+                        start=now or segments[0].start, any_bucket=True)
+        run.last_task = running  # flow goes on from here
     _place_anchored(by_role["anchored"], segments, run, plan, occupied)
 
     queue = list(by_role["flexible"])  # ranked order is preserved

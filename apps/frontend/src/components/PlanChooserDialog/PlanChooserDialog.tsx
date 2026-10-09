@@ -3,7 +3,7 @@ import {
     Alert, Box, CircularProgress, Dialog, DialogContent, DialogTitle,
 } from '@mui/material';
 
-import { useAcceptPlan, useComputeAlternatives } from '../../queries.tsx';
+import { useAcceptPlan, useComputeAlternatives, useTasks } from '../../queries.tsx';
 import { PlanChooser } from '../PlanChooser/PlanChooser.tsx';
 import type { PlanAlternative } from '../../types.ts';
 import { useIsMobile } from '../../hooks/useResponsive.ts';
@@ -20,7 +20,7 @@ interface PlanChooserDialogProps {
 }
 
 /**
- * WP-10: "Plan my week".  Opening computes and stores fresh candidates;
+ * WP-10: "Plan my week" (docs/plan-chooser.md).  Opening computes and stores fresh candidates;
  * exactly one alternative auto-accepts silently (no fake choice, per WP-4);
  * two or more render as cards.
  */
@@ -28,6 +28,7 @@ export function PlanChooserDialog({ open, onClose, onAccepted }: PlanChooserDial
     const fullScreen = useIsMobile(); // phones (UI-9)
     const compute = useComputeAlternatives();
     const accept = useAcceptPlan();
+    const tasks = useTasks(); // project names, the running task
     const computedFor = useRef(false);
     const autoAccepted = useRef(false);
     // Synchronous guard: `accept.isPending` only flips after a re-render, so a
@@ -118,6 +119,7 @@ export function PlanChooserDialog({ open, onClose, onAccepted }: PlanChooserDial
                 {showCards && (
                     <PlanChooser
                         alternatives={alternatives}
+                        tasks={tasks.data}
                         onAccept={acceptPlan}
                         accepting={accept.isPending}
                     />

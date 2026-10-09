@@ -79,8 +79,9 @@ class MaraDemoDataTest(TestCase):
         alternatives = client.post("/api/plan/alternatives/").data["alternatives"]
         self.assertGreaterEqual(len(alternatives), 2)
         labels = " | ".join(a["label"] for a in alternatives)
-        self.assertTrue("Design schema" in labels or "Research CMS" in labels,
-                        f"expected focus labels, got: {labels}")
+        # Options by project (docs/plan-chooser.md): both demo projects.
+        self.assertIn("Webshop Relaunch", labels)
+        self.assertIn("Company Blog", labels)
         Plan.objects.all().delete()
 
 

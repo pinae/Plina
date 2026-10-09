@@ -583,13 +583,15 @@ class PlannerView(APIView):
 
         now = timezone.now()
         snapshots = build_planning_tasks(
-            Task.objects.filter(completed_at=None).prefetch_related("tags")
+            Task.objects.filter(completed_at=None).prefetch_related("tags"), now=now,
         )
         ranked_tasks = rank_tasks(snapshots, now)
 
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
-        plan = allocate_tasks(buckets, ranked_tasks, planning_edges(snapshots))
+        from tasks.services.alternatives import planning_context
+        plan = allocate_tasks(buckets, ranked_tasks, planning_edges(snapshots),
+                              running_id=planning_context(now).running_id, now=now)
         color_of = _task_colors()
 
         return Response({
@@ -641,7 +643,7 @@ class PlanAlternativesView(APIView):
         catch_up_on_series()
         now = timezone.now()
         snapshots = build_planning_tasks(
-            Task.objects.filter(completed_at=None).prefetch_related("tags")
+            Task.objects.filter(completed_at=None).prefetch_related("tags"), now=now,
         )
         horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
         buckets = gather_time_buckets(now, now + horizon)
@@ -687,6 +689,10 @@ def serialize_alternatives(alternatives, buckets, plan_ids=None):
         metrics = alternative.metrics
         return {
             "label": alternative.label,
+            # What the option is about (docs/plan-chooser.md).
+            "kind": alternative.kind,
+            "project": ({"id": alternative.project_id, "name": alternative.project_name}
+                        if alternative.project_id is not None else None),
             "feasible": alternative.feasible,
             "warnings": [
                 {
