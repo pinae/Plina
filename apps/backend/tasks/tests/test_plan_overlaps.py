@@ -13,7 +13,7 @@ from unittest import mock
 
 from tasks.models import CalendarSubscription, Plan, Task, TimeBucketType
 from tasks.services import calendar_sync
-from tasks.services.tracking import start_tracking, stop_tracking
+from tasks.services.tracking import start_tracking
 from tasks.tests.support import APIClient, TestCase
 
 UTC = dt_timezone.utc
@@ -130,9 +130,9 @@ class AcceptedPlanTest(OverlapCase):
         self.now = at(5, 9, 0)
         start_tracking(docs, now=self.now)
         self.now = at(5, 10, 30)
-        stop_tracking(docs, now=self.now)
 
-        # What is left of it goes on from now, not where it was planned before.
+        # Still running: what is left of it goes on from now, first
+        # (docs/plan-chooser.md), not where it was planned before.
         self.replan()
         cards = self.cards()
         self.assertEqual(self.shown(cards, "Docs")[0], (at(5, 10, 30), at(5, 12)))

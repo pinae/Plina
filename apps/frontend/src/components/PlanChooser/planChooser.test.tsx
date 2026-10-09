@@ -6,17 +6,20 @@
  * - accepting fires exactly one request (double-click guarded)
  * - a single alternative auto-accepts silently (no fake choice)
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
-import { formatSlack, miniTimeline, slackSeverity } from '../../utils/planChooser.ts';
+import {
+    commonWarnings, formatSlack, miniTimeline, nextTasks, planByDay, projectOf, slackSeverity,
+} from '../../utils/planChooser.ts';
+import { makeTask } from '../../testing/treeFixtures.ts';
 import { PlanChooser } from './PlanChooser.tsx';
 import { PlanChooserDialog } from '../PlanChooserDialog/PlanChooserDialog.tsx';
-import type { PlanAlternative } from '../../types.ts';
+import type { PlanAlternative, PlanWarning } from '../../types.ts';
 
 // Local times: the mini timeline groups by local day, so UTC fixtures would
 // split a day in far-off timezones.
@@ -113,6 +116,65 @@ describe('miniTimeline', () => {
     });
 });
 
+describe('what the chooser shows (docs/plan-chooser.md)', () => {
+    const meeting = {
+        task_id: 'meet', header: 'Team Sync', start_time: at(8, 10), duration: 3600,
+        warnings: [], is_fixed: true, is_appointment: true, hex_color: '#8833ff',
+    };
+    const withMeeting = () => alternative('a', 'A', { appointments: [meeting] });
+
+    it('lists the next tasks — appointments aside, the running one marked', () => {
+        const next = nextTasks(withMeeting(), { runningTaskId: 't1' });
+        expect(next.map(task => [task.header, task.running])).toEqual([
+            ['Design Schema', true], ['Implement API', false], ['Load Test', false],
+        ]);
+        expect(next[0].start).toEqual(new Date(at(8, 9)));
+        expect(nextTasks(withMeeting(), { count: 2 })).toHaveLength(2);
+    });
+
+    it('groups the whole plan by day, appointments included', () => {
+        const days = planByDay(withMeeting());
+        expect(days).toHaveLength(2);
+        expect(days[0].items.map(item => [item.header, item.isAppointment])).toEqual([
+            ['Design Schema', false], ['Team Sync', true], ['Implement API', false],
+        ]);
+        expect(days[1].items.map(item => item.header)).toEqual(['Load Test']);
+    });
+
+    it('draws appointments grey in the timeline: they are the same in every plan', () => {
+        const blocks = miniTimeline(withMeeting(), 3)[0].blocks;
+        const sync = blocks.find(block => block.header === 'Team Sync')!;
+        expect(sync.appointment).toBe(true);
+        expect(sync.color).toBe('#9e9e9e');
+    });
+
+    it('leaves out what is over: the choice is about what comes', () => {
+        const from = new Date(at(8, 12)); // after Design Schema, before Implement API ends
+        expect(planByDay(withMeeting(), from)[0].items.map(item => item.header)).toEqual(['Implement API']);
+        expect(miniTimeline(withMeeting(), 3, from)[0].blocks.map(block => block.header)).toEqual(['Implement API']);
+    });
+
+    it('finds the warnings every plan has', () => {
+        const late: PlanWarning = { task_id: 'p', header: 'Paper', kind: 'deadline_missed', deadline: null, projected_finish: null };
+        const own: PlanWarning = { task_id: 't3', header: 'Load Test', kind: 'deadline_missed', deadline: null, projected_finish: null };
+        const plans = [alternative('a', 'A', { warnings: [late] }), alternative('b', 'B', { warnings: [late, own] })];
+        expect(commonWarnings(plans)).toEqual([late]);
+        expect(commonWarnings([plans[1]])).toEqual([]); // one plan: nothing to compare
+    });
+
+    it('names the project of a task', () => {
+        const tasks = [
+            makeTask('t250', { header: 'T250', children_ids: ['cad'] }),
+            makeTask('cad', { header: 'CAD', parent_id: 't250', ancestor_ids: ['t250'] }),
+            makeTask('milk', { header: 'Buy milk' }),
+        ];
+        expect(projectOf('cad', tasks)).toBe('T250');
+        expect(projectOf('t250', tasks)).toBe('T250'); // a project's Rest
+        expect(projectOf('milk', tasks)).toBeNull(); // a single step
+        expect(projectOf('gone', tasks)).toBeNull();
+    });
+});
+
 const wrapperClient = () => new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
 });
@@ -124,6 +186,10 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe('PlanChooser', () => {
+    // The morning the fixture plans start: nothing of them is over yet.
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(at(8, 8))); });
+    afterEach(() => vi.useRealTimers());
+
     const three = [
         alternative('plan-a', 'Deadline-safe'),
         alternative('plan-b', 'Flow — fewer context switches'),
@@ -148,8 +214,7 @@ describe('PlanChooser', () => {
 
     it('shows the warning text on infeasible cards', () => {
         render(<PlanChooser alternatives={three} onAccept={() => { }} accepting={false} />);
-        expect(screen.getByText(/Load Test/)).toBeInTheDocument();
-        expect(screen.getByText(/misses its deadline/i)).toBeInTheDocument();
+        expect(screen.getByText(/“Load Test” misses its deadline/i)).toBeInTheDocument();
         expect(screen.getByText('1h over')).toBeInTheDocument();
     });
 
@@ -167,6 +232,56 @@ describe('PlanChooser', () => {
 
         expect(onAccept).toHaveBeenCalledTimes(1);
         expect(onAccept).toHaveBeenCalledWith('plan-a');
+    });
+
+    const tasks = [
+        makeTask('web', { header: 'Webshop', children_ids: ['t1', 't2', 't3'] }),
+        makeTask('t1', { header: 'Design Schema', parent_id: 'web', ancestor_ids: ['web'] }),
+        makeTask('t2', { header: 'Implement API', parent_id: 'web', ancestor_ids: ['web'] }),
+        makeTask('t3', { header: 'Load Test', parent_id: 'web', ancestor_ids: ['web'] }),
+    ];
+
+    it('shows the next tasks of each option with their project — no hovering', () => {
+        render(<PlanChooser alternatives={three} tasks={tasks} onAccept={() => { }} accepting={false} />);
+        const card = screen.getAllByTestId('plan-alternative-card')[0];
+        const next = within(card).getByRole('list', { name: 'Next' });
+        expect(within(next).getAllByRole('listitem').map(row => row.textContent)).toEqual([
+            expect.stringContaining('Design Schema'), expect.stringContaining('Implement API'),
+            expect.stringContaining('Load Test'),
+        ]);
+        expect(within(next).getAllByText('Webshop')).toHaveLength(3);
+    });
+
+    it('marks the running task as going on now', () => {
+        const running = tasks.map(task => (task.id === 't1' ? { ...task, active_tracking_start: at(8, 8) } : task));
+        render(<PlanChooser alternatives={three} tasks={running} onAccept={() => { }} accepting={false} />);
+        const first = within(screen.getAllByRole('list', { name: 'Next' })[0]).getAllByRole('listitem')[0];
+        expect(first).toHaveTextContent('Design Schema');
+        expect(first).toHaveTextContent('now');
+    });
+
+    it('keeps the rest of the plan in an expandable list', () => {
+        render(<PlanChooser alternatives={three} tasks={tasks} onAccept={() => { }} accepting={false} />);
+        const card = screen.getAllByTestId('plan-alternative-card')[0];
+        expect(within(card).queryByRole('list', { name: 'Whole plan' })).toBeNull();
+        fireEvent.click(within(card).getByRole('button', { name: 'Whole plan (3 tasks)' }));
+        const whole = within(card).getByRole('list', { name: 'Whole plan' });
+        expect(within(whole).getAllByRole('listitem')).toHaveLength(3);
+    });
+
+    it('says a warning every plan has once, above the options', () => {
+        const late: PlanWarning = {
+            task_id: 'p', header: 'Finish the paper', kind: 'deadline_missed', deadline: null, projected_finish: null,
+        };
+        const plans = three.map(plan => ({ ...plan, feasible: false, warnings: [...plan.warnings, late] }));
+        render(<PlanChooser alternatives={plans} tasks={tasks} onAccept={() => { }} accepting={false} />);
+        expect(screen.getByTestId('common-warnings')).toHaveTextContent('In every plan: “Finish the paper” misses its deadline');
+        for (const card of screen.getAllByTestId('plan-alternative-card')) {
+            expect(within(card).queryByText(/Finish the paper/)).toBeNull();
+        }
+        // What only one plan risks stays on its card.
+        expect(within(screen.getAllByTestId('plan-alternative-card')[2]).getByText(/“Load Test” misses its deadline/))
+            .toBeInTheDocument();
     });
 });
 
@@ -196,6 +311,7 @@ describe('PlanChooserDialog', () => {
                 }),
             ),
             acceptHandler,
+            http.get(`${API}/tasks/`, () => HttpResponse.json([])),
             http.get(`${API}/plan/`, () =>
                 HttpResponse.json({ accepted_plan_id: 'plan-a', warnings: [], appointments: [], buckets: [] }),
             ),
@@ -220,6 +336,7 @@ describe('PlanChooserDialog', () => {
                 HttpResponse.json({ alternatives: [alternative('plan-only', 'Deadline-safe')] }),
             ),
             acceptHandler,
+            http.get(`${API}/tasks/`, () => HttpResponse.json([])),
             http.get(`${API}/plan/`, () =>
                 HttpResponse.json({ accepted_plan_id: 'plan-only', warnings: [], appointments: [], buckets: [] }),
             ),
@@ -260,6 +377,7 @@ describe('PlanChooserDialog with nothing schedulable (no-buckets trap)', () => {
         http.post(`${API}/plans/:id/accept/`, () => {
             throw new Error('an empty plan must never be auto-accepted');
         }),
+        http.get(`${API}/tasks/`, () => HttpResponse.json([])),
     );
     beforeAll(() => server2.listen({ onUnhandledRequest: 'error' }));
     afterEach(() => server2.resetHandlers());

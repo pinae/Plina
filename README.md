@@ -38,17 +38,36 @@ the **Dependencies** tab (a node editor) or drawn in the Tasks tab
 server with the exact offending path, which the editor highlights in red.
 
 A DAG usually admits many valid orderings, and that is the product:
-wherever the graph leaves a real choice (independent branches at the
-frontier), Plina computes up to `MAX_PLAN_ALTERNATIVES` meaningfully
-different plans — focus-per-branch and weight presets (deadline-safe /
-priority-first / flow) — deduplicates them by ordering, and presents them
-as cards with metrics (minimum slack, context switches, projected finish
-date per project). A strict chain yields exactly one plan and is accepted
-silently: no fake choices.
+"Plan my week" offers up to `MAX_PLAN_ALTERNATIVES` meaningfully different
+plans, built around the decision that matters — what to do next
+(docs/plan-chooser.md):
+
+* A task being tracked comes first in every plan (and in "Re-plan"), from
+  now on, its running time counted as spent. The options differ in what
+  follows: **Stay in** its project (flow: no context switch), **Then**
+  another project (the highest-priority one, or one worked on recently), or
+  **Deadline-safe**.
+* With nothing tracked, the options start with different projects: the
+  **highest-priority** one, the ones **worked on most recently** (tracked
+  time), then the others by priority — besides the presets.
+* **Deadline-safe** follows priority as far as it can without missing more
+  deadlines (or missing them by more) than earliest-deadline-first;
+  **Priority-first** follows priority alone; **Flow** stays in a project
+  before switching.
+
+Each option is a card: what it is about, its **next three tasks** with
+project and time (the running one marked "now"), a timeline of the first
+days (appointments grey — they are the same in every option), its
+consequences (slack, context switches, finish date per project, its own
+warnings) and the **Whole plan** as an expandable list by day. Warnings
+every option has are said once, above the cards; on phones the cards stack.
+Options that plan the same collapse into one, so a strict chain yields
+exactly one plan, accepted silently: no fake choices.
 
 Fluidity principle: accepting a plan fixes nothing. A task is anchored only
-when time tracking starts on it (or it is dragged manually — the server
-rejects placements that would violate the dependency order). Feasibility warnings ("Project X can't finish by ...")
+when it is dragged manually (the server rejects placements that would
+violate the dependency order); a running task goes first by its tracking
+session, and once stopped it is planned like any other. Feasibility warnings ("Project X can't finish by ...")
 surface as a banner with remedy shortcuts, and the Week view can jump to
 the first day with free capacity.
 
@@ -80,8 +99,8 @@ the tasks and the clock, so every device shows the same):
   once, where they are.
 * The tracked task is a block from its start until now.
 * A task dragged in the Week view stays where it was dropped. Once its time
-  has come (starting to track pins a task too), what is left of it goes into
-  its planned slices — or, without any, moves along with now.
+  has come, what is left of it goes into its planned slices — or, without
+  any, moves along with now.
 * Planned work keeps its time bucket and its order. Each task's slices
   carry the work it still needs (estimate − time spent, a parent's Rest): a
   task done early pulls the next ones forward, one running over pushes

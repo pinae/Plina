@@ -2,10 +2,11 @@
 
 The lifecycle implements Plina's fluidity principle (A4/§6 fixing rules):
 
-* ``start_tracking`` **anchors** the task (``is_fixed`` + ``start_date``):
-  starting work is the moment a task stops being fluid, and a re-plan keeps
-  it where it is worked on. A session running for another task is closed and
-  booked first (UI-3), and the task's project becomes the active project.
+* ``start_tracking`` opens a session: every plan and re-plan goes on with the
+  running task first (docs/plan-chooser.md); it is not pinned, so once
+  stopped it is planned like any other task. A session running for another
+  task is closed and booked first (UI-3), and the task's project becomes the
+  active project.
 * ``stop_tracking`` books the elapsed time onto ``time_spent``.
 * ``complete_task`` closes any open session and marks the task done.
 
@@ -90,10 +91,8 @@ def start_tracking(task: Task, now: Optional[datetime] = None
         stopped = open_session.task
         _close(open_session, now)
 
-    # Anchor the task (A8): from now on recalculations keep its entries.
-    task.is_fixed = True
-    task.start_date = now
-    task.save(update_fields=["is_fixed", "start_date"])
+    # Not pinned: plans put the running task first by its session, and a
+    # stopped one stays free to be planned (docs/plan-chooser.md).
     session = TrackingSession.objects.create(task=task, start=now)
     if project_for_tracking(task) is not None:  # a recurring task keeps the active project
         activate(project_for_tracking(task))

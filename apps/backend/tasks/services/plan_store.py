@@ -20,9 +20,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from tasks.models import Plan, PlanEntry, Task, TimeBucket
-from tasks.services.alternatives import (PlanAlternative, _apply_focus,
-                                         _evaluate, _preset_config,
-                                         _preset_ranking)
+from tasks.services.alternatives import (PlanAlternative, _evaluate,
+                                         _preset_config, deadline_weight,
+                                         plan_ranking, planning_context)
 from tasks.services.bucket_service import gather_time_buckets
 from tasks.services.planner_service import (UNBUCKETED, PlanItem,
                                             allocate_tasks,
@@ -170,16 +170,20 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
         now = timezone.now()
 
     snapshots = build_planning_tasks(
-        Task.objects.filter(completed_at=None).prefetch_related("tags")
+        Task.objects.filter(completed_at=None).prefetch_related("tags"), now=now,
     )
     horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
     buckets = gather_time_buckets(now, now + horizon)
     edges = planning_edges(snapshots)
 
+    # The plan's own strategy; a task being tracked goes first (docs/plan-chooser.md).
     preset = plan.config.get("preset", "deadline_safe")
     focus = frozenset(UUID(t) for t in plan.config.get("focus_task_ids", []))
-    ranked = _apply_focus(_preset_ranking(snapshots, preset, now), focus)
-    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset, focus))
+    context = planning_context(now)
+    weight = deadline_weight(snapshots, buckets, edges, now, context.running_id) if preset == "deadline_safe" else None
+    ranked = plan_ranking(snapshots, preset, focus, now, context, weight)
+    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset),
+                                running_id=context.running_id, now=now)
 
     anchored_ids = _anchored_task_ids()
     plan.entries.exclude(task_id__in=anchored_ids).delete()

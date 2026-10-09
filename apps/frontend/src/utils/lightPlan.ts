@@ -9,8 +9,8 @@
  *   once, where they are.
  * - The tracked task is a block from its start until now.
  * - A pinned task (dropped in the Week view) stays where it was put. Once its
- *   time has come (tracking pins a task where it starts) what is left of it
- *   goes into its planned slices, or, without any, moves along with now.
+ *   time has come what is left of it goes into its planned slices, or,
+ *   without any, moves along with now.
  * - Planned work keeps its bucket and its order. Each task's slices carry the
  *   work it still needs (estimate − time spent, a parent's Rest); slices
  *   missed earlier today come back at now; then every bucket is packed from
@@ -189,8 +189,7 @@ export function lightPlan(plan: PlanResponse, { tasks, dependencies, now, defaul
             fromTask.add(task.id);
             sliding.push(task);
         }
-        // Its time has come (tracking pins a task where it starts): its
-        // planned slices carry what is left of it.
+        // Its time has come: its planned slices carry what is left of it.
     }
     // Appointments (done ones too) of the plan: as they were. Done tasks'
     // other past slices: history.

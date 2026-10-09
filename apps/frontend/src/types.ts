@@ -321,6 +321,9 @@ export interface PlanAlternative {
     /** Stored plan id — present when candidates were stored (POST / complete). */
     id?: string;
     label: string;
+    /** What the option is about (docs/plan-chooser.md). */
+    kind?: 'deadline_safe' | 'priority_first' | 'flow' | 'top_project' | 'recent_project' | 'project';
+    project?: { id: string; name: string } | null;
     feasible: boolean;
     warnings: PlanWarning[];
     metrics: PlanMetrics;
