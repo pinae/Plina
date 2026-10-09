@@ -67,8 +67,9 @@ class ManualPlacementValidationTest(ManualPlacementFixture):
         self.assertEqual(response.status_code, 200)
 
 
-class RecalculationTriggerTest(TestCase):
-    """A7: schedule-relevant mutations trigger a recalculation."""
+class NoAutomaticReplanTest(TestCase):
+    """No change re-plans by itself (README: Planning light): the accepted
+    plan changes on "Re-plan" or "Plan my week" only."""
 
     def setUp(self):
         self.client = APIClient()
@@ -77,23 +78,24 @@ class RecalculationTriggerTest(TestCase):
             name="Manual", duration=timedelta(hours=2)
         )
 
-    def assert_triggers(self, action, times=1):
-        with patch("tasks.api.recalculate_accepted_plan") as recalc:
+    def assert_no_replan(self, action):
+        with patch("tasks.api.recalculate_accepted_plan") as from_api, \
+                patch("tasks.services.plan_store.recalculate_accepted_plan") as from_services:
             action()
-        self.assertEqual(recalc.call_count, times)
+        self.assertEqual(from_api.call_count + from_services.call_count, 0)
 
-    def test_task_update_triggers_recalculation(self):
-        self.assert_triggers(lambda: self.client.patch(
+    def test_task_update_does_not_replan(self):
+        self.assert_no_replan(lambda: self.client.patch(
             f"/api/tasks/{self.task.id}/", {"priority": 9.0}, format="json",
         ))
 
-    def test_task_create_and_delete_trigger_recalculation(self):
-        self.assert_triggers(lambda: self.client.post(
+    def test_task_create_and_delete_do_not_replan(self):
+        self.assert_no_replan(lambda: self.client.post(
             "/api/tasks/", {"header": "New"}, format="json",
         ))
-        self.assert_triggers(lambda: self.client.delete(f"/api/tasks/{self.task.id}/"))
+        self.assert_no_replan(lambda: self.client.delete(f"/api/tasks/{self.task.id}/"))
 
-    def test_dependency_create_and_delete_trigger_recalculation(self):
+    def test_dependency_create_and_delete_do_not_replan(self):
         other = Task.objects.create(header="Other", duration=timedelta(hours=1))
         created = {}
 
@@ -105,12 +107,12 @@ class RecalculationTriggerTest(TestCase):
             )
             created["id"] = response.data["id"]
 
-        self.assert_triggers(create)
-        self.assert_triggers(
+        self.assert_no_replan(create)
+        self.assert_no_replan(
             lambda: self.client.delete(f"/api/dependencies/{created['id']}/")
         )
 
-    def test_bucket_create_and_update_trigger_recalculation(self):
+    def test_bucket_create_and_update_do_not_replan(self):
         created = {}
 
         def create():
@@ -121,8 +123,8 @@ class RecalculationTriggerTest(TestCase):
             }, format="json")
             created["id"] = response.data["id"]
 
-        self.assert_triggers(create)
-        self.assert_triggers(lambda: self.client.patch(
+        self.assert_no_replan(create)
+        self.assert_no_replan(lambda: self.client.patch(
             f"/api/timebuckets/{created['id']}/", {"duration": "03:00:00"},
             format="json",
         ))

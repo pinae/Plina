@@ -75,13 +75,11 @@ class TimeZoneSettingTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("time_zone", response.data)
 
-    def test_changing_it_replans_the_accepted_plan(self):
+    def test_changing_it_does_not_replan(self):
+        # Sent on every page load; the plan follows on "Re-plan" (README: Planning light).
         with mock.patch("tasks.api.recalculate_accepted_plan") as recalculate:
             self.client.patch("/api/settings/", {"time_zone": "Europe/Berlin"}, format="json")
-            self.assertEqual(recalculate.call_count, 1)
-            # Sending the same zone again (every page load) changes nothing.
-            self.client.patch("/api/settings/", {"time_zone": "Europe/Berlin"}, format="json")
-            self.assertEqual(recalculate.call_count, 1)
+        self.assertEqual(recalculate.call_count, 0)
 
     def test_messages_show_times_in_the_users_zone(self):
         set_time_zone("Europe/Berlin")

@@ -6,8 +6,9 @@
 import { useState } from 'react';
 import type { AxiosError } from 'axios';
 
-import { useCompleteTask, usePlan, useSettings, useStartTracking, useStopTracking, useTasks } from '../queries.tsx';
-import type { PlanAlternative, PlanItem, Task, TrackingBlockedError } from '../types.ts';
+import { useCompleteTask, useSettings, useStartTracking, useStopTracking, useTasks } from '../queries.tsx';
+import { useLightPlan } from './useLightPlan.ts';
+import type { PlanItem, Task, TrackingBlockedError } from '../types.ts';
 import { parseDurationMinutes } from '../utils/duration.ts';
 import { isInside, nextPlannedItem, projectFor, trackedTask } from '../utils/projects.ts';
 import { useNow } from './useNow.ts';
@@ -41,13 +42,12 @@ function describeError(error: unknown, fallback: string): string {
 }
 
 export function useTracker(
-    onChoices: (alternatives: PlanAlternative[]) => void,
     /** Parents that completed with the tracked task (for the undo snackbar). */
     onAutoCompleted?: (completed: { id: string; header: string }[]) => void,
 ): TrackerControls {
     const tasks = useTasks();
     const settings = useSettings();
-    const plan = usePlan();
+    const plan = useLightPlan(); // what the Week view shows (README: Planning light)
     const startMutation = useStartTracking();
     const stopMutation = useStopTracking();
     const completeMutation = useCompleteTask();
@@ -71,7 +71,7 @@ export function useTracker(
     const leaves = list.filter(t => !t.is_done && !t.is_appointment && !(t.children_ids?.length));
     const inProject = activeId ? leaves.filter(t => isInside(t, activeId)) : [];
     const pickable = { inProject, others: leaves.filter(t => !inProject.includes(t)) };
-    const next = plan.data ? nextPlannedItem(plan.data, list, activeId, now) : null;
+    const next = plan.data ? nextPlannedItem(plan.data.plan, list, activeId, now) : null;
 
     const start = (taskId: string) =>
         startMutation.mutate(taskId, { onError: e => setError(describeError(e, 'Could not start tracking.')) });
@@ -82,7 +82,6 @@ export function useTracker(
         if (!tracked) return;
         completeMutation.mutate(tracked.id, {
             onSuccess: data => {
-                if (data.alternatives.length > 0) onChoices(data.alternatives);
                 if (data.auto_completed?.length) onAutoCompleted?.(data.auto_completed);
             },
             onError: e => setError(describeError(e, 'Could not complete the task.')),

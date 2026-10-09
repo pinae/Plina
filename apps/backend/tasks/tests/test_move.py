@@ -67,10 +67,10 @@ class MoveTest(MoveTestBase):
         self.move(self.t250, None, 1)
         self.assertEqual(self.children(None), [("Company Blog", 0), ("T250", 1), ("Buy milk", 2)])
 
-    def test_recalculates_the_plan_once(self):
+    def test_does_not_replan(self):
         with mock.patch("tasks.api.recalculate_accepted_plan") as recalculate:
             self.move(self.fw, self.hw, 0)
-        self.assertEqual(recalculate.call_count, 1)
+        self.assertEqual(recalculate.call_count, 0)
 
 
 class MoveRefusalTest(MoveTestBase):

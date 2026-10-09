@@ -8,23 +8,12 @@ from .serializers import (MarkerSerializer, SavedFilterSerializer, TaskSerialize
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer, TrackingSessionSerializer)
 
-class RecalculatingModelViewSet(viewsets.ModelViewSet):
-    """A7: schedule-relevant CRUD triggers a recalculation of the accepted plan."""
-
-    def perform_create(self, serializer):
-        super().perform_create(serializer)
-        recalculate_accepted_plan()
-
-    def perform_update(self, serializer):
-        super().perform_update(serializer)
-        recalculate_accepted_plan()
-
-    def perform_destroy(self, instance):
-        super().perform_destroy(instance)
-        recalculate_accepted_plan()
+# No change re-plans by itself (README: Planning light): the accepted plan
+# stays as it is until "Re-plan" (POST /api/plan/recalculate/) or "Plan my
+# week"; the browser fits what happened since into it.
 
 
-class TaskViewSet(RecalculatingModelViewSet):
+class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.select_related("series__calendar_subscription", "deadline_marker") \
         .prefetch_related("calendar_links__subscription")
     serializer_class = TaskSerializer
@@ -49,14 +38,12 @@ class TaskViewSet(RecalculatingModelViewSet):
                 delete_series(task)
             else:
                 delete_occurrence(task)
-            recalculate_accepted_plan()
             return Response(status=204)
         try:
             delete_task(task, request.query_params.get("children"))
         except TreeError as error:
             return Response(error.payload, status=400)
         ensure_auto_colors()  # lifted subtasks of a project become projects
-        recalculate_accepted_plan()
         return Response(status=204)
 
     def _tracking_response(self, task, extra=None):
@@ -98,15 +85,10 @@ class TaskViewSet(RecalculatingModelViewSet):
         from tasks.services.tracking import TrackingError, complete_task
         task = self.get_object()
         try:
-            task, auto_completed, alternatives, buckets = complete_task(task)
+            task, auto_completed = complete_task(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
-        serialized = serialize_alternatives(
-            alternatives, buckets,
-            plan_ids=[alternative.plan_id for alternative in alternatives],
-        ) if alternatives else []
         return self._tracking_response(task, extra={
-            "alternatives": serialized,
             # Parents completed because their last open child was (bottom-up).
             "auto_completed": [{"id": t.id, "header": t.header} for t in auto_completed],
         })
@@ -129,7 +111,6 @@ class TaskViewSet(RecalculatingModelViewSet):
         except SplitError as error:
             return Response(error.payload, status=400)
         ensure_auto_colors()
-        recalculate_accepted_plan()
         task.refresh_from_db()
         context = self.get_serializer_context()  # shared: one tree snapshot
         return Response({
@@ -152,7 +133,6 @@ class TaskViewSet(RecalculatingModelViewSet):
             return Response(error.payload, status=400)
         ensure_auto_colors()  # moved to the top level
         ensure_active_is_project()
-        recalculate_accepted_plan()
         return Response({"task": TaskSerializer(task, context=self.get_serializer_context()).data})
 
     @action(detail=True, methods=["post"])
@@ -184,7 +164,6 @@ class TaskViewSet(RecalculatingModelViewSet):
         except MergeError as error:
             return Response(error.payload, status=400)
         ensure_auto_colors()
-        recalculate_accepted_plan()
         kept = self.get_queryset().get(id=kept.id)
         return Response({"task": TaskSerializer(kept, context=self.get_serializer_context()).data, "notes": notes})
 
@@ -197,7 +176,6 @@ class TaskViewSet(RecalculatingModelViewSet):
             reopened = reopen(task)
         except CompletionError as error:
             return Response(error.payload, status=400)
-        recalculate_accepted_plan()
         task.refresh_from_db()
         return self._tracking_response(task, extra={"reopened": [t.id for t in reopened]})
 
@@ -210,14 +188,6 @@ class DependencyViewSet(mixins.ListModelMixin,
     queryset = TaskDependency.objects.all()
     serializer_class = TaskDependencySerializer
 
-    def perform_create(self, serializer):
-        super().perform_create(serializer)
-        recalculate_accepted_plan()
-
-    def perform_destroy(self, instance):
-        super().perform_destroy(instance)
-        recalculate_accepted_plan()
-
 def _is_uuid(value) -> bool:
     from uuid import UUID
     try:
@@ -227,7 +197,7 @@ def _is_uuid(value) -> bool:
         return False
 
 
-class MarkerViewSet(RecalculatingModelViewSet):
+class MarkerViewSet(viewsets.ModelViewSet):
     """Markers (README: Calendar); ``?from=…&to=…`` lists those overlapping."""
     serializer_class = MarkerSerializer
 
@@ -250,7 +220,6 @@ class MarkerViewSet(RecalculatingModelViewSet):
         from tasks.services.markers import move_deadlines
         marker = serializer.save()
         move_deadlines(marker)  # named deadlines move along
-        recalculate_accepted_plan()
 
     @action(detail=True, methods=["post"])
     def convert(self, request, pk=None):
@@ -268,7 +237,6 @@ class MarkerViewSet(RecalculatingModelViewSet):
             bucket_type = serializer.save()
             make_special_bucket(marker, bucket_type)
         ensure_bucket_type_colors()
-        recalculate_accepted_plan()
         bucket_type.refresh_from_db()
         return Response(TimeBucketTypeSerializer(bucket_type).data, status=201)
 
@@ -296,7 +264,6 @@ class CalendarViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         from tasks.services.calendar_sync import unsubscribe
         unsubscribe(instance)
-        recalculate_accepted_plan()
 
     def _read(self, subscription):
         from django.utils import timezone as tz
@@ -309,7 +276,6 @@ class CalendarViewSet(viewsets.ModelViewSet):
             subscription.last_error = str(error)
         subscription.last_attempt_at = now
         subscription.save(update_fields=["last_synced_at", "last_error", "last_attempt_at"])
-        recalculate_accepted_plan()
 
     @action(detail=False, methods=["post"], url_path="sync")
     def sync_all(self, request):
@@ -317,8 +283,6 @@ class CalendarViewSet(viewsets.ModelViewSet):
         app calls this when it opens and every few minutes."""
         from tasks.services.calendar_sync import sync_due
         changed = sync_due(force=bool(request.data.get("force")))
-        if changed:
-            recalculate_accepted_plan()
         serializer = self.get_serializer_class()
         return Response({"changed": changed, "calendars": serializer(self.get_queryset(), many=True).data})
 
@@ -327,10 +291,6 @@ class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
 
-    def perform_destroy(self, instance):
-        """A deleted tag leaves its tasks and time buckets: affinity changes."""
-        super().perform_destroy(instance)
-        recalculate_accepted_plan()
 
 class SavedFilterViewSet(viewsets.ModelViewSet):
     """Named filters of the Tasks tab and the dependency editor (README:
@@ -342,7 +302,7 @@ class SavedFilterViewSet(viewsets.ModelViewSet):
         return SavedFilter.objects.all()
 
 
-class TimeBucketTypeViewSet(RecalculatingModelViewSet):
+class TimeBucketTypeViewSet(viewsets.ModelViewSet):
     queryset = TimeBucketType.objects.all()
     serializer_class = TimeBucketTypeSerializer
 
@@ -357,16 +317,11 @@ class SettingsView(APIView):
 
     def patch(self, request):
         from .serializers import UserSettingsSerializer
-        from .services.settings import get_settings, user_time_zone
+        from .services.settings import get_settings
         settings = get_settings()
-        old_default, old_zone = settings.default_duration, settings.time_zone
         serializer = UserSettingsSerializer(settings, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        if settings.default_duration != old_default or settings.time_zone != old_zone:
-            # Unestimated tasks change size / recurring buckets move (A7).
-            with timezone.override(user_time_zone() or timezone.get_default_timezone()):
-                recalculate_accepted_plan()
         return Response(serializer.data)
 
 
@@ -499,7 +454,7 @@ class TimeSheetView(APIView):
         })
 
 
-class TimeBucketViewSet(RecalculatingModelViewSet):
+class TimeBucketViewSet(viewsets.ModelViewSet):
     queryset = TimeBucket.objects.all()
     serializer_class = TimeBucketSerializer
 
@@ -519,8 +474,7 @@ def catch_up_on_series():
     """Recurring tasks (services.series): make the occurrences that are due
     before tasks or plans are shown; the accepted plan takes them in."""
     from tasks.services.series import keep_up
-    if keep_up():
-        recalculate_accepted_plan()
+    keep_up()
 
 def _task_colors():
     """Color each task shows (§4.4), from one snapshot of the tree; a Rest
@@ -659,6 +613,19 @@ class PlannerView(APIView):
                 for bucket in buckets
             ],
         })
+
+
+class PlanRecalculateView(APIView):
+    """POST: "Re-plan" (README: Planning light) — reflow the accepted plan
+    with its own strategy (preset, focus) around what happened since; the
+    answer is the new plan, as for GET /api/plan/. Nothing else re-plans."""
+
+    def post(self, request):
+        catch_up_on_series()
+        plan = recalculate_accepted_plan()
+        if plan is None:
+            return Response({"detail": "No plan is accepted yet: use “Plan my week”."}, status=409)
+        return PlannerView()._accepted_plan_response(plan)
 
 
 class PlanAlternativesView(APIView):

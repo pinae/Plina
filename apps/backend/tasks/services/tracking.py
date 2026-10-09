@@ -2,16 +2,15 @@
 
 The lifecycle implements Plina's fluidity principle (A4/§6 fixing rules):
 
-* ``start_tracking`` **anchors** the task (``is_fixed`` + ``start_date``), so
-  every later recalculation keeps its plan entries byte-identical — starting
-  work is the moment a task stops being fluid. A session running for another
-  task is closed and booked first (UI-3), and the task's project becomes the
-  active project.
-* ``stop_tracking`` books the elapsed time onto ``time_spent`` and triggers a
-  recalculation of the accepted plan (A7).
-* ``complete_task`` closes any open session, marks the task done, recalculates
-  and — when the new frontier offers a real choice (≥ 2 branches) — computes
-  and stores fresh alternatives for the "what next?" chooser.
+* ``start_tracking`` **anchors** the task (``is_fixed`` + ``start_date``):
+  starting work is the moment a task stops being fluid, and a re-plan keeps
+  it where it is worked on. A session running for another task is closed and
+  booked first (UI-3), and the task's project becomes the active project.
+* ``stop_tracking`` books the elapsed time onto ``time_spent``.
+* ``complete_task`` closes any open session and marks the task done.
+
+None of them re-plans (README: Planning light): the browser fits what
+happened into the accepted plan until the user asks for a re-plan.
 
 All functions accept an explicit ``now`` for deterministic tests.
 """
@@ -20,13 +19,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from tasks.models import Task, TaskDependency, TrackingSession
-from tasks.services import graph as graph_service
-from tasks.services.plan_store import recalculate_accepted_plan
+from tasks.models import Task, TrackingSession
 
 
 class TrackingError(Exception):
@@ -101,9 +97,6 @@ def start_tracking(task: Task, now: Optional[datetime] = None
     session = TrackingSession.objects.create(task=task, start=now)
     if project_for_tracking(task) is not None:  # a recurring task keeps the active project
         activate(project_for_tracking(task))
-    # The task is anchored where it is worked on now (and a stopped one's
-    # time changed): the plan shows it there, not where it was planned.
-    recalculate_accepted_plan(now=now)
     return session, stopped
 
 
@@ -126,33 +119,14 @@ def stop_tracking(task: Task, now: Optional[datetime] = None) -> TrackingSession
     session.task = task  # book onto the caller's instance
     _close(session, now)
 
-    recalculate_accepted_plan(now=now)
     return session
 
 
-def _frontier_branch_count(now: datetime) -> int:
-    """Branches at the new frontier, over flexible unfinished tasks only."""
-    from tasks.services.planner_service import build_planning_tasks
-
-    snapshots = build_planning_tasks(
-        Task.objects.filter(completed_at=None).prefetch_related("tags")
-    )
-    flexible = [
-        snapshot for snapshot in snapshots
-        if not (snapshot.start_date is not None
-                and (snapshot.is_fixed or snapshot.is_appointment))
-    ]
-    from tasks.services.planner_service import planning_edges
-    dag = graph_service.build_dag(flexible, planning_edges(snapshots))
-    return len(graph_service.branches(dag))
-
-
 @transaction.atomic
-def complete_task(task: Task, now: Optional[datetime] = None) -> Tuple[Task, list, list, list]:
-    """Mark done, book any running session, complete finished ancestors,
-    recalculate; returns ``(task, auto_completed, alternatives, buckets)``
-    where alternatives is non-empty only when the new frontier offers >= 2
-    branches."""
+def complete_task(task: Task, now: Optional[datetime] = None) -> Tuple[Task, list]:
+    """Mark done, book any running session, complete finished ancestors;
+    returns ``(task, auto_completed)``. The plan is not touched (README:
+    Planning light)."""
     from tasks.services.completion import (CompletionError, complete_finished_ancestors,
                                            ensure_completable)
     if now is None:
@@ -177,27 +151,4 @@ def complete_task(task: Task, now: Optional[datetime] = None) -> Tuple[Task, lis
     auto_completed = complete_finished_ancestors(task, now)
     from tasks.services.settings import ensure_active_project_open
     ensure_active_project_open()
-
-    recalculate_accepted_plan(now=now)
-
-    if _frontier_branch_count(now) < 2:
-        return task, auto_completed, [], []
-
-    from datetime import timedelta
-
-    from tasks.services.alternatives import generate_alternatives
-    from tasks.services.bucket_service import gather_time_buckets
-    from tasks.services.plan_store import store_alternatives
-    from tasks.services.planner_service import build_planning_tasks
-
-    snapshots = build_planning_tasks(
-        Task.objects.filter(completed_at=None).prefetch_related("tags")
-    )
-    horizon = timedelta(days=settings.PLANNING_HORIZON_DAYS)
-    buckets = gather_time_buckets(now, now + horizon)
-    from tasks.services.planner_service import planning_edges
-    alternatives = generate_alternatives(snapshots, buckets, planning_edges(snapshots), now)
-    plans = store_alternatives(alternatives, buckets)
-    for alternative, plan in zip(alternatives, plans):
-        alternative.plan_id = plan.id
-    return task, auto_completed, alternatives, buckets
+    return task, auto_completed

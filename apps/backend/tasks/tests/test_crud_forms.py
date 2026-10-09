@@ -157,7 +157,7 @@ class TagDeletionTest(TestCase):
         with mock.patch("tasks.api.recalculate_accepted_plan") as recalc:
             response = APIClient().delete(f"/api/tags/{tag.id}/")
         self.assertEqual(response.status_code, 204)
-        recalc.assert_called_once()
+        recalc.assert_not_called()  # README: Planning light
         self.assertFalse(Tag.objects.exists())
         self.assertTrue(Task.objects.filter(id=task.id, tags__isnull=True).exists())
         self.assertTrue(TimeBucketType.objects.filter(id=bucket_type.id, tags__isnull=True).exists())

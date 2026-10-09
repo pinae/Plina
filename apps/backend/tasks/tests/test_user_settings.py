@@ -99,17 +99,21 @@ class DefaultDurationPlanningTest(TestCase):
         self.assertEqual(data["parts_total"], "00:30:00")
         self.assertEqual(data["rest"], "01:30:00")
 
-    def test_changing_the_default_replans_the_accepted_plan(self):
+    def test_a_new_default_reaches_the_accepted_plan_on_replan(self):
         client = APIClient()
         TimeBucketType.objects.create(name="Daily", start_times="every day at 09:00",
                                       duration=timedelta(hours=4))
         task = Task.objects.create(header="Call landlord")
         plan = client.post("/api/plan/alternatives/").data["alternatives"][0]
         client.post(f"/api/plans/{plan['id']}/accept/")
+
+        def planned(data):
+            return sum(item["duration"] for bucket in data["buckets"]
+                       for item in bucket["items"] if item["task_id"] == task.id)
+
         client.patch("/api/settings/", {"default_duration": "00:30:00"}, format="json")
-        items = [item for bucket in client.get("/api/plan/").data["buckets"]
-                 for item in bucket["items"] if item["task_id"] == task.id]
-        self.assertEqual(sum(item["duration"] for item in items), 30 * 60)
+        self.assertEqual(planned(client.get("/api/plan/").data), 60 * 60)  # README: Planning light
+        self.assertEqual(planned(client.post("/api/plan/recalculate/").data), 30 * 60)
 
 
 class ActiveProjectAfterCompletionTest(TestCase):

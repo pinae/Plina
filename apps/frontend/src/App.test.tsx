@@ -21,6 +21,8 @@ const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const settings = () => ({ ...settingsFor(tasks, 'hw'), time_zone: zone });
 
 const server = setupServer(
+    // Planning light keeps tasks apart from their predecessors.
+    http.get(`${API}/dependencies/`, () => HttpResponse.json([])),
     ...calendarHandlers(),
     ...savedFilterHandlers(),
     ...noBucketTypes(),

@@ -18,8 +18,10 @@ constrained resource, utilizing concepts like:
 * Stickiness: Preferring to keep the user working on the same task across 
   adjacent time blocks rather than arbitrarily switching tasks.
 * Preemption & Recalculation: If a task takes longer than expected, or a 
-  high-priority interruption occurs, the algorithm recalculates the entire 
-  schedule, acting as a preemptive priority scheduler.
+  high-priority interruption occurs, the day's plan moves along at once
+  ([planning light](#planning-light)) and one click on "Re-plan"
+  recalculates the entire schedule, acting as a preemptive priority
+  scheduler.
 
 If the algorithm detects that hard constraints (deadlines) cannot be met given 
 the available time buckets and task durations, it proactively warns the user, 
@@ -46,16 +48,14 @@ silently: no fake choices.
 
 Fluidity principle: accepting a plan fixes nothing. A task is anchored only
 when time tracking starts on it (or it is dragged manually — the server
-rejects placements that would violate the dependency order). Completing a
-task recalculates the plan and, when the new frontier forks, immediately
-offers fresh choices. Feasibility warnings ("Project X can't finish by ...")
+rejects placements that would violate the dependency order). Feasibility warnings ("Project X can't finish by ...")
 surface as a banner with remedy shortcuts, and the Week view can jump to
 the first day with free capacity.
 
-An accepted plan keeps appointments and anchored tasks where they are and
-reflows the rest around them; when one of them moves (dragged, changed in
-its calendar, started) or is new (a calendar read, an occurrence of a
-recurring appointment), its place in the plan follows. Where two time
+A re-plan of the accepted plan keeps appointments and anchored tasks where
+they are and reflows the rest around them; when one of them moves (dragged,
+changed in its calendar, started) or is new (a calendar read, an occurrence
+of a recurring appointment), its place in the plan follows. Where two time
 buckets cover the same hours, that time is planned once. In the Week view
 cards are drawn at their exact times (seconds too), split at the device's
 midnight, and only cards that really overlap (by a minute or more, e.g. two
@@ -67,6 +67,33 @@ Try it: `uv run python manage.py populate_demo_data --user <name>` (in
 projects, a dependency diamond, tagged recurring buckets, one fixed
 appointment), then use "Plan my week" in the frontend. The command replaces
 that user's tasks, tags, time buckets and plans.
+
+### Planning light
+
+Nothing re-plans by itself: editing a task, tracking time, completing, a
+calendar read — none of them asks the server to plan, so they answer at
+once. Until you ask for a new plan, the Week view and the tracker's "Next"
+fit what happened into the accepted plan, in the browser (from the plan,
+the tasks and the clock, so every device shows the same):
+
+* Appointments come from the tasks themselves: new and moved ones show at
+  once, where they are.
+* The tracked task is a block from its start until now.
+* A task dragged in the Week view stays where it was dropped. Once its time
+  has come (starting to track pins a task too), what is left of it goes into
+  its planned slices — or, without any, moves along with now.
+* Planned work keeps its time bucket and its order. Each task's slices
+  carry the work it still needs (estimate − time spent, a parent's Rest): a
+  task done early pulls the next ones forward, one running over pushes
+  them later, a bigger estimate makes its last slice longer. Slices missed
+  earlier today come back at now. Nothing starts before its predecessors
+  end, and work never moves to another day.
+
+What no longer fits its day is listed above the Week view. **Re-plan**
+(next to it, and in the Week view's toolbar) plans again from now the way
+the accepted plan was made (its preset and focus, `POST
+/api/plan/recalculate/`); **Plan my week** offers fresh alternatives to
+choose from. Neither runs by itself.
 
 ### Working with tasks
 
