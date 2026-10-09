@@ -118,7 +118,7 @@ def build_planning_tasks(tasks: Iterable[Task], now: datetime | None = None) -> 
     running = _running_session(now) if now is not None else None
     snapshots = []
     for task in tasks:
-        if task.is_done:
+        if task.is_done or task.is_unplanned:  # README: Unplanned appointments
             continue
         if task.id not in tree.nodes:  # unsaved instance (tests)
             snapshots.append(PlanningTask.from_task(task, project_id=None,

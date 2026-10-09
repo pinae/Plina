@@ -88,7 +88,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     #: What “this and the following” passes on to the following occurrences.
     FOLLOWING_FIELDS = ('header', 'description', 'duration', 'priority', 'color', 'tags', 'latest_finish_date',
-                        'start_date', 'is_appointment', 'parent')
+                        'start_date', 'is_appointment', 'is_unplanned', 'parent')
 
     _UNSET = object()
 
@@ -349,7 +349,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'id', 'header', 'description', 'place', 'start_date', 'duration',
             'latest_finish_date', 'deadline_marker_id', 'calendar_resolved', 'time_spent', 'priority', 'tags',
             'tag_ids', 'own_hex_color', 'is_fixed',
-            'is_appointment', 'completed_at', 'is_done', 'active_tracking_start',
+            'is_appointment', 'is_unplanned', 'completed_at', 'is_done', 'active_tracking_start',
             'parent_id', 'order', 'estimate_reason', 'recurrence', 'scope', 'calendar_auto',
             'completion_estimate', 'completion_first_estimate', 'completion_time_spent',
             'completion_subtree_time_spent', 'completion_dropped_rest',

@@ -373,3 +373,16 @@ describe('WeekViewTask hover overlay (card too small for its content)', () => {
         }
     });
 });
+
+describe('an unplanned appointment (README: Unplanned appointments)', () => {
+    it('reads as a maybe and joins with one click', () => {
+        const onJoin = vi.fn();
+        render(<WeekViewTask task={createMockTask({ taskId: 'defense', isAppointment: true, manuallySet: true, unplanned: true })}
+            columnHeight={1000} actions={{ trackingActive: false, onTrackStart: vi.fn(), onTrackStop: vi.fn(), onComplete: vi.fn(), onJoin }} />);
+        const card = screen.getByTestId('week-view-task');
+        expect(card).toHaveAttribute('data-unplanned', 'true');
+        expect(card).toHaveTextContent('maybe');
+        fireEvent.click(screen.getByRole('button', { name: 'join' }));
+        expect(onJoin).toHaveBeenCalledWith('defense');
+    });
+});

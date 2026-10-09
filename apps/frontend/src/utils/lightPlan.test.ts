@@ -128,6 +128,18 @@ describe('lightPlan', () => {
         expect(shown(pinned, at(8), dependencies).slots).toContain('C 16:00–17:00');
     });
 
+    it('shows an unplanned appointment as a reminder that blocks nothing (README: Unplanned appointments)', () => {
+        const defense = makeTask('Defense', {
+            is_appointment: true, is_unplanned: true, start_date: iso(10), duration: '02:00:00',
+        });
+        // Even with an entry from a plan made before it was unplanned.
+        const source = plan();
+        source.appointments.push(item('Defense', at(10), 2, { is_appointment: true }));
+        const { slots, result } = shown([...baseTasks(), defense], at(8), [], source);
+        expect(slots).toEqual(['A 9:00–10:00', 'B 10:00–12:00', 'C 12:00–13:00', 'D 9. 9:00–9. 11:00', 'Defense 10:00–12:00']);
+        expect(result.plan.appointments.find(i => i.task_id === 'Defense')?.is_unplanned).toBe(true);
+    });
+
     it('drops deleted tasks and lists work whose days are over', () => {
         const yesterday = plan();
         yesterday.buckets[0].items.push(item('Old', at(9, 0, 7), 1));

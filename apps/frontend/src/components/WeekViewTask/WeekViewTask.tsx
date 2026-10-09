@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Box, IconButton, Popper, Typography } from '@mui/material';
+import { Box, Button, IconButton, Popper, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import CheckIcon from '@mui/icons-material/Check';
@@ -50,6 +50,9 @@ export interface ViewTask {
     isRest?: boolean;
     /** Tracked time beyond the estimate, in minutes (UI-8, informational). */
     overEstimateMinutes?: number;
+    /** Only a reminder (README: Unplanned appointments): a "maybe", blocking
+     *  nothing, joined with one click. */
+    unplanned?: boolean;
 }
 
 export interface TaskActions {
@@ -57,6 +60,8 @@ export interface TaskActions {
     onTrackStart: (taskId: string) => void;
     onTrackStop: (taskId: string) => void;
     onComplete: (taskId: string) => void;
+    /** Decide to go to an unplanned appointment: it blocks its time now. */
+    onJoin?: (taskId: string) => void;
 }
 
 export interface WeekViewTaskProps {
@@ -167,6 +172,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
         <Box
             data-testid="week-view-task"
             data-rest={task.isRest ? 'true' : undefined}
+            data-unplanned={task.unplanned ? 'true' : undefined}
             // "Merge tasks" draws from card to card (README: Calendar).
             data-task-id={task.isRest ? undefined : task.taskId}
             onMouseDown={canMove ? startDrag('move') : undefined}
@@ -180,7 +186,8 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 height: `${height}px`,
                 width,
                 left,
-                backgroundColor: backgroundColor,
+                // An unplanned appointment is only outlined: a maybe.
+                backgroundColor: task.unplanned ? `${task.color}26` : backgroundColor,
                 // A Rest placeholder is hatched: time reserved, not yet split.
                 backgroundImage: task.isRest
                     ? 'repeating-linear-gradient(135deg, rgba(255,255,255,0.18) 0 6px, transparent 6px 12px)'
@@ -192,10 +199,10 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 // Auto-planned tasks read as tentative: 80% opacity + dashed
                 // outline, dropping to 30% when invalidated. Appointments and
                 // fixed tasks are solid at full opacity.
-                opacity: isAuto ? (task.valid === false ? 0.3 : 0.8) : 1,
-                border: isAuto
-                    ? '1px dashed rgba(255, 255, 255, 0.6)'
-                    : '1px solid rgba(255, 255, 255, 0.4)',
+                opacity: isAuto ? (task.valid === false ? 0.3 : 0.8) : task.unplanned ? 0.85 : 1,
+                border: task.unplanned ? `1px dashed ${task.color}`
+                    : isAuto ? '1px dashed rgba(255, 255, 255, 0.6)'
+                        : '1px solid rgba(255, 255, 255, 0.4)',
                 borderBottom: task.continues ? '3px double grey' : undefined,
                 overflow: 'hidden',
                 boxSizing: 'border-box',
@@ -232,6 +239,20 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                         +{formatDuration(minutesToDurationString(task.overEstimateMinutes))} over
                     </Typography>
                 ) : null}
+                {task.unplanned && (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 0.75, rowGap: 0.25,
+                        position: 'relative', zIndex: 3 }}
+                        onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}>
+                        <Typography variant="caption" sx={{ fontStyle: 'italic', opacity: 0.8 }}>maybe</Typography>
+                        {actions?.onJoin && task.taskId && (
+                            <Button size="small" variant="outlined" color="inherit" aria-label="join"
+                                onClick={() => actions.onJoin!(task.taskId!)}
+                                sx={{ minWidth: 0, py: 0, px: 0.75, fontSize: '0.7rem', lineHeight: 1.6, textTransform: 'none' }}>
+                                Join
+                            </Button>
+                        )}
+                    </Box>
+                )}
                 {actions && task.taskId && !task.isAppointment && (
                     <Box
                         data-testid="task-actions"

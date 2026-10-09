@@ -6,7 +6,8 @@
  * reload changes nothing.
  *
  * - Appointments come from the tasks themselves: new and moved ones show at
- *   once, where they are.
+ *   once, where they are. Unplanned ones (README: Unplanned appointments)
+ *   show too, but block nothing.
  * - The tracked task is a block from its start until now.
  * - A pinned task (dropped in the Week view) stays where it was put. Once its
  *   time has come what is left of it goes into its planned slices, or,
@@ -137,6 +138,7 @@ export function lightPlan(plan: PlanResponse, { tasks, dependencies, now, defaul
             is_appointment: task.is_appointment,
             hex_color: colorOf(task, base.hex_color ?? null),
             ...(base.order !== undefined ? { order: base.order } : {}),
+            ...(base.is_unplanned ? { is_unplanned: true } : {}),
         };
     };
 
@@ -148,12 +150,23 @@ export function lightPlan(plan: PlanResponse, { tasks, dependencies, now, defaul
 
     // ------------------------------------------------ anchored: from the tasks
     const anchored: PlanItem[] = [];
+    /** Reminders only (README: Unplanned appointments): shown, blocking nothing. */
+    const reminders: PlanItem[] = [];
     const occupied: Interval[] = [];
     const sliding: Task[] = [];
     /** Tasks not planned from their plan slices (shown from the task). */
     const fromTask = new Set<string>();
     for (const task of tasks) {
         if (task.is_done || task.children_ids?.length) continue;
+        if (task.is_unplanned && !task.active_tracking_start) {
+            fromTask.add(task.id); // its entries of an earlier plan do not count either
+            if (task.start_date) {
+                const start = new Date(task.start_date).getTime();
+                reminders.push(makeItem(task, [start, start + (minutes(task.duration) ?? defaultMinutes) * MINUTE],
+                    { is_fixed: task.is_fixed, is_unplanned: true }));
+            }
+            continue;
+        }
         if (task.active_tracking_start && !task.is_appointment) {
             // Being worked on: from its start until now; what is left of it
             // stays where it is planned (or, pinned, goes on from now).
@@ -334,7 +347,8 @@ export function lightPlan(plan: PlanResponse, { tasks, dependencies, now, defaul
     return {
         plan: {
             ...plan,
-            appointments: [...kept.filter(({ bucket }) => bucket === null).map(({ item }) => item), ...anchored].sort(byStart),
+            appointments: [...kept.filter(({ bucket }) => bucket === null).map(({ item }) => item), ...anchored, ...reminders]
+                .sort(byStart),
             buckets: plan.buckets.map(bucket => ({
                 ...bucket,
                 items: [

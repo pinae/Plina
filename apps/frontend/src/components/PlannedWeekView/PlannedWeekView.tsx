@@ -9,6 +9,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import api from '../../api.ts';
 import {
     useBucketTypes, useCompleteTask, useMarkers, useReplan, useSettings, useStartTracking, useStopTracking, useTasks,
+    useUpdateTask,
     queryKeys,
 } from '../../queries.tsx';
 import { useLightPlan } from '../../hooks/useLightPlan.ts';
@@ -138,6 +139,7 @@ export default function PlannedWeekView({ initialDate }: PlannedWeekViewProps) {
     const plan = { ...light, data: light.data?.plan };
     const notes = light.data?.notes ?? { overflow: [], dropped: [] };
     const replan = useReplan();
+    const updateTask = useUpdateTask();
     const tasks = useTasks();
     const placement = usePlacement();
     const startTracking = useStartTracking();
@@ -244,6 +246,12 @@ export default function PlannedWeekView({ initialDate }: PlannedWeekViewProps) {
         onTrackStop: (taskId: string) =>
             stopTracking.mutate(taskId, {
                 onError: error => surface(error, 'Could not stop tracking.'),
+            }),
+        // Decided to go (README: Unplanned appointments): it blocks its time.
+        onJoin: (taskId: string) =>
+            updateTask.mutate({ taskId, patch: { is_unplanned: false } }, {
+                onSuccess: task => setNotice(`Joined “${task.header}”: it blocks its time now.`),
+                onError: error => surface(error, 'Could not join.'),
             }),
         onComplete: (taskId: string) =>
             complete.mutate(taskId, {

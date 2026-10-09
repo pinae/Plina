@@ -193,6 +193,19 @@ Tasks without any dependency sit in a grid below the graph. On phones the
 graph is not shrunk below a readable size (pan to see the rest, or filter)
 and the mini map gives way.
 
+### Unplanned appointments
+
+Some events you only *might* join — "My PhD defense is Monday in two weeks,
+come if you like". Tick **Unplanned** on such an appointment (in the task
+form, under Appointment): it stays in the Week view as a reminder — a
+dashed card marked "maybe" — but is neither planned nor blocks time; work
+is planned right through it. The Tasks tab marks it too.
+
+Decide to go and click **Join** on its card (or untick Unplanned): from
+then on it is an appointment like any other — the Week view fits the work
+around it at once (planning light), and the next re-plan plans around it.
+Unticking it again takes it out of the next plan.
+
 ### Recurring tasks
 
 "Repeats" in the edit dialog takes a rule in plain language — "every tuesday
