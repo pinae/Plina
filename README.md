@@ -201,6 +201,9 @@ form, under Appointment): it stays in the Week view as a reminder — a
 dashed card marked "maybe" — but is neither planned nor blocks time; work
 is planned right through it. The Tasks tab marks it too.
 
+Events you answered "maybe" in Google Calendar come in unplanned by
+themselves (README: Calendar); answering "yes" there later plans them.
+
 Decide to go and click **Join** on its card (or untick Unplanned): from
 then on it is an appointment like any other — the Week view fits the work
 around it at once (planning light), and the next re-plan plans around it.
@@ -260,9 +263,12 @@ invitations in Google Calendar or the invitation email. The code is in
 
 * **Timed events** become appointments: top-level tasks in the calendar's
   color, marked with a calendar icon in the Tasks tab. Cancelled events and
-  those you declined (given your address in that calendar) are left out. An
-  imported appointment completes itself when it ends, unless it is being
-  tracked.
+  those you declined (given your address in that calendar) are left out;
+  those you answered **maybe** come in [unplanned](#unplanned-appointments)
+  (without an address: when the calendar is named after yours, as Google's
+  main calendar is). A later answer there carries over; Join in Plina is not
+  undone by the next read. An imported appointment completes itself when it
+  ends, unless it is being tracked.
 * **All-day events** become **markers** (⚑ in the lane under the Week view's
   day headers): something on certain days — a conference, a holiday. A click
   on a free lane makes one by hand: all day (midnight to midnight), from a

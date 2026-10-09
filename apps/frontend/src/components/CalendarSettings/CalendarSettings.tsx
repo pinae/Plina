@@ -46,7 +46,7 @@ function AddCalendarForm({ onDone }: { onDone: () => void }) {
                     + '“Secret address in iCal format”. Whoever has it can read the calendar: Plina keeps it secret.'}
                 onChange={event => setUrl(event.target.value)} />
             <TextField label="Your address in that calendar" value={email} type="email"
-                helperText="Events you declined are left out."
+                helperText="Events you declined are left out; those you answered “maybe” come in unplanned."
                 onChange={event => setEmail(event.target.value)} />
             <Box sx={{ display: 'flex', gap: 1 }}>
                 <Button type="submit" variant="contained" disabled={create.isPending}>Add and read</Button>

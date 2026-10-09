@@ -219,13 +219,15 @@ def place(subscription: CalendarSubscription, series: TaskSeries, event) -> Cale
         link.pending = [key for key in ("header", "description") if getattr(task, key) != getattr(event, key)]
         task.start_date, task.duration = event.start, event.end - event.start
         task.place = event.place or task.place
-        task.save(update_fields=["start_date", "duration", "place"])
+        task.is_unplanned = event.maybe
+        task.save(update_fields=["start_date", "duration", "place", "is_unplanned"])
     else:
         template = Task.objects.filter(series=series).order_by("-occurrence").first()
         parent_id = template.parent_id if template else None
         task = Task.objects.create(
             header=_words(template, "header", event), description=_words(template, "description", event),
-            place=event.place, is_appointment=True, start_date=event.start, duration=event.end - event.start,
+            place=event.place, is_appointment=True, is_unplanned=event.maybe,
+            start_date=event.start, duration=event.end - event.start,
             priority=template.priority if template else 5,
             color=template.color if template else from_hex(subscription.hex_color),
             auto_color=template.auto_color if template else None,
