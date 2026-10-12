@@ -122,7 +122,9 @@ instead of staying on top, so the week can use the whole screen height. The
 week view is exactly one screen high and ends the page. A swipe or the mouse
 wheel first scrolls the page until the week fills the screen; then the
 timeline scrolls. At the timeline's top, swiping or wheeling up brings the
-header back. Ctrl + wheel still zooms. On higher screens, and in the other
+header back. Ctrl + wheel still zooms, and on a touch screen two fingers
+zoom the timeline (spread to zoom in, pinch to zoom out down to the whole
+day) instead of the page. On higher screens, and in the other
 tabs, the header stays put as before.
 
 On narrow screens (under 900 px) warnings above the week take the full

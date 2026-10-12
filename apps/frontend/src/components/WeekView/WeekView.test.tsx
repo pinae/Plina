@@ -114,6 +114,47 @@ describe('WeekView', () => {
         expect(height()).toBe(fit);
     });
 
+    describe('pinch zoom on a touch screen (Chrome on Android sends only touches)', () => {
+        const height = () => Number(screen.getByTestId('week-grid').getAttribute('data-column-height'));
+        const fingers = (gap: number) => [{ identifier: 1, clientX: 100, clientY: 300 - gap / 2 }, { identifier: 2, clientX: 100, clientY: 300 + gap / 2 }];
+
+        it('spreading two fingers zooms in, pinching them zooms out to the whole day', () => {
+            render(<WeekView {...defaultProps} />);
+            const scroll = screen.getByTestId('week-scroll');
+            const fit = height();
+
+            fireEvent.touchStart(scroll, { touches: fingers(100) });
+            // The browser must not zoom the page or scroll meanwhile.
+            expect(fireEvent.touchMove(scroll, { touches: fingers(150) })).toBe(false);
+            fireEvent.touchMove(scroll, { touches: fingers(200) });
+            expect(height()).toBe(Math.round(fit * 2)); // twice the distance
+
+            fireEvent.touchMove(scroll, { touches: fingers(20) });
+            expect(height()).toBe(fit); // never below the whole day
+            fireEvent.touchEnd(scroll, { touches: [] });
+        });
+
+        it('one finger still scrolls natively', () => {
+            render(<WeekView {...defaultProps} />);
+            const scroll = screen.getByTestId('week-scroll');
+            const fit = height();
+            const one = (y: number) => [{ identifier: 1, clientX: 100, clientY: y }];
+
+            fireEvent.touchStart(scroll, { touches: one(300) });
+            expect(fireEvent.touchMove(scroll, { touches: one(200) })).toBe(true); // not prevented
+            fireEvent.touchEnd(scroll, { touches: [] });
+            expect(height()).toBe(fit);
+        });
+
+        it('keeps the browser from zooming the page on the timeline, panning stays', () => {
+            render(<WeekView {...defaultProps} />);
+            // jsdom drops touch-action from computed styles: read the CSS.
+            const rules = [...document.querySelectorAll('style')].map(style => style.textContent).join('');
+            const className = [...screen.getByTestId('week-scroll').classList].find(name => rules.includes(`.${name}{`));
+            expect(rules).toMatch(new RegExp(`\\.${className}\\{[^}]*touch-action:pan-x pan-y`));
+        });
+    });
+
     it('keeps the time under the cursor in place from the first zoom step on (regression)', () => {
         // Regression: the new scroll position was set in an animation frame
         // that could run before React rendered the taller grid, so the browser
