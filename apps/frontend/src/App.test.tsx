@@ -121,6 +121,8 @@ describe('the Week view on small screens (README: Week view on small screens)', 
         restore = fakeScreen(PHONE);
         const week = await openWeek();
         expect(screen.getByTestId('app-shell')).toHaveAttribute('data-scroll', 'page');
+        // Never wider than the screen: a phone would zoom out to show it all.
+        expect(screen.getByTestId('app-shell')).toHaveStyle({ overflowX: 'clip' });
         expect(week).toHaveAttribute('data-height', 'screen');
         // Nothing below it: scrolled to the end, the week fills the screen.
         expect(screen.getByTestId('tab-content')).toHaveStyle({ paddingBottom: '0px' });

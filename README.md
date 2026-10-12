@@ -125,6 +125,11 @@ timeline scrolls. At the timeline's top, swiping or wheeling up brings the
 header back. Ctrl + wheel still zooms. On higher screens, and in the other
 tabs, the header stays put as before.
 
+On narrow screens (under 900 px) warnings above the week take the full
+width, with their buttons (Re-plan, Edit deadline …) under the text, and the
+toolbar (Merge tasks, Re-plan, Jump to first free day) goes below them, so a
+long warning never pushes buttons off the screen.
+
 ### Working with tasks
 
 The app opens on the **Tasks** tab: every open task as one tree, the active

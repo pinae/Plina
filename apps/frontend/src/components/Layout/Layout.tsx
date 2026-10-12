@@ -14,7 +14,9 @@ export default function Layout({ children, pageScroll = false }: { children: Rea
                 Every pane uses the full screen width and the whole height. */}
             <Box data-testid="app-shell" data-scroll={pageScroll ? 'page' : 'pinned'}
                 sx={pageScroll
-                    ? { display: 'flex', flexDirection: 'column', minHeight: '100dvh' }
+                    // Never wider than the screen: a phone would zoom out to
+                    // show it all, and the screen would no longer count as short.
+                    ? { display: 'flex', flexDirection: 'column', minHeight: '100dvh', overflowX: 'clip' }
                     : { flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100vh', minHeight: 0, overflow: 'hidden' }}>
                 <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%', px: 0 }}>
                     {children}

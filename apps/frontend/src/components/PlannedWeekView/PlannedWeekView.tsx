@@ -13,6 +13,7 @@ import {
     queryKeys,
 } from '../../queries.tsx';
 import { useLightPlan } from '../../hooks/useLightPlan.ts';
+import { useIsNarrow } from '../../hooks/useResponsive.ts';
 import { needsReplan, type LightPlanNote } from '../../utils/lightPlan.ts';
 import type { Task } from '../../types.ts';
 import { useDependencyDrawing } from '../../hooks/useDependencyDrawing.ts';
@@ -137,6 +138,7 @@ const atMidnight = (iso: string) => {
 export default function PlannedWeekView({ initialDate }: PlannedWeekViewProps) {
     const light = useLightPlan();
     const plan = { ...light, data: light.data?.plan };
+    const narrow = useIsNarrow();
     const notes = light.data?.notes ?? { overflow: [], dropped: [] };
     const replan = useReplan();
     const updateTask = useUpdateTask();
@@ -299,21 +301,28 @@ export default function PlannedWeekView({ initialDate }: PlannedWeekViewProps) {
     const editedSpecial = bucketTypes.data?.find(type => type.id === specialId);
     const editedMarker = markers.data?.find(marker => marker.id === markerDialog?.id);
 
+    const replanNote = plan.data?.accepted_plan_id ? (
+        <Button color="inherit" size="small" variant={narrow ? 'outlined' : 'text'} sx={{ whiteSpace: 'nowrap' }}
+            onClick={runReplan} disabled={replan.isPending}>
+            Re-plan
+        </Button>
+    ) : null;
+
     return (
         <>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 1 }}>
-                <Box sx={{ flexGrow: 1 }}>
+            {/* The buttons wrap instead of pushing the page sideways; on narrow
+                screens the warnings take the full width and the buttons go
+                below them (README: Week view on small screens). */}
+            <Box data-testid="week-toolbar" sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2, rowGap: 1, alignItems: 'flex-start', mb: 1 }}>
+                <Box data-testid="week-warnings" sx={{ flex: narrow ? '1 1 100%' : '1 1 280px', minWidth: 0, '&:empty': { display: 'none' } }}>
                     <FeasibilityBanner warnings={plan.data?.warnings ?? []} />
                     {needsReplan(notes) && (
                         <Alert severity="warning" data-testid="light-plan-notes" sx={{ mt: 0.5 }}
-                            action={plan.data?.accepted_plan_id ? (
-                                <Button color="inherit" size="small" onClick={runReplan} disabled={replan.isPending}>
-                                    Re-plan
-                                </Button>
-                            ) : undefined}>
+                            action={narrow ? undefined : replanNote ?? undefined}>
                             {notes.overflow.length > 0 && <>No longer fits its day: {listed(notes.overflow)}. </>}
                             {notes.dropped.length > 0 && <>Its planned days are over: {listed(notes.dropped)}. </>}
                             {plan.data?.accepted_plan_id ? 'Re-plan to find a place for it.' : 'Plan your week to find a place for it.'}
+                            {narrow && replanNote && <Box sx={{ mt: 1 }}>{replanNote}</Box>}
                         </Alert>
                     )}
                     {mergeDrawing.active && (

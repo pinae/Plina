@@ -46,7 +46,7 @@ export function FeasibilityBanner({ warnings }: { warnings: PlanWarning[] }) {
                     severity="warning" sx={{ mb: 1 }}
                 >
                     <AlertTitle>{describe(warning)}</AlertTitle>
-                    <Stack direction="row" spacing={1}>
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
                         <Button size="small" color="inherit" variant="outlined"
                             onClick={() => setBucketFormOpen(true)}>
                             Add time buckets
