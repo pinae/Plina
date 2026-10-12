@@ -226,13 +226,45 @@ export const WeekView: React.FC<WeekViewProps> = ({
             if (event.type === 'gesturestart') gestureScale = 1;
             else if (scale > 0) { zoomBy(scale / gestureScale, clientY); gestureScale = scale; }
         };
+        // A touch pinch (Chrome on Android sends neither of the above): the
+        // zoom follows the distance between the two fingers, anchored between
+        // them. One finger scrolls natively.
+        let pinch: { distance: number; zoom: number } | null = null;
+        const spread = (touches: TouchList) => {
+            const [a, b] = [touches[0], touches[1]];
+            return { distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), middleY: (a.clientY + b.clientY) / 2 };
+        };
+        const onTouchStart = (event: TouchEvent) => {
+            if (event.touches.length !== 2) return;
+            const { distance } = spread(event.touches);
+            if (distance > 0) pinch = { distance, zoom: zoomRef.current };
+        };
+        const onTouchMove = (event: TouchEvent) => {
+            if (!pinch || event.touches.length !== 2) return;
+            event.preventDefault(); // neither scroll nor page zoom meanwhile
+            adjusted.current = true;
+            const { distance, middleY } = spread(event.touches);
+            const target = Math.min(MAX_ZOOM, Math.max(1, pinch.zoom * (distance / pinch.distance)));
+            zoomBy(target / zoomRef.current, middleY);
+        };
+        const onTouchEnd = (event: TouchEvent) => {
+            if (event.touches.length < 2) pinch = null;
+        };
         container.addEventListener('wheel', onWheel, { passive: false });
         container.addEventListener('gesturestart', onGesture);
         container.addEventListener('gesturechange', onGesture);
+        container.addEventListener('touchstart', onTouchStart, { passive: true });
+        container.addEventListener('touchmove', onTouchMove, { passive: false });
+        container.addEventListener('touchend', onTouchEnd);
+        container.addEventListener('touchcancel', onTouchEnd);
         return () => {
             container.removeEventListener('wheel', onWheel);
             container.removeEventListener('gesturestart', onGesture);
             container.removeEventListener('gesturechange', onGesture);
+            container.removeEventListener('touchstart', onTouchStart);
+            container.removeEventListener('touchmove', onTouchMove);
+            container.removeEventListener('touchend', onTouchEnd);
+            container.removeEventListener('touchcancel', onTouchEnd);
         };
     }, []);
 
@@ -323,9 +355,11 @@ export const WeekView: React.FC<WeekViewProps> = ({
                 <Button onClick={handleNextWeek} variant="contained" sx={{ minWidth: '40px' }}>&gt;</Button>
             </Box>
 
-            {/* Week (scrollable; wheel zooms) */}
+            {/* Week (scrollable; Ctrl + wheel and a pinch zoom) */}
             <Box ref={scrollRef} data-testid="week-scroll" data-scrolls={pageScrolls ? 'page' : 'timeline'} sx={{
                 flex: 1, minHeight: 0, overflowX: 'auto', overflowY: pageScrolls ? 'hidden' : 'auto',
+                // A pinch zooms the timeline (above), not the page.
+                touchAction: 'pan-x pan-y',
                 // The scroll bar coming and going must not resize the days.
                 ...(short ? { scrollbarGutter: 'stable' } : {}),
             }}>
