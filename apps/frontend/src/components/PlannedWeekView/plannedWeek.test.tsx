@@ -21,6 +21,7 @@ import { WeekViewTask } from '../WeekViewTask/WeekViewTask.tsx';
 import PlannedWeekView from './PlannedWeekView.tsx';
 import type { PlanResponse, Task } from '../../types.ts';
 import { makeTask } from '../../testing/treeFixtures.ts';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 
 const planPayload: PlanResponse = {
     accepted_plan_id: 'plan-1',
@@ -530,11 +531,51 @@ describe('planning light (README: Planning light)', () => {
 
         const notes = await screen.findByTestId('light-plan-notes');
         expect(notes).toHaveTextContent('No longer fits its day: OtherAuto (1h)');
+        // Wraps rather than pushing the page sideways.
+        expect(screen.getByTestId('week-toolbar')).toHaveStyle({ flexWrap: 'wrap' });
         expect(cardOf('OtherAuto')).toHaveStyle({ top: '270px' }); // 9:00, until the bucket ends
 
         fireEvent.click(within(notes).getByRole('button', { name: 'Re-plan' }));
         await waitFor(() => expect(replans).toEqual(['recalculate']));
         expect(await screen.findByText('Re-planned.')).toBeInTheDocument();
+    });
+});
+
+describe('warnings on a small screen (README: Week view on small screens)', () => {
+    beforeThePlan();
+    let restore: () => void = () => { };
+    afterEach(() => restore());
+
+    it('uses the full width, the Re-plan button under the text, the toolbar below', async () => {
+        restore = fakeScreen(PHONE);
+        server.use(dragPlan(),
+            http.get(`${API}/tasks/`, () => HttpResponse.json([
+                makeTask('t-move', { header: 'MoveMe', is_appointment: true, start_date: '2026-07-08T08:00:00' }),
+                makeTask('t-other', { header: 'OtherAuto', duration: '10:00:00' }),
+            ])),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const notes = await screen.findByTestId('light-plan-notes');
+        expect(screen.getByTestId('week-warnings')).toHaveStyle({ flexBasis: '100%' });
+        expect(notes.querySelector('.MuiAlert-action')).toBeNull();
+        const replan = within(notes).getByRole('button', { name: 'Re-plan' });
+        expect(notes.querySelector('.MuiAlert-message')).toContainElement(replan);
+    });
+
+    it('keeps the toolbar beside the warnings on a wide screen', async () => {
+        server.use(dragPlan(),
+            http.get(`${API}/tasks/`, () => HttpResponse.json([
+                makeTask('t-move', { header: 'MoveMe', is_appointment: true, start_date: '2026-07-08T08:00:00' }),
+                makeTask('t-other', { header: 'OtherAuto', duration: '10:00:00' }),
+            ])),
+        );
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+
+        const notes = await screen.findByTestId('light-plan-notes');
+        expect(screen.getByTestId('week-warnings')).not.toHaveStyle({ flexBasis: '100%' });
+        expect(notes.querySelector('.MuiAlert-action')).toContainElement(
+            within(notes).getByRole('button', { name: 'Re-plan' }));
     });
 });
 

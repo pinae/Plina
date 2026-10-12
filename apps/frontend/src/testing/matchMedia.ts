@@ -6,10 +6,14 @@ export interface FakeScreen {
     width?: number;
     /** Touch screen: `(pointer: coarse)` matches. */
     touch?: boolean;
+    /** Viewport height in px (default 1000). */
+    height?: number;
 }
 
-function matches(query: string, { width = 1280, touch = false }: FakeScreen): boolean {
+function matches(query: string, { width = 1280, touch = false, height = 1000 }: FakeScreen): boolean {
     return query.split(',').some(part => {
+        const maxHeight = part.match(/max-height:\s*([\d.]+)px/);
+        if (maxHeight) return height <= Number(maxHeight[1]);
         const max = part.match(/max-width:\s*([\d.]+)px/);
         if (max) return width <= Number(max[1]);
         const min = part.match(/min-width:\s*([\d.]+)px/);
@@ -31,4 +35,4 @@ export function fakeScreen(screen: FakeScreen): () => void {
     return () => { window.matchMedia = previous; };
 }
 
-export const PHONE: FakeScreen = { width: 390, touch: true };
+export const PHONE: FakeScreen = { width: 390, touch: true, height: 760 };

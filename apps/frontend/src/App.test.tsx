@@ -14,6 +14,7 @@ import { API, makeTask, makerTag, settingsFor, treeTasks } from './testing/treeF
 import type { Task, TaskWrite } from './types.ts';
 import { calendarHandlers, noBucketTypes } from './testing/calendarHandlers.ts';
 import { savedFilterHandlers } from './testing/savedFilterHandlers.ts';
+import { fakeScreen, PHONE } from './testing/matchMedia.ts';
 
 let tasks: Task[] = [];
 let posted: TaskWrite[] = [];
@@ -103,5 +104,45 @@ describe('Tabs (T-2)', () => {
         fireEvent.click(await screen.findByRole('button', { name: /show all tasks/i }));
         expect(screen.getByRole('tab', { name: 'Tasks' })).toHaveAttribute('aria-selected', 'true');
         expect(await screen.findByRole('tree', { name: /outline/i })).toBeInTheDocument();
+    });
+});
+
+describe('the Week view on small screens (README: Week view on small screens)', () => {
+    let restore: () => void = () => { };
+    afterEach(() => restore());
+
+    const openWeek = async () => {
+        renderApp();
+        fireEvent.click(screen.getByRole('tab', { name: 'Week Overview' }));
+        return screen.findByTestId('week-view');
+    };
+
+    it('on a phone the header scrolls away and the week takes the whole screen height', async () => {
+        restore = fakeScreen(PHONE);
+        const week = await openWeek();
+        expect(screen.getByTestId('app-shell')).toHaveAttribute('data-scroll', 'page');
+        // Never wider than the screen: a phone would zoom out to show it all.
+        expect(screen.getByTestId('app-shell')).toHaveStyle({ overflowX: 'clip' });
+        expect(week).toHaveAttribute('data-height', 'screen');
+        // Nothing below it: scrolled to the end, the week fills the screen.
+        expect(screen.getByTestId('tab-content')).toHaveStyle({ paddingBottom: '0px' });
+        // Other tabs keep their header (a canvas filling the rest of the
+        // screen needs that height) and room below for the ⊕ button.
+        fireEvent.click(screen.getByRole('tab', { name: 'Tags' }));
+        expect(screen.getByTestId('app-shell')).toHaveAttribute('data-scroll', 'pinned');
+        expect(screen.getByTestId('tab-content')).toHaveStyle({ paddingBottom: '88px' });
+    });
+
+    it('also on a low laptop screen', async () => {
+        restore = fakeScreen({ width: 1366, height: 700 });
+        await openWeek();
+        expect(screen.getByTestId('app-shell')).toHaveAttribute('data-scroll', 'page');
+    });
+
+    it('on a high screen the header stays and the week fills the rest', async () => {
+        restore = fakeScreen({ width: 1600, height: 1000 });
+        const week = await openWeek();
+        expect(screen.getByTestId('app-shell')).toHaveAttribute('data-scroll', 'pinned');
+        expect(week).toHaveAttribute('data-height', 'rest');
     });
 });

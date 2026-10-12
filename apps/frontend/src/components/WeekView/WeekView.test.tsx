@@ -2,6 +2,8 @@ import { act, render, screen, fireEvent, cleanup, within } from '@testing-librar
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { WeekView } from './WeekView.tsx';
 import type { ViewTask } from '../WeekViewTask/WeekViewTask.tsx';
+import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
+import { TIME_SCALE_WIDTH } from '../TimeScale/TimeScale.tsx';
 
 // Mock DayColumn to simplify WeekView tests and avoid deep rendering issues
 vi.mock('../DayColumn/DayColumn', () => ({
@@ -143,6 +145,102 @@ describe('WeekView', () => {
             // Column heights are rounded to whole pixels: allow 1 px (2 min).
             expect(Math.abs(timeUnderCursor() - before), `after step ${step}`).toBeLessThan(2);
         }
+    });
+
+    describe('on small screens (README: Week view on small screens)', () => {
+        let restore: () => void;
+        beforeEach(() => { restore = fakeScreen(PHONE); });
+        afterEach(() => restore());
+
+        /** Puts the week view's top edge at `top` px and lets the page scroll. */
+        const pageScrolledTo = (top: number) => {
+            const week = screen.getByTestId('week-view');
+            week.getBoundingClientRect = () => ({ top, bottom: top + 760, left: 0, right: 390, height: 760, width: 390, x: 0, y: top, toJSON: () => ({}) });
+            act(() => { window.dispatchEvent(new Event('scroll')); });
+        };
+
+        it('lets the page scroll the header away before the timeline scrolls', () => {
+            render(<WeekView {...defaultProps} />);
+            const timeline = screen.getByTestId('week-scroll');
+
+            // The header above is still in view: a swipe moves the page.
+            pageScrolledTo(250);
+            expect(timeline).toHaveAttribute('data-scrolls', 'page');
+            expect(timeline).toHaveStyle({ overflowY: 'hidden' });
+
+            // The week fills the screen: now the timeline scrolls.
+            pageScrolledTo(0);
+            expect(timeline).toHaveAttribute('data-scrolls', 'timeline');
+            expect(timeline).toHaveStyle({ overflowY: 'auto' });
+
+            // Scrolled back up (from the timeline's top): the page again.
+            pageScrolledTo(120);
+            expect(timeline).toHaveAttribute('data-scrolls', 'page');
+        });
+
+        it('fills the whole screen', () => {
+            render(<WeekView {...defaultProps} />);
+            expect(screen.getByTestId('week-view')).toHaveAttribute('data-height', 'screen');
+        });
+    });
+
+    it('scrolls the timeline right away on high screens', () => {
+        render(<WeekView {...defaultProps} />);
+        expect(screen.getByTestId('week-scroll')).toHaveAttribute('data-scrolls', 'timeline');
+        expect(screen.getByTestId('week-view')).toHaveAttribute('data-height', 'rest');
+    });
+
+    describe('opening on today when the week is wider than the screen', () => {
+        // A phone: the week (1400 px) in a 390 px wide scroll area.
+        const lefts = new WeakMap<Element, number>();
+        const isWeek = (el: Element) => el.getAttribute('data-testid') === 'week-scroll';
+        let screenWidth = 390;
+        const dayWidth = (1400 - TIME_SCALE_WIDTH) / 7;
+        beforeEach(() => {
+            screenWidth = 390;
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(new Date('2024-02-14T10:00:00')); // Wednesday
+            Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+                configurable: true, get() { return isWeek(this) ? 1400 : 0; },
+            });
+            Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+                configurable: true, get() { return isWeek(this) ? screenWidth : 0; },
+            });
+            Object.defineProperty(HTMLElement.prototype, 'scrollLeft', {
+                configurable: true,
+                get() { return lefts.get(this) ?? 0; },
+                set(value: number) { lefts.set(this, Math.max(0, Math.min(value, 1400 - screenWidth))); },
+            });
+        });
+        afterEach(() => {
+            vi.useRealTimers();
+            for (const key of ['scrollWidth', 'clientWidth', 'scrollLeft']) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[key];
+        });
+        const scrollLeft = () => screen.getByTestId('week-scroll').scrollLeft;
+
+        it('scrolls sideways so today is the first day in view', () => {
+            render(<WeekView {...defaultProps} />);
+            expect(scrollLeft()).toBe(2 * dayWidth); // Monday and Tuesday to the left
+        });
+
+        it('starts other weeks on Monday, and comes back to today', () => {
+            render(<WeekView {...defaultProps} />);
+            fireEvent.click(screen.getByText('>'));
+            expect(scrollLeft()).toBe(0);
+            fireEvent.click(screen.getByText('<'));
+            expect(scrollLeft()).toBe(2 * dayWidth);
+        });
+
+        it('opened on another week (jump to a free day): on that day', () => {
+            render(<WeekView {...defaultProps} initialDate={new Date('2024-02-23T12:00:00')} />);
+            expect(scrollLeft()).toBe(4 * dayWidth); // Friday
+        });
+
+        it('leaves a week that fits the screen as it is', () => {
+            screenWidth = 1400;
+            render(<WeekView {...defaultProps} />);
+            expect(scrollLeft()).toBe(0);
+        });
     });
 
     describe('opening on the usual work hours (settings)', () => {
