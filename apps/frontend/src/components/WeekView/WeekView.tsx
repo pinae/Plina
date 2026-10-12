@@ -254,6 +254,21 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
     const days = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
 
+    // A week wider than the screen (phones) opens on today, the days before
+    // it scrolled off to the left — or on the day it was opened on (a jump to
+    // a free day), else on Monday. Only when the week changes: dragging
+    // sideways stays the user's.
+    const openedOn = useRef(initialDate);
+    const weekKey = weekStart.getTime();
+    useLayoutEffect(() => {
+        const scroll = scrollRef.current;
+        if (!scroll || scroll.scrollWidth <= scroll.clientWidth) return;
+        const week = Array.from({ length: 7 }).map((_, i) => addDays(new Date(weekKey), i));
+        const today = week.findIndex(day => sameDay(day, new Date()));
+        const index = today >= 0 ? today : week.findIndex(day => sameDay(day, openedOn.current));
+        scroll.scrollLeft = Math.max(0, index) * ((scroll.scrollWidth - TIME_SCALE_WIDTH) / 7);
+    }, [weekKey]);
+
     // Map a pointer's horizontal position to the day column under it, so a task
     // or bucket can be dragged across days (the time comes from the vertical
     // drag; this only decides which day it lands on).  Called from drag

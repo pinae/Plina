@@ -130,6 +130,10 @@ width, with their buttons (Re-plan, Edit deadline …) under the text, and the
 toolbar (Merge tasks, Re-plan, Jump to first free day) goes below them, so a
 long warning never pushes buttons off the screen.
 
+Where the week is wider than the screen, it opens scrolled sideways so that
+today is the first day in view (a jump to the first free day opens on that
+day, other weeks on Monday); dragging sideways still reaches the other days.
+
 ### Working with tasks
 
 The app opens on the **Tasks** tab: every open task as one tree, the active
