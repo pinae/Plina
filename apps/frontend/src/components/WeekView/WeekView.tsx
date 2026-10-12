@@ -8,6 +8,7 @@ import type { BucketZone, DayZone } from '../../utils/planToWeek.ts';
 import { zonesForDay } from '../../utils/planToWeek.ts';
 import { minutesToPixels } from '../../utils/weekDrag.ts';
 import { applyDragOverlay } from '../../utils/dragOverlay.ts';
+import { useIsShort } from '../../hooks/useResponsive.ts';
 
 const sameDay = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -101,7 +102,37 @@ export const WeekView: React.FC<WeekViewProps> = ({
     onTaskDragChange, activeDrag, viewRange, marks = [], onMarkClick, onMarkCreate,
 }) => {
     const [currentDate, setCurrentDate] = useState(initialDate);
+    const short = useIsShort();
+    const rootRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    // Short screens: until the week view reaches the top of the screen, a
+    // swipe or the wheel scrolls the page (the header goes away); then the
+    // timeline takes over, and at its top hands back to the page.
+    const [atTop, setAtTop] = useState(false);
+    const pageScrolls = short && !atTop;
+    const pageScrollsRef = useRef(pageScrolls);
+    useLayoutEffect(() => {
+        pageScrollsRef.current = pageScrolls;
+        // Chrome ignores the wheel on a scroller whose overflow-y just
+        // switched from hidden until its scroll offset changes: nudge it.
+        const scroll = scrollRef.current;
+        if (pageScrolls || !short || !scroll) return;
+        const top = scroll.scrollTop;
+        scroll.scrollTop = top > 0 ? top - 1 : top + 1;
+        scroll.scrollTop = top;
+    }, [pageScrolls, short]);
+    useEffect(() => {
+        if (!short) return;
+        const update = () => setAtTop((rootRef.current?.getBoundingClientRect().top ?? 0) <= 1);
+        const frame = requestAnimationFrame(update);
+        window.addEventListener('scroll', update, { passive: true });
+        window.addEventListener('resize', update);
+        return () => {
+            cancelAnimationFrame(frame);
+            window.removeEventListener('scroll', update);
+            window.removeEventListener('resize', update);
+        };
+    }, [short]);
     // The height at which a full day fits the viewport with no scrolling.
     const [fitHeight, setFitHeight] = useState(FALLBACK_HEIGHT);
     // 1 = fit the whole day; > 1 = zoomed in (day taller than the viewport).
@@ -176,6 +207,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
             setZoom(next);
         };
         const onWheel = (event: WheelEvent) => {
+            if (!event.ctrlKey && pageScrollsRef.current) return; // scrolls the page
             adjusted.current = true; // the view is the user's from now on
             if (!event.ctrlKey) return; // native scroll (Shift: sideways)
             event.preventDefault();
@@ -258,7 +290,12 @@ export const WeekView: React.FC<WeekViewProps> = ({
     const allSegments = applyDragOverlay(tasks, activeDrag ?? null).flatMap(splitTaskAcrossDays);
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, width: '100%', overflow: 'hidden' }}>
+        // Short screens: exactly one screen high, below the header that scrolls
+        // away (README: Week view on small screens); else the rest of it.
+        <Box ref={rootRef} data-testid="week-view" data-height={short ? 'screen' : 'rest'} sx={{
+            display: 'flex', flexDirection: 'column', minHeight: 0, width: '100%', overflow: 'hidden',
+            ...(short ? { flex: 'none', height: '100vh', '@supports (height: 100dvh)': { height: '100dvh' } } : { flex: 1 }),
+        }}>
             {/* Navigation Header */}
             <Box sx={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -272,7 +309,11 @@ export const WeekView: React.FC<WeekViewProps> = ({
             </Box>
 
             {/* Week (scrollable; wheel zooms) */}
-            <Box ref={scrollRef} data-testid="week-scroll" sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <Box ref={scrollRef} data-testid="week-scroll" data-scrolls={pageScrolls ? 'page' : 'timeline'} sx={{
+                flex: 1, minHeight: 0, overflowX: 'auto', overflowY: pageScrolls ? 'hidden' : 'auto',
+                // The scroll bar coming and going must not resize the days.
+                ...(short ? { scrollbarGutter: 'stable' } : {}),
+            }}>
                 {/* Days header row: sticks to the top and scrolls sideways
                     with the grid, so the headers stay above their columns. */}
                 <Box ref={headerRef} sx={{

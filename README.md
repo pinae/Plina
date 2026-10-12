@@ -114,6 +114,17 @@ the accepted plan was made (its preset and focus, `POST
 /api/plan/recalculate/`); **Plan my week** offers fresh alternatives to
 choose from. Neither runs by itself.
 
+### Week view on small screens
+
+On a short screen (a phone, or a window lower than 800 px) the header of the
+Week tab — tracker, tabs, warnings, toolbar — scrolls away with the page
+instead of staying on top, so the week can use the whole screen height. The
+week view is exactly one screen high and ends the page. A swipe or the mouse
+wheel first scrolls the page until the week fills the screen; then the
+timeline scrolls. At the timeline's top, swiping or wheeling up brings the
+header back. Ctrl + wheel still zooms. On higher screens, and in the other
+tabs, the header stays put as before.
+
 ### Working with tasks
 
 The app opens on the **Tasks** tab: every open task as one tree, the active

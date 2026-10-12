@@ -12,7 +12,7 @@ import { PlanChooserDialog } from './components/PlanChooserDialog/PlanChooserDia
 import { PlanMyWeekButton } from './components/PlanMyWeekButton/PlanMyWeekButton.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary.tsx';
 import { AppHeader } from './components/AppHeader/AppHeader.tsx';
-import { useIsMobile } from './hooks/useResponsive.ts';
+import { useIsMobile, useIsShort } from './hooks/useResponsive.ts';
 import { useTimeZoneSync } from './hooks/useTimeZoneSync.ts';
 import { useCalendarSync } from './queries.tsx';
 
@@ -37,6 +37,9 @@ function App() {
   const [tab, setTab] = useState<TabKey>('tasks');
   const [chooserOpen, setChooserOpen] = useState(false);
   const compact = useIsMobile();
+  // Short screens: the header scrolls away above the Week, so all of the
+  // screen can show the days (README: Week view on small screens).
+  const pageScroll = useIsShort() && tab === 'week';
   // Recurring buckets ("every day at 14:00") follow the device's time zone.
   useTimeZoneSync();
   // The calendars Plina reads (README: Calendar), while the app is open.
@@ -51,7 +54,7 @@ function App() {
 
 
   return (
-    <Layout>
+    <Layout pageScroll={pageScroll}>
       {/* Engage bar (UI-5): active project, tracker, quick add. */}
       <AppHeader
         onShowAllProjects={() => {
@@ -81,9 +84,12 @@ function App() {
         onAccepted={() => setTab('week')}
       />
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', p: FULL_BLEED.includes(tab) ? 0 : compact ? 1 : 2,
-        // Phones: room to scroll the last rows clear of the ⊕ button.
-        pb: compact ? 11 : undefined }}>
+      {/* pageScroll: part of the page, which scrolls (Layout). */}
+      <Box data-testid="tab-content" sx={{ flex: pageScroll ? '1 0 auto' : 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+        overflow: pageScroll ? 'visible' : 'auto', p: FULL_BLEED.includes(tab) ? 0 : compact ? 1 : 2,
+        // Phones: room to scroll the last rows clear of the ⊕ button; the
+        // Week ends the page, so it can scroll exactly to fill the screen.
+        pb: compact && !pageScroll ? 11 : undefined }}>
         <ErrorBoundary key={tab}>
           {tab === 'tasks' && <OutlineView />}
           {tab === 'week' && (
