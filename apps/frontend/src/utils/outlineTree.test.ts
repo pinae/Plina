@@ -23,6 +23,25 @@ describe('outlineItems', () => {
     const opts = (over: Partial<Parameters<typeof outlineItems>[1]> = {}) =>
         ({ activeId: null, collapsed: new Set<string>(), showCompleted: false, ...over });
 
+    it('gives an unchanged row the same object as before (memoized rows skip it, README: Performance)', () => {
+        const list = tasks();
+        const before = outlineItems(list, opts());
+        // A reload: a new subtask of Blog; the other tasks are the same objects.
+        const reloaded = list.map(t => (t.id === 'blog' ? { ...t, children_ids: ['post'] } : t));
+        reloaded.push(makeTask('post', { header: 'Post', parent_id: 'blog', ancestor_ids: ['blog'] }));
+
+        inboxItems(list); // the Tasks tab also counts the inbox each render
+        const after = outlineItems(reloaded, opts());
+
+        const same = (key: string) => after.find(i => i.key === key) === before.find(i => i.key === key);
+        // Unestimated ones (milk, prints) are in the inbox too: still the same rows.
+        expect(['t250', 'hw', 'cad', 'prints', 'fw', 'rest:t250', 'milk'].every(same)).toBe(true);
+        expect(same('blog')).toBe(false); // it has a child now
+        // A changed view of the same task (collapsed) is a new row object too.
+        const collapsed = outlineItems(reloaded, opts({ collapsed: new Set(['t250']) }));
+        expect(collapsed.find(i => i.key === 't250')).not.toBe(after.find(i => i.key === 't250'));
+    });
+
     it('lists all open projects as a tree with Rest rows after the children', () => {
         expect(labels(outlineItems(tasks(), opts()))).toEqual([
             'T250', '-Hardware Design', '--CAD', '--test prints', '-Firmware', '-Rest of T250', 'Blog', 'Buy milk',

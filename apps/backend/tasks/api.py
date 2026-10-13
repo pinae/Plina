@@ -14,8 +14,10 @@ from .serializers import (MarkerSerializer, SavedFilterSerializer, TaskSerialize
 
 
 class TaskViewSet(viewsets.ModelViewSet):
+    # Everything a task's serialization reads, loaded for the whole list at
+    # once (README: Performance).
     queryset = Task.objects.select_related("series__calendar_subscription", "deadline_marker") \
-        .prefetch_related("calendar_links__subscription")
+        .prefetch_related("calendar_links__subscription", "tags")
     serializer_class = TaskSerializer
 
     def list(self, request, *args, **kwargs):

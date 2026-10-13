@@ -114,7 +114,7 @@ type Draft = { parentId: string | null; depth: number; afterKey: string };
  *  life, so a memoized row renders again only when its own props change. */
 interface RowActions {
     /** A click: select the row (and return the keys to the tree). */
-    pick: (key: string, index: number) => void;
+    pick: (key: string) => void;
     open: (item: OutlineItem) => void;
     toggle: (taskId: string) => void;
     toggleDone: (task: Task) => void;
@@ -581,7 +581,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     const handlers = useRef<RowActions | null>(null);
     useLayoutEffect(() => {
         handlers.current = {
-            pick: (key, index) => { setSelection({ key, index }); refocus(); },
+            pick: key => { setSelection({ key, index: items.findIndex(i => i.key === key) }); refocus(); },
             open: item => {
                 if (drawing.active) return; // drawing: a click opens nothing
                 if (item.kind === 'task') setDialogTaskId(item.task.id); else setSplitTask(item.task);
@@ -602,7 +602,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         };
     });
     const actions = useMemo<RowActions>(() => ({
-        pick: (key, index) => handlers.current?.pick(key, index),
+        pick: key => handlers.current?.pick(key),
         open: item => handlers.current?.open(item),
         toggle: taskId => handlers.current?.toggle(taskId),
         toggleDone: task => handlers.current?.toggleDone(task),
@@ -667,7 +667,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         if (draft?.afterKey === key) return renderDraft();
         return (
             <AddTaskRow key={key} depth={1} label={`add task to ${root.task.header}`}
-                onClick={() => actions.startDraft({ parentId: root.task.id, depth: 1, afterKey: key })} />
+                parentId={root.task.id} afterKey={key} actions={actions} />
         );
     };
 
@@ -743,14 +743,16 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                     onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={onDragOver}
                     onDragEnd={onDragEnd} onDragCancel={onDragCancel}>
                 <SortableContext items={sortableKeys} strategy={verticalListSortingStrategy}>
-                {items.map((item, index) => draggedSubtree.has(item.key) ? null : [
+                {/* One flat list of uniquely keyed elements: inserting a task
+                    moves the rows after it (and the open "+ Add task" row)
+                    instead of re-creating them (README: Performance). */}
+                {items.flatMap((item, index) => draggedSubtree.has(item.key) ? [] : [
                     <SortableRow
                         key={item.key}
                         sortable={sortable.has(item.key)}
                         dragDepth={drag?.activeKey === item.key ? projection?.depth : undefined}
                         handleVisible={rowButtons}
                         item={item}
-                        index={index}
                         selected={index === selectedIndex}
                         sortMode={sortMode}
                         defaultDuration={defaultDuration}
@@ -784,12 +786,12 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                     // Kept while dragging: removing rows above the dragged one
                     // would shift it away from the pointer.
                     addRowAfter(index),
-                ])}
+                ].filter(element => element !== null))}
                 </SortableContext>
                 </DndContext>
                 {!sortMode && !filtering && (draft?.afterKey === END_OF_TREE ? renderDraft() : (
                     <AddTaskRow key="add-top" depth={0} label="add task at the top level"
-                        onClick={() => actions.startDraft({ parentId: null, depth: 0, afterKey: END_OF_TREE })} />
+                        parentId={null} afterKey={END_OF_TREE} actions={actions} />
                 ))}
             </Box>
 
@@ -885,30 +887,47 @@ function DragHandle({ label, attach, handleProps, dragging }: {
 
 /** A row taking part in drag and drop: dragged by its ⠿ handle only. */
 /** Memoized, like the row: it renders again only when its props change. */
-const SortableRow = memo(function SortableRow({ sortable, dragDepth, handleVisible, ...props }: Omit<OutlineItemRowProps, 'drag'> & {
-    sortable: boolean; dragDepth?: number; handleVisible: boolean;
+const SortableRow = memo(function SortableRow({ sortable, ...props }: Omit<OutlineItemRowProps, keyof SortableValues> & {
+    sortable: boolean;
 }) {
+    // Renders whenever dnd-kit's list changes (a task added): the row below
+    // renders only if its own values changed (README: Performance).
     const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } =
         useSortable({ id: props.item.key, disabled: !sortable });
+    const moved = CSS.Translate.toString(transform);
     return (
-        <OutlineItemRow {...props} drag={{
-            enabled: sortable, attachRow: setNodeRef, attachHandle: setActivatorNodeRef,
-            handleProps: { ...attributes, ...listeners },
-            style: { transform: CSS.Translate.toString(transform), transition },
-            dragging: isDragging, depth: dragDepth, handleVisible,
-        }} />
+        <OutlineItemRow {...props} dragEnabled={sortable} attachRow={setNodeRef} attachHandle={setActivatorNodeRef}
+            dragAttributes={attributes} dragListeners={listeners}
+            // dnd-kit sets a transition on every row when the list changes;
+            // it only matters for a row that moves.
+            transform={moved} transition={moved ? transition : undefined} dragging={isDragging} />
     );
 });
 
-interface OutlineItemRowProps {
-    drag?: RowDrag;
+/** What a sortable row gets from dnd-kit: each value stays the same while
+ *  its row is not dragged (memoized in dnd-kit, or a string). */
+interface SortableValues {
+    dragEnabled: boolean;
+    /** Callback refs (named so the compiler lint does not take them for refs). */
+    attachRow: (element: HTMLElement | null) => void;
+    attachHandle: (element: HTMLElement | null) => void;
+    dragAttributes: object;
+    dragListeners: object | undefined;
+    transform: string | undefined;
+    transition: string | undefined;
+    dragging: boolean;
+}
+
+interface OutlineItemRowProps extends Partial<SortableValues> {
+    /** The depth this row would land at, while it is dragged. */
+    dragDepth?: number;
+    /** Touch screens: the handle is always visible (no hover). */
+    handleVisible?: boolean;
     /** "Draw dependency" is on: rows start and end lines, not drags. */
     drawMode?: boolean;
     /** The row a line starts at or would end at. */
     drawRole?: 'from' | 'to';
     item: OutlineItem;
-    /** The row's position (a click selects it there). */
-    index: number;
     selected: boolean;
     sortMode: boolean;
     defaultDuration: string;
@@ -928,10 +947,18 @@ interface OutlineItemRowProps {
     actions: RowActions;
 }
 
-function OutlineItemRow({
-    item, index, selected, sortMode, defaultDuration, editing, compact,
-    narrow, filtered, canComplete, actions, drag, drawMode, drawRole,
+const OutlineItemRow = memo(function OutlineItemRow({
+    item, selected, sortMode, defaultDuration, editing, compact,
+    narrow, filtered, canComplete, actions, drawMode, drawRole,
+    dragEnabled, attachRow, attachHandle, dragAttributes, dragListeners, transform, transition, dragging,
+    dragDepth, handleVisible,
 }: OutlineItemRowProps) {
+    const drag: RowDrag | undefined = attachRow && attachHandle ? {
+        enabled: Boolean(dragEnabled), attachRow, attachHandle,
+        handleProps: { ...dragAttributes, ...dragListeners },
+        style: { transform, transition },
+        dragging: Boolean(dragging), depth: dragDepth, handleVisible: Boolean(handleVisible),
+    } : undefined;
     const task = item.task;
     const depth = drag?.depth ?? item.depth;
     const done = item.kind === 'task' && task.is_done;
@@ -976,7 +1003,7 @@ function OutlineItemRow({
             data-done={done ? 'true' : undefined}
             data-context={context ? 'true' : undefined}
             ref={(element: HTMLElement | null) => { actions.element(item.key, element); drag?.attachRow(element); }}
-            onClick={() => { actions.pick(item.key, index); actions.open(item); }}
+            onClick={() => { actions.pick(item.key); actions.open(item); }}
             style={drag?.style}
             data-dragging={drag?.dragging ? 'true' : undefined}
             data-row-key={item.key}
@@ -1139,10 +1166,13 @@ function OutlineItemRow({
             </Box>
         </Box>
     );
-}
+});
 
 /** Todoist's inline "+ Add task" at the end of a project / of the tree. */
-function AddTaskRow({ depth, label, onClick }: { depth: number; label: string; onClick: () => void }) {
+const AddTaskRow = memo(function AddTaskRow({ depth, label, parentId, afterKey, actions }: {
+    depth: number; label: string; parentId: string | null; afterKey: string; actions: RowActions;
+}) {
+    const onClick = () => actions.startDraft({ parentId, depth, afterKey });
     return (
         <Box sx={{ pl: 0.5 + depth * 3 + 10, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
             <Button size="small" startIcon={<AddIcon fontSize="small" />} aria-label={label} onClick={onClick}
@@ -1151,7 +1181,7 @@ function AddTaskRow({ depth, label, onClick }: { depth: number; label: string; o
             </Button>
         </Box>
     );
-}
+});
 
 interface RowToolsProps {
     item: OutlineItem;

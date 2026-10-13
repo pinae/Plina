@@ -253,11 +253,24 @@ export const useReopenTask = () => {
     });
 };
 
+/** A created task joins the list at once — appended, and listed by its
+ *  parent as a child; the reload that follows brings what the server derives
+ *  (the ancestors' Σ and Rest) (README: Performance). */
+function withCreatedTask(tasks: Task[], created: Task): Task[] {
+    if (tasks.some(task => task.id === created.id)) return tasks;
+    return [...tasks.map(task => (task.id === created.parent_id
+        ? { ...task, children_ids: [...(task.children_ids ?? []), created.id] } : task)), created];
+}
+
 export const useCreateTask = () => {
+    const client = useQueryClient();
     const invalidate = useInvalidate();
     return useMutation({
         mutationFn: createTask,
-        onSuccess: () => invalidate(queryKeys.tasks),
+        onSuccess: created => {
+            client.setQueryData<Task[]>(queryKeys.tasks, tasks => (tasks ? withCreatedTask(tasks, created) : tasks));
+            return invalidate(queryKeys.tasks);
+        },
     });
 };
 
