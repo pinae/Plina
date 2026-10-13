@@ -479,6 +479,38 @@ the scheduled time from the task's remaining duration.
   user, inviting them to renegotiate deadlines, lower the priority 
   of competing tasks, or add more TimeBuckets.
 
+### Performance
+
+The Tasks tab shows every open task as a row; with a few hundred tasks a
+render of all rows takes a noticeable fraction of a second, so the frontend
+keeps renders small:
+
+* **Typed text stays in its input.** The "+ Add task" row, the inline header
+  and estimate edits and the quick add hold what is typed themselves; the
+  tree hears of it only on Enter (or Esc, or leaving the field). A keystroke
+  renders the input and nothing else — also while the quick add parses it
+  (about 40 µs a keystroke).
+* **Rows render only when their own data changes.** Rows are memoized and
+  get one stable set of callbacks; moving the selection renders the two rows
+  it leaves and reaches. Keep it that way: no new objects or inline
+  callbacks as row props, and constants for the drag-and-drop configuration
+  (a new one renders every row).
+* **Cheap rows.** The priority slider is a light display until it is
+  hovered or focused (a press on it sets the value at once); a Tooltip is
+  only rendered where it has something to say.
+* **Changing geometry is inline.** Positions and sizes that change with the
+  zoom, a drag or the clock (Week view cards, buckets, the now line, column
+  heights) go into ``style``, not ``sx``: emotion adds a CSS rule for every
+  new ``sx`` value and never removes it.
+
+`OutlineView.renders.test.tsx` counts the rows each action renders, and a
+Week view test checks that zooming adds no CSS rule. Measured with 447 tasks
+in a production build: a keystroke in the "+ Add task" row went from about
+650 ms to 16 ms (one frame), a step with ↓ from 500–1000 ms to 30–50 ms, the
+Tasks tab's memory from 83 MB to 69 MB, and ten zoom steps no longer add
+340 CSS rules. Measure performance in a production build (`yarn build`,
+`yarn preview`): the development build is several times slower.
+
 ### Notes for AI Agents and Contributors
 
 When modifying or extending Plina, please adhere to the following 

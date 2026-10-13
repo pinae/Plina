@@ -493,7 +493,9 @@ describe('sorting session', () => {
         fireEvent.keyDown(input, { key: 'Enter' });
 
         await waitFor(() => expect(rowNames()).toEqual(['Write article']));
-        expect(log).toContain('PATCH milk {"duration":"00:45:00"}');
+        // Once: Enter returns the focus to the tree, and leaving the field
+        // does not save a second time.
+        expect(log.filter(line => line.startsWith('PATCH milk'))).toEqual(['PATCH milk {"duration":"00:45:00"}']);
         expect(row('Write article')).toHaveAttribute('aria-selected', 'true'); // the next row
     });
 
@@ -698,6 +700,8 @@ describe('touch screens (UI-9)', () => {
 
 describe('priority slider (T-5)', () => {
     const sliderRoot = (name: string) => {
+        // Hovered: the light display becomes the real slider.
+        fireEvent.pointerEnter(within(row(name)).getByTestId('priority-slider'));
         const root = within(row(name)).getByTestId('priority-slider').querySelector<HTMLElement>('.MuiSlider-root')!;
         root.getBoundingClientRect = () => ({
             width: 100, height: 10, left: 0, right: 100, top: 0, bottom: 10, x: 0, y: 0, toJSON: () => ({}),

@@ -86,7 +86,8 @@ export const DayColumn: React.FC<DayColumnProps> = ({
     });
 
     return (
-        <Box sx={{ position: 'relative', height: columnHeight, display: 'flex' }}>
+        // Sizes that change with the zoom are inline (README: Performance).
+        <Box style={{ height: columnHeight }} sx={{ position: 'relative', display: 'flex' }}>
             {/* Decorative background: hour dividers + current time line. */}
             <Box sx={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {Array.from({ length: 24 }).map((_, i) => (
@@ -99,11 +100,8 @@ export const DayColumn: React.FC<DayColumnProps> = ({
                 {currentTime && (
                     <Box
                         data-testid="current-time-line"
-                        sx={{
-                            position: 'absolute',
-                            top: `${((currentTime.getHours() * 60 + currentTime.getMinutes()) / 1440) * columnHeight}px`,
-                            width: '100%', borderTop: '2px solid white', zIndex: 3,
-                        }}
+                        style={{ top: `${((currentTime.getHours() * 60 + currentTime.getMinutes()) / 1440) * columnHeight}px` }}
+                        sx={{ position: 'absolute', width: '100%', borderTop: '2px solid white', zIndex: 3 }}
                     />
                 )}
             </Box>

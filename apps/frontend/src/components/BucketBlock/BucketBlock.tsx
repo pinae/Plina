@@ -43,13 +43,17 @@ export const BucketBlock: React.FC<BucketBlockProps> = ({ zone, columnHeight, on
         <Box
             data-testid="bucket-zone"
             onMouseDown={startDrag('move')}
-            sx={{
-                position: 'absolute',
+            // Position, size and color inline: in ``sx`` each new value adds a
+            // CSS rule that stays (README: Performance).
+            style={{
                 top: `${top}px`,
                 height: `${height}px`,
-                width: '100%',
                 backgroundColor: `${zone.color}33`,
                 borderLeft: `3px solid ${zone.color}`,
+            }}
+            sx={{
+                position: 'absolute',
+                width: '100%',
                 boxSizing: 'border-box',
                 cursor: 'grab',
                 userSelect: 'none',
@@ -62,7 +66,7 @@ export const BucketBlock: React.FC<BucketBlockProps> = ({ zone, columnHeight, on
                 onMouseDown={startDrag('resize-top')}
                 sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: RESIZE_HANDLE_PX, cursor: 'ns-resize' }}
             />
-            <Box component="span" sx={{ fontSize: '0.6rem', color: zone.color, pl: 0.5, pointerEvents: 'none' }}>
+            <Box component="span" style={{ color: zone.color }} sx={{ fontSize: '0.6rem', pl: 0.5, pointerEvents: 'none' }}>
                 {zone.label}
             </Box>
             <Box

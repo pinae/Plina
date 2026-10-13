@@ -32,8 +32,8 @@ export const TimeScale: React.FC<TimeScaleProps> = ({ columnHeight }) => (
             const top = minutesToPixels(minutes, columnHeight);
             return (
                 <React.Fragment key={minutes}>
-                    <Box sx={{
-                        position: 'absolute', right: 0, top, width: fullHour ? 6 : 3,
+                    <Box style={{ top }} sx={{
+                        position: 'absolute', right: 0, width: fullHour ? 6 : 3,
                         borderTop: '1px solid', borderColor: fullHour ? '#666' : '#444',
                     }} />
                     <Typography
