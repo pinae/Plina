@@ -32,10 +32,10 @@
  * that pass, with their parents greyed for context and every parent open;
  * reordering waits until the filter is cleared.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
-    IconButton, Portal, Snackbar, Switch, TextField, Tooltip, Typography,
+    IconButton, Portal, Snackbar, Switch, Tooltip, Typography,
 } from '@mui/material';
 import AddLinkIcon from '@mui/icons-material/AddLink';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
@@ -64,6 +64,7 @@ import { CSS } from '@dnd-kit/utilities';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
 import { DependencyDrawLayer } from '../DependencyDrawLayer/DependencyDrawLayer.tsx';
+import { DraftRow, InlineEditField } from './OutlineInputs.tsx';
 import { ProjectPicker, type ProjectPick } from '../ProjectPicker/ProjectPicker.tsx';
 import { SplitEditor } from '../SplitEditor/SplitEditor.tsx';
 import { TaskFilterBar } from '../TaskFilterBar/TaskFilterBar.tsx';
@@ -103,8 +104,38 @@ const EXPAND_ON_HOVER_MS = 700;
 const REORDER_HINT = 'Clear the filter to reorder.';
 const itemName = (item: OutlineItem) => (item.kind === 'rest' ? `Rest of ${item.task.header}` : item.task.header);
 
-type Editing = { key: string; field: 'header' | 'estimate'; text: string; error?: string };
-type Draft = { parentId: string | null; depth: number; afterKey: string; text: string; error?: string };
+/** Which row is edited, and the text the edit starts with (the typing
+ *  itself stays in the input, README: Performance). */
+type Editing = { key: string; field: 'header' | 'estimate'; text: string };
+/** Where the "+ Add task" row is open. */
+type Draft = { parentId: string | null; depth: number; afterKey: string };
+
+/** What the rows ask of the outline. One object for the outline's whole
+ *  life, so a memoized row renders again only when its own props change. */
+interface RowActions {
+    /** A click: select the row (and return the keys to the tree). */
+    pick: (key: string, index: number) => void;
+    open: (item: OutlineItem) => void;
+    toggle: (taskId: string) => void;
+    toggleDone: (task: Task) => void;
+    /** Settles when saved (the slider holds the value until then). */
+    setPriority: (task: Task, priority: number) => Promise<unknown> | void;
+    track: (taskId: string) => void;
+    commitEdit: (text: string) => Promise<string | null>;
+    cancelEdit: () => void;
+    startDraft: (draft: Draft) => void;
+    submitDraft: (text: string) => Promise<string | null>;
+    closeDraft: (refocus: boolean) => void;
+    element: (key: string, element: HTMLElement | null) => void;
+}
+
+/** Constant: a new object would re-measure every row and change dnd-kit's
+ *  context, rendering every row again. */
+const MEASURING = { droppable: { strategy: MeasuringStrategy.Always } };
+const POINTER_SENSOR = { activationConstraint: { distance: 4 } };
+// Touch: long-press the handle, so scrolling still works.
+const TOUCH_SENSOR = { activationConstraint: { delay: 250, tolerance: 8 } };
+const KEYBOARD_SENSOR = { coordinateGetter: sortableKeyboardCoordinates };
 
 function serverMessage(error: unknown): string {
     const data = (error as AxiosError<Record<string, unknown>>)?.response?.data;
@@ -295,10 +326,9 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
     // ---------------------------------------------------------- actions
 
     const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-        // Touch: long-press the handle, so scrolling still works.
-        useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
-        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+        useSensor(PointerSensor, POINTER_SENSOR),
+        useSensor(TouchSensor, TOUCH_SENSOR),
+        useSensor(KeyboardSensor, KEYBOARD_SENSOR),
     );
 
     const clearExpandTimer = () => {
@@ -434,47 +464,50 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         return { write, header: row.header.trim() };
     };
 
-    const commitEdit = async () => {
-        if (!editing) return;
+    /** The edit's text arrives on Enter (or when leaving the estimate):
+     *  an error to show, or null when saved. */
+    const commitEdit = async (text: string): Promise<string | null> => {
+        if (!editing) return null;
         const item = items.find(i => i.key === editing.key);
-        if (!item || item.kind !== 'task') { setEditing(null); return; }
+        if (!item || item.kind !== 'task') { setEditing(null); return null; }
         const task = item.task;
         if (editing.field === 'estimate') {
-            const parsed = parseDurationInput(editing.text);
+            const parsed = parseDurationInput(text);
             if (parsed.kind === 'invalid' || (parsed.kind === 'ok' && parsed.minutes <= 0)) {
-                setEditing({ ...editing, error: `“${editing.text}” is not a duration. Use e.g. 45m, 1.5 or 1:30 — or leave it empty for your default.` });
-                return;
+                return `“${text}” is not a duration. Use e.g. 45m, 1.5 or 1:30 — or leave it empty for your default.`;
             }
             const duration = parsed.kind === 'ok' ? minutesToDurationString(parsed.minutes) : null;
             setEditing(null);
             refocus();
             if (duration !== task.duration) await patch(task, { duration }).catch(() => undefined);
-            return;
+            return null;
         }
-        const result = await tokensToWrite(editing.text);
-        if ('error' in result) { setEditing({ ...editing, error: result.error }); return; }
-        if (!result.header) { setEditing({ ...editing, error: 'The header is empty. Type a name for the task.' }); return; }
+        const result = await tokensToWrite(text);
+        if ('error' in result) return result.error;
+        if (!result.header) return 'The header is empty. Type a name for the task.';
         const body: TaskWrite = { ...result.write };
         if (result.header !== task.header) body.header = result.header;
         if (body.tag_ids) body.tag_ids = [...new Set([...task.tags.map(t => t.id), ...body.tag_ids])];
         setEditing(null);
         refocus();
         if (Object.keys(body).length) await patch(task, body).catch(() => undefined);
+        return null;
     };
 
-    const commitDraft = async () => {
-        if (!draft) return;
-        if (!draft.text.trim()) { setDraft(null); refocus(); return; }
-        const result = await tokensToWrite(draft.text);
-        if ('error' in result) { setDraft({ ...draft, error: result.error }); return; }
-        if (!result.header) { setDraft({ ...draft, error: 'Type a name for the task.' }); return; }
+    /** Enter in the "+ Add task" row: the task is created and the row stays
+     *  open, empty, for the next one (null) — or an error to show. */
+    const submitDraft = async (text: string): Promise<string | null> => {
+        if (!draft) return null;
+        const result = await tokensToWrite(text);
+        if ('error' in result) return result.error;
+        if (!result.header) return 'Type a name for the task.';
         const parent = draft.parentId ? allTasks.find(t => t.id === draft.parentId) : undefined;
         const body: TaskWrite = { header: result.header, parent_id: draft.parentId, ...result.write };
         // Like quick add: new tasks inherit the parent's tags and priority.
         if (!body.tag_ids && parent?.tags.length) body.tag_ids = parent.tags.map(t => t.id);
         if (body.priority === undefined && parent) body.priority = parent.priority;
-        setDraft({ ...draft, text: '', error: undefined });
         createTask.mutate(body, { onError: error => setMessage(serverMessage(error)) });
+        return null;
     };
 
     const beginEdit = (item: OutlineItem, field: Editing['field'], suffix = '') => {
@@ -544,45 +577,68 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
 
     // ------------------------------------------------------------- render
 
-    // Inline inputs keep their keys to themselves (not the outline's).
-    const onEditKeyDown = (event: React.KeyboardEvent) => {
-        event.stopPropagation();
-        if (event.key === 'Enter') { event.preventDefault(); commitEdit(); }
-        if (event.key === 'Escape') { event.preventDefault(); setEditing(null); refocus(); }
-    };
-    const onDraftKeyDown = (event: React.KeyboardEvent) => {
-        event.stopPropagation();
-        if (event.key === 'Enter') { event.preventDefault(); commitDraft(); }
-        if (event.key === 'Escape') { event.preventDefault(); setDraft(null); refocus(); }
-    };
+    // The rows' callbacks: one stable object that calls the latest handlers.
+    const handlers = useRef<RowActions | null>(null);
+    useLayoutEffect(() => {
+        handlers.current = {
+            pick: (key, index) => { setSelection({ key, index }); refocus(); },
+            open: item => {
+                if (drawing.active) return; // drawing: a click opens nothing
+                if (item.kind === 'task') setDialogTaskId(item.task.id); else setSplitTask(item.task);
+            },
+            toggle: toggleCollapsed,
+            toggleDone,
+            setPriority,
+            track: taskId => startTracking.mutate(taskId, { onError: error => setMessage(serverMessage(error)) }),
+            commitEdit,
+            cancelEdit: () => { setEditing(null); refocus(); },
+            startDraft: next => setDraft(next),
+            submitDraft,
+            closeDraft: (refocusTree: boolean) => { setDraft(null); if (refocusTree) refocus(); },
+            element: (key, element) => {
+                if (element) rowElements.current.set(key, element);
+                else rowElements.current.delete(key);
+            },
+        };
+    });
+    const actions = useMemo<RowActions>(() => ({
+        pick: (key, index) => handlers.current?.pick(key, index),
+        open: item => handlers.current?.open(item),
+        toggle: taskId => handlers.current?.toggle(taskId),
+        toggleDone: task => handlers.current?.toggleDone(task),
+        setPriority: (task, priority) => handlers.current?.setPriority(task, priority),
+        track: taskId => handlers.current?.track(taskId),
+        commitEdit: async text => (handlers.current ? handlers.current.commitEdit(text) : null),
+        cancelEdit: () => handlers.current?.cancelEdit(),
+        startDraft: next => handlers.current?.startDraft(next),
+        submitDraft: async text => (handlers.current ? handlers.current.submitDraft(text) : null),
+        closeDraft: refocusTree => handlers.current?.closeDraft(refocusTree),
+        element: (key, element) => handlers.current?.element(key, element),
+    }), []);
 
     const renderDraft = () => draft && (
-        <Box key="draft" sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 1 + draft.depth * 3 + 7.5, pr: 1, py: 0.5 }}>
-            <TextField size="small" fullWidth autoFocus value={draft.text} error={Boolean(draft.error)}
-                helperText={draft.error ?? 'Enter adds the task (e.g. “assembly 2h #maker”), Esc stops'}
-                placeholder="New task…"
-                onChange={event => setDraft({ ...draft, text: event.target.value, error: undefined })}
-                onKeyDown={onDraftKeyDown}
-                onBlur={() => { if (draft && !draft.text.trim()) setDraft(null); }}
-                slotProps={{ htmlInput: { 'aria-label': 'New task' } }} />
-        </Box>
+        <DraftRow key="draft" depth={draft.depth} onSubmit={actions.submitDraft} onClose={actions.closeDraft} />
     );
 
     const lastPending = [...pendingDeletes.entries()].pop();
 
     // While dragging, the dragged row's subtree is hidden (it travels along)
     // and the row shows the depth it would land at.
-    const draggedSubtree = new Set<string>();
-    if (drag) {
-        const start = items.findIndex(i => i.key === drag.activeKey);
+    const dragKey = drag?.activeKey ?? null;
+    const draggedSubtree = useMemo(() => {
+        const subtree = new Set<string>();
+        const start = dragKey ? items.findIndex(i => i.key === dragKey) : -1;
         for (let i = start + 1; start >= 0 && i < items.length && items[i].depth > items[start].depth; i++) {
-            draggedSubtree.add(items[i].key);
+            subtree.add(items[i].key);
         }
-    }
+        return subtree;
+    }, [items, dragKey]);
     const projection = drag ? projectDrop(items, allTasks, drag.activeKey, drag.overKey, drag.offsetX, INDENT_PX) : null;
-    const sortableKeys = sortMode || drawing.active || filtering ? [] : items
+    // Memoized: a new list would change dnd-kit's context and render every row.
+    const sortableKeys = useMemo(() => (sortMode || drawing.active || filtering ? [] : items
         .filter(i => i.kind === 'task' && !i.task.is_done && !draggedSubtree.has(i.key))
-        .map(i => i.key);
+        .map(i => i.key)), [sortMode, drawing.active, filtering, items, draggedSubtree]);
+    const sortable = useMemo(() => new Set(sortableKeys), [sortableKeys]);
 
     // T-4: the dialog walks the task rows in tree order (Rest rows are not
     // tasks); the selection follows so closing lands on the last one shown.
@@ -611,7 +667,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
         if (draft?.afterKey === key) return renderDraft();
         return (
             <AddTaskRow key={key} depth={1} label={`add task to ${root.task.header}`}
-                onClick={() => setDraft({ parentId: root.task.id, depth: 1, afterKey: key, text: '' })} />
+                onClick={() => actions.startDraft({ parentId: root.task.id, depth: 1, afterKey: key })} />
         );
     };
 
@@ -683,43 +739,29 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 )}
                 <DndContext sensors={sensors} collisionDetection={closestCenter}
                     // The dragged subtree collapses: measure the rows again.
-                    measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+                    measuring={MEASURING}
                     onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={onDragOver}
                     onDragEnd={onDragEnd} onDragCancel={onDragCancel}>
                 <SortableContext items={sortableKeys} strategy={verticalListSortingStrategy}>
                 {items.map((item, index) => draggedSubtree.has(item.key) ? null : [
                     <SortableRow
                         key={item.key}
-                        sortable={sortableKeys.includes(item.key)}
+                        sortable={sortable.has(item.key)}
                         dragDepth={drag?.activeKey === item.key ? projection?.depth : undefined}
                         handleVisible={rowButtons}
                         item={item}
+                        index={index}
                         selected={index === selectedIndex}
                         sortMode={sortMode}
                         defaultDuration={defaultDuration}
                         editing={editing?.key === item.key ? editing : null}
                         drawMode={drawing.active}
                         drawRole={drawFrom === item ? 'from' : drawTo === item ? 'to' : undefined}
-                        onSelect={() => { setSelection({ key: item.key, index }); refocus(); }}
-                        onOpen={() => {
-                            if (drawing.active) return; // drawing: a click opens nothing
-                            if (item.kind === 'task') setDialogTaskId(item.task.id); else setSplitTask(item.task);
-                        }}
-                        onToggle={() => toggleCollapsed(item.task.id)}
-                        onToggleDone={() => toggleDone(item.task)}
-                        onPriority={priority => setPriority(item.task, priority)}
                         compact={mobile}
                         narrow={narrow}
                         filtered={filtering}
                         canComplete={item.task.is_done || !(item.task.children_ids ?? []).some(id => openIds.has(id))}
-                        onTrack={() => startTracking.mutate(item.task.id, { onError: error => setMessage(serverMessage(error)) })}
-                        onEditChange={text => editing && setEditing({ ...editing, text, error: undefined })}
-                        onEditKeyDown={onEditKeyDown}
-                        onEditBlur={() => { if (editing?.field === 'estimate') commitEdit(); }}
-                        onElement={element => {
-                            if (element) rowElements.current.set(item.key, element);
-                            else rowElements.current.delete(item.key);
-                        }}
+                        actions={actions}
                     />,
                     rowButtons && index === selectedIndex && !editing ? (
                         <RowTools
@@ -747,7 +789,7 @@ export function OutlineView({ deleteDelayMs = 6000 }: OutlineViewProps) {
                 </DndContext>
                 {!sortMode && !filtering && (draft?.afterKey === END_OF_TREE ? renderDraft() : (
                     <AddTaskRow key="add-top" depth={0} label="add task at the top level"
-                        onClick={() => setDraft({ parentId: null, depth: 0, afterKey: END_OF_TREE, text: '' })} />
+                        onClick={() => actions.startDraft({ parentId: null, depth: 0, afterKey: END_OF_TREE })} />
                 ))}
             </Box>
 
@@ -842,7 +884,8 @@ function DragHandle({ label, attach, handleProps, dragging }: {
 }
 
 /** A row taking part in drag and drop: dragged by its ⠿ handle only. */
-function SortableRow({ sortable, dragDepth, handleVisible, ...props }: Omit<OutlineItemRowProps, 'drag'> & {
+/** Memoized, like the row: it renders again only when its props change. */
+const SortableRow = memo(function SortableRow({ sortable, dragDepth, handleVisible, ...props }: Omit<OutlineItemRowProps, 'drag'> & {
     sortable: boolean; dragDepth?: number; handleVisible: boolean;
 }) {
     const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } =
@@ -855,7 +898,7 @@ function SortableRow({ sortable, dragDepth, handleVisible, ...props }: Omit<Outl
             dragging: isDragging, depth: dragDepth, handleVisible,
         }} />
     );
-}
+});
 
 interface OutlineItemRowProps {
     drag?: RowDrag;
@@ -864,15 +907,12 @@ interface OutlineItemRowProps {
     /** The row a line starts at or would end at. */
     drawRole?: 'from' | 'to';
     item: OutlineItem;
+    /** The row's position (a click selects it there). */
+    index: number;
     selected: boolean;
     sortMode: boolean;
     defaultDuration: string;
     editing: Editing | null;
-    onSelect: () => void;
-    onOpen: () => void;
-    onToggle: () => void;
-    onToggleDone: () => void;
-    onPriority: (priority: number) => void;
     /** Phones: a chip opening the slider instead of the slider itself, tighter
      *  gaps, and the active project marked by its name (no label). */
     compact: boolean;
@@ -884,17 +924,13 @@ interface OutlineItemRowProps {
     filtered?: boolean;
     /** False for parents with open subtasks (they complete with the last one). */
     canComplete: boolean;
-    onTrack: () => void;
-    onEditChange: (text: string) => void;
-    onEditKeyDown: (event: React.KeyboardEvent) => void;
-    onEditBlur: () => void;
-    onElement: (element: HTMLElement | null) => void;
+    /** Stable for the outline's life (no row renders for a new callback). */
+    actions: RowActions;
 }
 
 function OutlineItemRow({
-    item, selected, sortMode, defaultDuration, editing, onSelect, onOpen, onToggle, onToggleDone, onPriority, compact,
-    narrow, filtered, canComplete, onTrack,
-    onEditChange, onEditKeyDown, onEditBlur, onElement, drag, drawMode, drawRole,
+    item, index, selected, sortMode, defaultDuration, editing, compact,
+    narrow, filtered, canComplete, actions, drag, drawMode, drawRole,
 }: OutlineItemRowProps) {
     const task = item.task;
     const depth = drag?.depth ?? item.depth;
@@ -911,11 +947,8 @@ function OutlineItemRow({
         if (item.kind === 'rest') return <Typography variant="body2">{human(task.rest ?? null)}</Typography>;
         if (editing?.field === 'estimate') {
             return (
-                <TextField size="small" autoFocus value={editing.text} error={Boolean(editing.error)}
-                    onChange={event => onEditChange(event.target.value)}
-                    onKeyDown={onEditKeyDown} onBlur={onEditBlur}
-                    slotProps={{ htmlInput: { 'aria-label': `Edit estimate of ${task.header}`, inputMode: 'decimal' } }}
-                    sx={{ width: 110 }} />
+                <InlineEditField field="estimate" initialText={editing.text} label={`Edit estimate of ${task.header}`}
+                    onCommit={actions.commitEdit} onCancel={actions.cancelEdit} />
             );
         }
         if (task.parts_total) {
@@ -942,8 +975,8 @@ function OutlineItemRow({
             data-active={item.kind === 'task' && item.active ? 'true' : undefined}
             data-done={done ? 'true' : undefined}
             data-context={context ? 'true' : undefined}
-            ref={(element: HTMLElement | null) => { onElement(element); drag?.attachRow(element); }}
-            onClick={() => { onSelect(); onOpen(); }}
+            ref={(element: HTMLElement | null) => { actions.element(item.key, element); drag?.attachRow(element); }}
+            onClick={() => { actions.pick(item.key, index); actions.open(item); }}
             style={drag?.style}
             data-dragging={drag?.dragging ? 'true' : undefined}
             data-row-key={item.key}
@@ -974,25 +1007,30 @@ function OutlineItemRow({
             <Box sx={{ width: 28, flexShrink: 0 }}>
                 {item.kind === 'task' && item.hasChildren && !filtered && (
                     <IconButton size="small" aria-label={item.expanded ? `collapse ${task.header}` : `expand ${task.header}`}
-                        onClick={event => { event.stopPropagation(); onToggle(); }}>
+                        onClick={event => { event.stopPropagation(); actions.toggle(task.id); }}>
                         {item.expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
                     </IconButton>
                 )}
             </Box>
             <Box sx={{ width: 28, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                {item.kind === 'task' && (
-                    <Tooltip title={canComplete ? '' : 'Completes by itself with its last open subtask'}>
+                {item.kind === 'task' && (() => {
+                    const circle = (
                         <span>
                             <Checkbox size="small" checked={done} disabled={!canComplete}
                                 icon={<RadioButtonUncheckedIcon fontSize="small" />}
                                 checkedIcon={<CheckCircleIcon fontSize="small" />}
                                 slotProps={{ input: { 'aria-label': `${done ? 'reopen' : 'complete'} ${task.header}` } }}
                                 onClick={event => event.stopPropagation()}
-                                onChange={onToggleDone}
+                                onChange={() => actions.toggleDone(task)}
                                 sx={{ p: 0.25 }} />
                         </span>
-                    </Tooltip>
-                )}
+                    );
+                    // A Tooltip only where it has something to say (one per row
+                    // costs memory, README: Performance).
+                    return canComplete ? circle : (
+                        <Tooltip title="Completes by itself with its last open subtask">{circle}</Tooltip>
+                    );
+                })()}
             </Box>
             {/* The color the task shows (§4.4); a Rest shows its parent's. */}
             {!narrow && (
@@ -1006,11 +1044,8 @@ function OutlineItemRow({
 
             <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                 {editing?.field === 'header' ? (
-                    <TextField size="small" fullWidth autoFocus value={editing.text} error={Boolean(editing.error)}
-                        helperText={editing.error}
-                        onChange={event => onEditChange(event.target.value)}
-                        onKeyDown={onEditKeyDown}
-                        slotProps={{ htmlInput: { 'aria-label': `Edit header of ${task.header}` } }} />
+                    <InlineEditField field="header" initialText={editing.text} label={`Edit header of ${task.header}`}
+                        onCommit={actions.commitEdit} onCancel={actions.cancelEdit} />
                 ) : (
                     <Box sx={{ minWidth: 0 }}>
                         <Typography variant="body2" noWrap
@@ -1089,14 +1124,15 @@ function OutlineItemRow({
             </Box>
             <Box sx={{ width: compact ? 36 : 104, flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
                 {item.kind === 'task' && !done && (
-                    <PrioritySlider value={task.priority} label={task.header} onCommit={onPriority} compact={compact} />
+                    <PrioritySlider value={task.priority} label={task.header}
+                        onCommit={priority => actions.setPriority(task, priority)} compact={compact} />
                 )}
                 {done && <Typography variant="caption" color="text.secondary">!{task.priority}</Typography>}
             </Box>
             <Box sx={{ width: 32, flexShrink: 0 }}>
                 {trackable && (
                     <IconButton size="small" aria-label={`start tracking ${task.header}`}
-                        onClick={event => { event.stopPropagation(); onTrack(); }}>
+                        onClick={event => { event.stopPropagation(); actions.track(task.id); }}>
                         <PlayArrowIcon fontSize="small" />
                     </IconButton>
                 )}

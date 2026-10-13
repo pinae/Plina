@@ -286,6 +286,26 @@ describe('PlannedWeekView', () => {
     });
 });
 
+describe('styles while zooming (README: Performance)', () => {
+    /** The CSS emotion has generated so far: one rule per distinct style. */
+    const cssRules = () => [...document.querySelectorAll('style')].map(style => style.textContent ?? '').join('').split('}').length;
+
+    it('adds no CSS rule per zoom level: positions and sizes are inline styles', async () => {
+        render(<PlannedWeekView initialDate={new Date('2026-07-08T08:00:00')} />, { wrapper });
+        await waitFor(() => expect(screen.getByText('Design Schema')).toBeInTheDocument());
+        const scroll = screen.getByTestId('week-scroll');
+        fireEvent.wheel(scroll, { deltaY: -100, ctrlKey: true }); // every style seen once
+        const before = cssRules();
+        const card = screen.getByText('Design Schema').closest<HTMLElement>('[data-testid="week-view-task"]')!;
+        const top = card.style.top;
+
+        for (let i = 0; i < 4; i++) fireEvent.wheel(scroll, { deltaY: -100, ctrlKey: true });
+
+        expect(card.style.top).not.toBe(top); // the card moved with the zoom …
+        expect(cssRules()).toBe(before); // … without a new rule
+    });
+});
+
 describe('tracked time over the estimate (UI-8)', () => {
     it('marks the card of a task whose tracked time exceeds its estimate', async () => {
         const base = {

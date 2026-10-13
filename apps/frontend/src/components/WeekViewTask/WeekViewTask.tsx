@@ -180,14 +180,23 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
             onPointerEnter={handlePointerEnter}
             onPointerLeave={closeHover}
             onPointerDown={closeHover}
-            sx={{
-                position: 'absolute',
+            // What differs per card and per zoom step (position, size, the
+            // task's color) is inline: in ``sx`` every new value would add a
+            // CSS rule that stays (README: Performance).
+            style={{
                 top: `${top}px`,
                 height: `${height}px`,
                 width,
                 left,
                 // An unplanned appointment is only outlined: a maybe.
                 backgroundColor: task.unplanned ? `${task.color}26` : backgroundColor,
+                border: task.unplanned ? `1px dashed ${task.color}`
+                    : isAuto ? '1px dashed rgba(255, 255, 255, 0.6)'
+                        : '1px solid rgba(255, 255, 255, 0.4)',
+                borderBottom: task.continues ? '3px double grey' : undefined,
+            }}
+            sx={{
+                position: 'absolute',
                 // A Rest placeholder is hatched: time reserved, not yet split.
                 backgroundImage: task.isRest
                     ? 'repeating-linear-gradient(135deg, rgba(255,255,255,0.18) 0 6px, transparent 6px 12px)'
@@ -200,10 +209,6 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
                 // outline, dropping to 30% when invalidated. Appointments and
                 // fixed tasks are solid at full opacity.
                 opacity: isAuto ? (task.valid === false ? 0.3 : 0.8) : task.unplanned ? 0.85 : 1,
-                border: task.unplanned ? `1px dashed ${task.color}`
-                    : isAuto ? '1px dashed rgba(255, 255, 255, 0.6)'
-                        : '1px solid rgba(255, 255, 255, 0.4)',
-                borderBottom: task.continues ? '3px double grey' : undefined,
                 overflow: 'hidden',
                 boxSizing: 'border-box',
                 borderRadius: '4px',
@@ -213,7 +218,7 @@ export const WeekViewTask: React.FC<WeekViewTaskProps> = ({ task, columnHeight, 
             }}
         >
             {/* Left Border */}
-            <Box sx={{ width: '0.3em', background: borderBackground, flexShrink: 0 }} />
+            <Box style={{ background: borderBackground }} sx={{ width: '0.3em', flexShrink: 0 }} />
 
             {/* Content */}
             <Box ref={contentRef} data-testid="task-content" sx={{ p: 0.5, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>

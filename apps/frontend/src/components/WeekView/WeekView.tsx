@@ -420,7 +420,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
                     <TimeScale columnHeight={columnHeight} />
                     {/* The grid isolates its layers, so cards never paint over the
                         sticky time scale or headers. */}
-                    <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight} sx={{ position: 'relative', display: 'flex', flex: 1, height: columnHeight, isolation: 'isolate' }}>
+                    <Box ref={gridRef} data-testid="week-grid" data-column-height={columnHeight}
+                        style={{ height: columnHeight }} sx={{ position: 'relative', display: 'flex', flex: 1, isolation: 'isolate' }}>
                         {/* A moved appointment is rendered as a floating card (same
                             colour + size, not a ghost) that follows the pointer to
                             the target day + time so it can be placed precisely. */}
@@ -431,8 +432,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
                             return (
                                 <Box
                                     data-testid="drag-layer"
-                                    sx={{
-                                        position: 'absolute',
+                                    // Follows the pointer: inline, not a CSS rule per position.
+                                    style={{
                                         // Stay inside the task column (skip the bucket column),
                                         // like a real appointment card.
                                         left: `calc(${(index * 100) / 7}% + ${BUCKET_COLUMN_WIDTH}px)`,
@@ -440,6 +441,9 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                         top: `${minutesToPixels(startMin, columnHeight)}px`,
                                         height: `${minutesToPixels(activeDrag.durationMinutes, columnHeight)}px`,
                                         backgroundColor: activeDrag.color,
+                                    }}
+                                    sx={{
+                                        position: 'absolute',
                                         border: '1px solid rgba(255, 255, 255, 0.6)',
                                         borderRadius: '4px',
                                         boxSizing: 'border-box',

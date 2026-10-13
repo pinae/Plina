@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PrioritySlider } from './PrioritySlider.tsx';
@@ -12,6 +12,12 @@ function layOut(root: HTMLElement) {
     });
 }
 
+/** Hover: the light display becomes the real slider. */
+function hover() {
+    fireEvent.pointerEnter(screen.getByTestId('priority-slider'));
+    return screen.getByTestId('priority-slider').querySelector<HTMLElement>('.MuiSlider-root')!;
+}
+
 describe('PrioritySlider', () => {
     it('shows the priority and its band', () => {
         render(<PrioritySlider value={7} label="CAD" onCommit={vi.fn()} />);
@@ -23,7 +29,7 @@ describe('PrioritySlider', () => {
     it('a drag commits once, on release (5 → 8)', () => {
         const onCommit = vi.fn();
         render(<PrioritySlider value={5} label="CAD" onCommit={onCommit} />);
-        const root = screen.getByTestId('priority-slider').querySelector<HTMLElement>('.MuiSlider-root')!;
+        const root = hover();
         layOut(root);
         fireEvent.mouseDown(root, { clientX: 50, buttons: 1 });
         fireEvent.mouseMove(document, { clientX: 65, buttons: 1 });
@@ -37,7 +43,7 @@ describe('PrioritySlider', () => {
 
     it('keeps showing the committed value until the new value arrives; follows a rollback', () => {
         const { rerender } = render(<PrioritySlider value={5} label="CAD" onCommit={vi.fn()} />);
-        const root = screen.getByTestId('priority-slider').querySelector<HTMLElement>('.MuiSlider-root')!;
+        const root = hover();
         layOut(root);
         fireEvent.mouseDown(root, { clientX: 80, buttons: 1 });
         fireEvent.mouseUp(document, { clientX: 80 });
@@ -51,7 +57,7 @@ describe('PrioritySlider', () => {
     it('a click on the track sets that value', () => {
         const onCommit = vi.fn();
         render(<PrioritySlider value={5} label="CAD" onCommit={onCommit} />);
-        const root = screen.getByTestId('priority-slider').querySelector<HTMLElement>('.MuiSlider-root')!;
+        const root = hover();
         layOut(root);
         fireEvent.mouseDown(root, { clientX: 20, buttons: 1 });
         fireEvent.mouseUp(document, { clientX: 20 });
@@ -61,6 +67,7 @@ describe('PrioritySlider', () => {
     it('arrow keys step by one', () => {
         const onCommit = vi.fn();
         render(<PrioritySlider value={5} label="CAD" onCommit={onCommit} />);
+        hover();
         fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowRight' });
         expect(onCommit).toHaveBeenCalledWith(6);
     });
@@ -68,7 +75,7 @@ describe('PrioritySlider', () => {
     it('does not commit an unchanged value', () => {
         const onCommit = vi.fn();
         render(<PrioritySlider value={5} label="CAD" onCommit={onCommit} />);
-        const root = screen.getByTestId('priority-slider').querySelector<HTMLElement>('.MuiSlider-root')!;
+        const root = hover();
         layOut(root);
         fireEvent.mouseDown(root, { clientX: 50, buttons: 1 });
         fireEvent.mouseUp(document, { clientX: 50 });
@@ -80,6 +87,42 @@ describe('PrioritySlider', () => {
         render(<div onClick={onRowClick}><PrioritySlider value={5} label="CAD" onCommit={vi.fn()} /></div>);
         fireEvent.click(screen.getByTestId('priority-slider'));
         expect(onRowClick).not.toHaveBeenCalled();
+    });
+
+    describe('light until used (README: Performance)', () => {
+        it('shows the value as a light display, no MUI slider, until hovered', () => {
+            render(<PrioritySlider value={7} label="CAD" onCommit={vi.fn()} />);
+            const display = screen.getByRole('slider', { name: 'priority of CAD' });
+            expect(display).toHaveAttribute('aria-valuenow', '7');
+            expect(screen.getByTestId('priority-slider').querySelector('.MuiSlider-root')).toBeNull();
+
+            hover();
+            expect(screen.getByTestId('priority-slider').querySelector('.MuiSlider-root')).not.toBeNull();
+            fireEvent.pointerLeave(screen.getByTestId('priority-slider'));
+            expect(screen.getByTestId('priority-slider').querySelector('.MuiSlider-root')).toBeNull();
+            expect(screen.getByRole('slider', { name: 'priority of CAD' })).toHaveAttribute('aria-valuenow', '7');
+        });
+
+        it('focus (Tab) brings the real slider, with the focus in it: arrow keys work', () => {
+            const onCommit = vi.fn();
+            render(<PrioritySlider value={5} label="CAD" onCommit={onCommit} />);
+            act(() => screen.getByRole('slider', { name: 'priority of CAD' }).focus());
+
+            const input = screen.getByTestId('priority-slider').querySelector('input')!;
+            expect(input).toHaveFocus();
+            fireEvent.keyDown(input, { key: 'ArrowRight' });
+            expect(onCommit).toHaveBeenCalledWith(6);
+        });
+
+        it('a press on the display (touch, no hover) sets the value there at once', () => {
+            const onCommit = vi.fn();
+            render(<PrioritySlider value={5} label="CAD" onCommit={onCommit} />);
+            const display = screen.getByRole('slider', { name: 'priority of CAD' });
+            layOut(display);
+            // jsdom's PointerEvent has no coordinates: a MouseEvent of that type.
+            fireEvent(display, new MouseEvent('pointerdown', { bubbles: true, clientX: 30 }));
+            expect(onCommit).toHaveBeenCalledWith(3);
+        });
     });
 
     it('compact (phones): a coloured "!7" chip opens the slider in a popover', () => {
