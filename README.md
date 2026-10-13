@@ -136,6 +136,9 @@ Where the week is wider than the screen, it opens scrolled sideways so that
 today is the first day in view (a jump to the first free day opens on that
 day, other weeks on Monday); dragging sideways still reaches the other days.
 
+While another week is shown, **Today** next to the week's dates goes back
+to the current week (on small screens with today in view).
+
 ### Working with tasks
 
 The app opens on the **Tasks** tab: every open task as one tree, the active

@@ -231,6 +231,41 @@ describe('WeekView', () => {
         expect(screen.getByTestId('week-view')).toHaveAttribute('data-height', 'rest');
     });
 
+    describe('"Today": back to the current week', () => {
+        beforeEach(() => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(new Date('2024-02-14T10:00:00')); // Wednesday
+        });
+        afterEach(() => vi.useRealTimers());
+        const today = () => screen.queryByRole('button', { name: 'Today' });
+
+        it('is offered only while another week is shown, and brings back the current one', () => {
+            render(<WeekView {...defaultProps} />); // the week of 12.–18.2.
+            expect(today()).toBeNull();
+
+            fireEvent.click(screen.getByText('>'));
+            fireEvent.click(screen.getByText('>'));
+            expect(screen.getByText(/26\.2\./)).toBeInTheDocument();
+            fireEvent.click(today()!);
+
+            expect(screen.getByText(/12\.2\./)).toBeInTheDocument();
+            expect(screen.getByText(/18\.2\./)).toBeInTheDocument();
+            expect(today()).toBeNull();
+        });
+
+        it('is not offered in the current week early on Monday (days count, not times)', () => {
+            vi.setSystemTime(new Date('2024-02-12T07:00:00')); // Monday morning
+            render(<WeekView {...defaultProps} />); // opened on Friday noon of that week
+            expect(today()).toBeNull();
+        });
+
+        it('also from a week the view was opened on (e.g. the first free day)', () => {
+            render(<WeekView {...defaultProps} initialDate={new Date('2024-01-03T12:00:00')} />);
+            fireEvent.click(today()!);
+            expect(screen.getByText(/12\.2\./)).toBeInTheDocument();
+        });
+    });
+
     describe('opening on today when the week is wider than the screen', () => {
         // A phone: the week (1400 px) in a 390 px wide scroll area.
         const lefts = new WeakMap<Element, number>();
@@ -275,6 +310,14 @@ describe('WeekView', () => {
         it('opened on another week (jump to a free day): on that day', () => {
             render(<WeekView {...defaultProps} initialDate={new Date('2024-02-23T12:00:00')} />);
             expect(scrollLeft()).toBe(4 * dayWidth); // Friday
+        });
+
+        it('"Today" from another week scrolls to today too', () => {
+            render(<WeekView {...defaultProps} />);
+            fireEvent.click(screen.getByText('<'));
+            expect(scrollLeft()).toBe(0); // last week: from Monday
+            fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+            expect(scrollLeft()).toBe(2 * dayWidth);
         });
 
         it('leaves a week that fits the screen as it is', () => {
