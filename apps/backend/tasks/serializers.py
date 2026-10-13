@@ -198,6 +198,13 @@ class TaskSerializer(serializers.ModelSerializer):
             validated_data['color'] = from_hex(own) if own else None
 
     def get_active_tracking_start(self, task):
+        if self.parent is not None:
+            # A list asks once for every running session, not once per task
+            # (README: Performance).
+            if '_running_starts' not in self.context:
+                self.context['_running_starts'] = dict(
+                    TrackingSession.objects.filter(end=None).values_list('task_id', 'start'))
+            return self.context['_running_starts'].get(task.id)
         session = task.tracking_sessions.filter(end=None).first()
         return session.start if session is not None else None
 

@@ -40,6 +40,23 @@ export interface OutlineOptions {
     context?: Set<string>;
 }
 
+// The last row object made for each task, one cache per kind of row (a
+// shared one would swap the tree's and the inbox's rows of a task forever).
+const taskRows = new WeakMap<Task, OutlineItem>();
+const restRows = new WeakMap<Task, OutlineItem>();
+const inboxRows = new WeakMap<Task, OutlineItem>();
+
+/** ``item``, or the object last made for the task when nothing differs: a
+ *  reload keeps unchanged tasks as the same objects (TanStack Query), so
+ *  their memoized rows skip rendering (README: Performance). */
+function remembered<T extends OutlineItem>(cache: WeakMap<Task, OutlineItem>, item: T): T {
+    const last = cache.get(item.task) as T | undefined;
+    const keys = Object.keys(item) as (keyof T)[];
+    if (last && keys.length === Object.keys(last).length && keys.every(key => last[key] === item[key])) return last;
+    cache.set(item.task, item);
+    return item;
+}
+
 /** Visible rows: every project as a tree — the active project's top-level
  *  task first, the others in their own (manual) order. */
 export function outlineItems(tasks: Task[], options: OutlineOptions): OutlineItem[] {
@@ -53,15 +70,15 @@ export function outlineItems(tasks: Task[], options: OutlineOptions): OutlineIte
     const visit = (task: Task, depth: number) => {
         const kids = children.get(task.id) ?? [];
         const expanded = !options.collapsed.has(task.id);
-        items.push({
+        items.push(remembered(taskRows, {
             kind: 'task', key: task.id, task, depth, hasChildren: kids.length > 0, expanded,
             path: pathOf(task, byId), ...(task.id === options.activeId ? { active: true } : {}),
             ...(options.context?.has(task.id) ? { context: true } : {}),
-        });
+        }));
         if (kids.length === 0 || !expanded) return;
         for (const child of kids) visit(child, depth + 1);
         if (!task.is_done && !options.context?.has(task.id) && (parseDurationMinutes(task.rest ?? null) ?? 0) > 0) {
-            items.push({ kind: 'rest', key: `rest:${task.id}`, task, depth: depth + 1 });
+            items.push(remembered(restRows, { kind: 'rest', key: `rest:${task.id}`, task, depth: depth + 1 }));
         }
     };
     for (const root of roots) visit(root, 0);
@@ -73,6 +90,7 @@ export function inboxItems(tasks: Task[]): OutlineItem[] {
     const byId = new Map(tasks.map(t => [t.id, t]));
     return tasks
         .filter(t => !t.is_done && t.is_estimated === false)
-        .map(task => ({ kind: 'task' as const, key: task.id, task, depth: 0, hasChildren: false, expanded: true, path: pathOf(task, byId) }))
+        .map(task => remembered(inboxRows,
+            { kind: 'task', key: task.id, task, depth: 0, hasChildren: false, expanded: true, path: pathOf(task, byId) }))
         .sort((a, b) => a.path.localeCompare(b.path) || bySiblingOrder(a.task, b.task));
 }

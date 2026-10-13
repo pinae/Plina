@@ -498,17 +498,32 @@ keeps renders small:
 * **Cheap rows.** The priority slider is a light display until it is
   hovered or focused (a press on it sets the value at once); a Tooltip is
   only rendered where it has something to say.
+* **A new task shows at once.** The task the server returns for "+ Add
+  task" (and the quick add) joins the list straight away; the reload of the
+  list that follows runs in the background and brings what the server
+  derives (the parents' Σ and Rest). After a reload only the rows whose
+  task changed render again: unchanged tasks stay the same objects
+  (TanStack Query), so their rows do too, and the rows are one flat list —
+  a new task moves the rows after it (and the open "+ Add task" row, which
+  keeps its focus) instead of re-creating them.
+* **The task list is one request with a fixed number of queries.**
+  `GET /api/tasks/` prefetches the tags and asks once for the running
+  timer (it ran two queries per task: about 650 ms for 450 tasks, now
+  about 150 ms).
 * **Changing geometry is inline.** Positions and sizes that change with the
   zoom, a drag or the clock (Week view cards, buckets, the now line, column
   heights) go into ``style``, not ``sx``: emotion adds a CSS rule for every
   new ``sx`` value and never removes it.
 
-`OutlineView.renders.test.tsx` counts the rows each action renders, and a
+`OutlineView.renders.test.tsx` counts the rows each action renders (also
+for a reload and for adding a task), `test_task_list_queries.py` checks
+that the task list's queries do not grow with the tasks, and a
 Week view test checks that zooming adds no CSS rule. Measured with 447 tasks
 in a production build: a keystroke in the "+ Add task" row went from about
 650 ms to 16 ms (one frame), a step with ↓ from 500–1000 ms to 30–50 ms, the
-Tasks tab's memory from 83 MB to 69 MB, and ten zoom steps no longer add
-340 CSS rules. Measure performance in a production build (`yarn build`,
+Tasks tab's memory from 83 MB to 69 MB, ten zoom steps no longer add
+340 CSS rules, and a task added with Enter shows after about 0.2 s instead
+of 2.5 s. Measure performance in a production build (`yarn build`,
 `yarn preview`): the development build is several times slower.
 
 ### Notes for AI Agents and Contributors
