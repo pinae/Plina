@@ -283,6 +283,9 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
     const handlePrevWeek = () => setCurrentDate(addDays(currentDate, -7));
     const handleNextWeek = () => setCurrentDate(addDays(currentDate, 7));
+    // Another week is shown: "Today" goes back to the current one.
+    const now = new Date();
+    const showsToday = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).some(day => sameDay(day, now));
 
     const days = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
 
@@ -349,9 +352,16 @@ export const WeekView: React.FC<WeekViewProps> = ({
                 p: 1, borderBottom: '1px solid #333', backgroundColor: '#1e1e1e', zIndex: 20, flexShrink: 0,
             }}>
                 <Button onClick={handlePrevWeek} variant="contained" sx={{ minWidth: '40px' }}>&lt;</Button>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                    {formatRange(weekStart, weekEnd)}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                        {formatRange(weekStart, weekEnd)}
+                    </Typography>
+                    {!showsToday && (
+                        <Button size="small" variant="outlined" onClick={() => setCurrentDate(new Date())}>
+                            Today
+                        </Button>
+                    )}
+                </Box>
                 <Button onClick={handleNextWeek} variant="contained" sx={{ minWidth: '40px' }}>&gt;</Button>
             </Box>
 
