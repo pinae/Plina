@@ -450,7 +450,7 @@ class TimeSheetView(APIView):
                 "running": day.running, "pause_seconds": day.pause_seconds, "working_seconds": day.working_seconds,
                 "entries": [{
                     "task_id": entry.task_id, "header": entry.header, "tags": entry.tags, "kind": entry.kind,
-                    "seconds": entry.seconds, "running": entry.running,
+                    "seconds": entry.seconds, "running": entry.running, "via": entry.via,
                 } for entry in day.entries],
             } for day in timesheet.time_sheet(first, last)],
         })

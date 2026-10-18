@@ -492,8 +492,10 @@ export interface TimeSheetEntry {
     task_id: string;
     header: string;
     tags: Tag[];
-    /** #Arbeit/#Work: work; #Freizeit/#Freetime: a pause. */
+    /** #Arbeit/#Work: work; #Freizeit/#Freetime: a pause (its own tag or a project's). */
     kind: 'work' | 'pause';
+    /** The parent or project whose tag made it count; null: its own tag. */
+    via?: string | null;
     /** Its time on that day (a pause: between begin and end only). */
     seconds: number;
     /** Being tracked right now. */

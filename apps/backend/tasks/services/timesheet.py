@@ -1,11 +1,15 @@
 """The time sheet (README: Time sheet): per day, when work began and ended
 and how long the pauses were — from the tracked time.
 
-* **Work** is time tracked on a task tagged #Arbeit or #Work. A day begins
-  with the first stretch of work and ends with the last one.
+* **Work** is time tracked on a task tagged #Arbeit or #Work — or in a
+  project (any parent) tagged so. A day begins with the first stretch of
+  work and ends with the last one.
 * **Pause** is time tracked on a task tagged #Freizeit or #Freetime (and not
-  #Arbeit or #Work), counted between that begin and end; free time before
-  work or after it is no pause.
+  #Arbeit or #Work) — or in a project tagged so —, counted between that
+  begin and end; free time before work or after it is no pause.
+* The nearest tag decides: a task's own tags before its parent's, the
+  parent's before the project's (a #Freizeit "Lunch" in an #Arbeit project
+  is a pause).
 * The working time is the span from begin to end without the pauses.
 
 Days are the user's days (the active time zone). A session counts on the
@@ -21,7 +25,7 @@ from typing import Dict, List, Optional
 
 from django.utils import timezone
 
-from tasks.models import TrackingSession
+from tasks.models import Task, TrackingSession
 
 WORK_TAGS = ("Arbeit", "Work")
 PAUSE_TAGS = ("Freizeit", "Freetime")
@@ -47,6 +51,27 @@ def kind_of(tag_names) -> Optional[str]:
     return None
 
 
+def kinds_of(task_ids) -> Dict:
+    """Per task: (kind, the header of the parent or project whose tags
+    decided, None for the task's own) — the nearest tagged one decides."""
+    from tasks.services.tree import TreeIndex
+    tree = TreeIndex.load()
+    chains = {task_id: [task_id, *reversed(tree.ancestor_ids(task_id))]
+              for task_id in task_ids if task_id in tree.nodes}
+    names: Dict = {}
+    wanted = {task_id for chain in chains.values() for task_id in chain}
+    for task_id, name in Task.tags.through.objects.filter(task_id__in=wanted).values_list("task_id", "tag__name"):
+        names.setdefault(task_id, []).append(name)
+    kinds = {}
+    for task_id, chain in chains.items():
+        for holder in chain:
+            kind = kind_of(names.get(holder, ()))
+            if kind is not None:
+                kinds[task_id] = (kind, None if holder == task_id else tree.nodes[holder].header)
+                break
+    return kinds
+
+
 @dataclass
 class Entry:
     """A task counted on a day, with its time on that day."""
@@ -58,6 +83,8 @@ class Entry:
     #: Being tracked right now.
     running: bool = False
     first_start: Optional[datetime] = None
+    #: The parent or project whose tag made the task count (None: its own).
+    via: Optional[str] = None
 
 
 @dataclass
@@ -95,15 +122,16 @@ def time_sheet(first: date, last: date, now: Optional[datetime] = None, zone=Non
     zone = zone or timezone.get_current_timezone()
     now = now or timezone.now()
     window_start, window_end = day_bounds(first, last, zone)
-    sessions = (TrackingSession.objects.filter(start__gte=window_start, start__lt=window_end)
-                .select_related("task").prefetch_related("task__tags").order_by("start"))
+    sessions = list(TrackingSession.objects.filter(start__gte=window_start, start__lt=window_end)
+                    .select_related("task").prefetch_related("task__tags").order_by("start"))
+    kinds = kinds_of({session.task_id for session in sessions})
     # Per day (the one it began on): the sessions of work and pause, with their task.
     pieces: Dict[date, list] = {}
     for session in sessions:
+        if session.task_id not in kinds:
+            continue  # neither the task nor a parent is tagged for the sheet
+        kind = kinds[session.task_id][0]
         tags = list(session.task.tags.all())
-        kind = kind_of(tag.name for tag in tags)
-        if kind is None:
-            continue
         end = session.end or max(now, session.start)
         day = timezone.localtime(session.start, zone).date()
         pieces.setdefault(day, []).append((kind, session.start, end, session, tags))
@@ -128,7 +156,8 @@ def time_sheet(first: date, last: date, now: Optional[datetime] = None, zone=Non
             if entry is None:
                 entry = entries[str(task.id)] = Entry(
                     task_id=str(task.id), header=task.header, kind=kind, first_start=max(start, begin),
-                    tags=[{"id": str(tag.id), "name": tag.name, "hex_color": tag.hex_color} for tag in tags])
+                    tags=[{"id": str(tag.id), "name": tag.name, "hex_color": tag.hex_color} for tag in tags],
+                    via=kinds[task.id][1])
             entry.seconds += seconds
             entry.running = entry.running or session.end is None
         for entry in entries.values():

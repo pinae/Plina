@@ -5,8 +5,9 @@
  * "Edit times" there and "Add time" correct and enter tracked time
  * (TrackedTimeDialog).
  *
- * Work is time tracked on tasks tagged #Arbeit or #Work; time tracked on
- * #Freizeit or #Freetime tasks between the begin and end of work is a pause.
+ * Work is time tracked on tasks tagged #Arbeit or #Work, or in a project
+ * tagged so; time tracked on #Freizeit or #Freetime tasks (or projects)
+ * between the begin and end of work is a pause.
  */
 import { useState } from 'react';
 import {
@@ -92,6 +93,12 @@ function DayRows({ day, open, onToggle, onEdit, compact }: {
                                     <TableRow key={entry.task_id} data-kind={entry.kind}>
                                         <TableCell sx={{ overflowWrap: 'anywhere' }}>
                                             {entry.header}
+                                            {entry.via && (
+                                                <Typography component="span" variant="caption" color="text.secondary"
+                                                    title={`Counted by the tag of “${entry.via}”`} sx={{ ml: 0.75 }}>
+                                                    via {entry.via}
+                                                </Typography>
+                                            )}
                                             {entry.kind === 'pause' && (
                                                 <Chip size="small" variant="outlined" label="pause" sx={{ ml: 0.75, height: 18 }} />
                                             )}
@@ -167,8 +174,9 @@ export default function TimeSheet({ initialMonth }: { initialMonth?: Date }) {
                 </Button>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Work is the time tracked on tasks tagged {workTags}: a day begins with the first and ends with the
-                last of it. Time tracked on {pauseTags} tasks in between is a pause.
+                Work is the time tracked on tasks tagged {workTags} — or in a project tagged so: a day begins with
+                the first and ends with the last of it. Time tracked on {pauseTags} tasks (or projects) in between
+                is a pause.
             </Typography>
             {sheet.isError ? (
                 <Alert severity="error">The time sheet could not be loaded.</Alert>
@@ -196,7 +204,8 @@ export default function TimeSheet({ initialMonth }: { initialMonth?: Date }) {
                                 <TableRow>
                                     <TableCell colSpan={6}>
                                         <Typography variant="body2" color="text.secondary">
-                                            No work tracked in {monthName}. Track the time (▶) of tasks tagged {workTags}.
+                                            No work tracked in {monthName}. Track the time (▶) of tasks tagged {workTags},
+                                            or tag their project.
                                         </Typography>
                                     </TableCell>
                                 </TableRow>

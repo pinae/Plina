@@ -118,6 +118,22 @@ describe('TimeSheet', () => {
         await waitFor(() => expect(screen.queryByRole('table', { name: /tasks of/ })).toBeNull());
     });
 
+    it('says which project made a task count, when its own tags did not', async () => {
+        days = [{
+            ...wednesday, entries: [
+                { task_id: 'filters', header: 'Filter bar', tags: [], kind: 'work', seconds: 3 * 3600, running: false, via: 'Plina' },
+                ...wednesday.entries.map(entry => ({ ...entry, via: null })),
+            ],
+        }];
+        render(<TimeSheet initialMonth={new Date(2026, 9, 1)} />, { wrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /show the tasks of/ }));
+
+        const tasks = await screen.findByRole('table', { name: /tasks of/ });
+        const [, filters, report] = within(tasks).getAllByRole('row');
+        expect(cells(filters)).toEqual(['Filter barvia Plina', '', '3h']);
+        expect(cells(report)[0]).toBe('Report'); // its own tag
+    });
+
     it('marks an end after midnight: the day’s work went on into the night', async () => {
         days = [{ ...wednesday, end: local(8, 0, 45), working_seconds: 15 * 3600 }];
         render(<TimeSheet initialMonth={new Date(2026, 9, 1)} />, { wrapper });
@@ -139,7 +155,7 @@ describe('TimeSheet', () => {
 
     it('says how to get on it when nothing was tracked', async () => {
         render(<TimeSheet initialMonth={new Date(2026, 10, 1)} />, { wrapper });
-        expect(await screen.findByText(/No work tracked in/)).toHaveTextContent(/tagged #Arbeit or #Work/);
+        expect(await screen.findByText(/No work tracked in/)).toHaveTextContent(/tagged #Arbeit or #Work.*or tag their project/);
         expect(screen.queryByTestId('time-sheet-total')).toBeNull();
     });
 
