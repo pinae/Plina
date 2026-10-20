@@ -314,6 +314,8 @@ export function lightPlan(plan: PlanResponse, { tasks, dependencies, now, defaul
     const ends = new Map<string, number>();
     const ended = (taskId: string, end: number) => ends.set(taskId, Math.max(ends.get(taskId) ?? 0, end));
     for (const item of anchored) ended(item.task_id, endOf(item));
+    // A maybe blocks no time, but what depends on it waits until it ends.
+    for (const item of reminders) ended(item.task_id, endOf(item));
 
     const placed = new Map<string, PlanItem[]>(); // bucket id → items
     const cursor = new Map<string, number>(); // bucket id → end of its last placed slice

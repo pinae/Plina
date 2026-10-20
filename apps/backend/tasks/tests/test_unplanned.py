@@ -67,3 +67,70 @@ class UnplannedTest(TestCase):
 
         self.assertNotIn("Claire's PhD defense", planned)
         self.assertEqual(planned["Write chapter"], at(9))
+
+
+class WaitingForAMaybeTest(TestCase):
+    """A project waits for a colleague who is away until November 2nd: a
+    maybe appointment on that day, and every task of the project depends on
+    it. Nothing of the project is planned before the appointment ends;
+    other work still fills this week."""
+
+    def setUp(self):
+        self.clock = mock.patch("django.utils.timezone.now", return_value=NOW)
+        self.clock.start()
+        self.addCleanup(self.clock.stop)
+        self.api = APIClient()
+        work = TimeBucketType.objects.create(name="Work", duration=timedelta(hours=4))
+        for day in range(28):  # four weeks of weekday mornings, 9–13
+            start = at(9) + timedelta(days=day)
+            if start.weekday() < 5:
+                TimeBucket.objects.create(start_date=start, duration=timedelta(hours=4), type=work)
+        self.project = Task.objects.create(header="Joint project")
+        self.joint = [Task.objects.create(header=f"Joint {index}", parent=self.project, order=index,
+                                          duration=timedelta(hours=2)) for index in range(3)]
+        Task.objects.create(header="Solo work", duration=timedelta(hours=2))
+        self.back = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
+        created = self.api.post("/api/tasks/", {
+            "header": "Colleague back", "is_appointment": True, "is_unplanned": True,
+            "start_date": self.back.isoformat(), "duration": "00:30:00",
+        }, format="json")
+        self.assertEqual(created.status_code, 201, created.content)
+        self.marker = created.data["id"]
+
+    def depend_on_the_marker(self, *tasks):
+        for task in tasks:
+            response = self.api.post("/api/dependencies/", {"predecessor": self.marker, "successor": str(task.id)},
+                                     format="json")
+            self.assertEqual(response.status_code, 201, response.content)
+
+    def starts(self, data):
+        items = data["appointments"] + [item for bucket in data["buckets"] for item in bucket["items"]]
+        starts = {}
+        for item in items:
+            start = datetime.fromisoformat(item["start_time"].replace("Z", "+00:00"))
+            starts[item["header"]] = min(start, starts.get(item["header"], start))
+        return starts
+
+    def assert_waits(self, data, label=""):
+        starts = self.starts(data)
+        ready = self.back + timedelta(minutes=30)
+        for task in self.joint:
+            self.assertIn(task.header, starts, label)
+            self.assertGreaterEqual(starts[task.header], ready, f"{label}: {task.header} before the colleague is back")
+        self.assertLess(starts["Solo work"], at(9) + timedelta(days=5), label)  # other work goes on this week
+        self.assertNotIn("Colleague back", starts, label)  # still only a reminder
+
+    def test_every_task_of_the_project_depends_on_the_maybe(self):
+        self.depend_on_the_marker(*self.joint)
+
+        for alternative in self.api.post("/api/plan/alternatives/").json()["alternatives"]:
+            self.assert_waits(alternative, alternative["label"])
+        accepted = self.api.post("/api/plan/alternatives/").json()["alternatives"][0]
+        self.api.post(f"/api/plans/{accepted['id']}/accept/")
+        self.assert_waits(self.api.post("/api/plan/recalculate/").json(), "re-plan")
+
+    def test_the_project_depends_on_the_maybe(self):
+        self.depend_on_the_marker(self.project)  # a parent's predecessors hold for all its tasks
+
+        for alternative in self.api.post("/api/plan/alternatives/").json()["alternatives"]:
+            self.assert_waits(alternative, alternative["label"])

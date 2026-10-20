@@ -234,6 +234,12 @@ then on it is an appointment like any other — the Week view fits the work
 around it at once (planning light), and the next re-plan plans around it.
 Unticking it again takes it out of the next plan.
 
+A maybe also works as a marker to wait for: tasks that depend on it (or on
+a project that does) are not planned before it ends, though it blocks no
+time itself — e.g. "Colleague back" on November 2nd, with the joint
+project's tasks depending on it, keeps that project out of the weeks
+before while other work fills them.
+
 ### Recurring tasks
 
 "Repeats" in the edit dialog takes a rule in plain language — "every tuesday

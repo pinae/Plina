@@ -140,6 +140,15 @@ describe('lightPlan', () => {
         expect(result.plan.appointments.find(i => i.task_id === 'Defense')?.is_unplanned).toBe(true);
     });
 
+    it('starts nothing that waits for a maybe before the maybe ends (README: Unplanned appointments)', () => {
+        // The colleague is back at 10:00 (a maybe until 10:30); A waits for that.
+        const back = makeTask('Back', { is_appointment: true, is_unplanned: true, start_date: iso(10), duration: '00:30:00' });
+        const dependencies = [{ id: 'd', predecessor: 'Back', successor: 'A' }];
+        const { slots } = shown([...baseTasks(), back], at(8), dependencies);
+        expect(slots).toContain('A 10:30–11:30');
+        expect(slots).toContain('Back 10:00–10:30'); // still a reminder only
+    });
+
     it('drops deleted tasks and lists work whose days are over', () => {
         const yesterday = plan();
         yesterday.buckets[0].items.push(item('Old', at(9, 0, 7), 1));
