@@ -48,8 +48,9 @@ class AnchoredAffinityTest(TestCase):
         self.assertEqual(self._placed(plan, b2, anchored), timedelta(0))
         self.assertEqual(self._placed(plan, b3, anchored), timedelta(hours=4))
 
-    def test_untagged_bucket_still_accepts_overflow(self):
-        # An untagged bucket accepts everything — affinity must not block it.
+    def test_a_task_with_its_own_buckets_does_not_spill_into_untagged_ones(self):
+        # Buckets with its tag exist: the untagged bucket is for other work
+        # (README: Scheduling — a #Freizeit task stays out of the work buckets).
         general = TimeBucketType.objects.create(name="G", duration=timedelta(hours=4))
         b1 = self.bucket(self.type_a, 1, 2)
         b2 = TimeBucket.objects.create(
@@ -60,6 +61,25 @@ class AnchoredAffinityTest(TestCase):
             start_date=self.now + timedelta(hours=1), is_fixed=True,
         )
         anchored.tags.add(self.tag_a)
+
+        plan = allocate_tasks([b1, b2], [anchored])
+
+        self.assertEqual(self._placed(plan, b1, anchored), timedelta(hours=2))
+        self.assertEqual(self._placed(plan, b2, anchored), timedelta(0))
+
+    def test_untagged_bucket_takes_tasks_whose_tags_no_bucket_carries(self):
+        general = TimeBucketType.objects.create(name="G", duration=timedelta(hours=4))
+        b1 = TimeBucket.objects.create(
+            start_date=self.now + timedelta(hours=1), duration=timedelta(hours=2), type=general,
+        )
+        b2 = TimeBucket.objects.create(
+            start_date=self.now + timedelta(hours=3), duration=timedelta(hours=4), type=general,
+        )
+        anchored = Task.objects.create(
+            header="Split", duration=timedelta(hours=4),
+            start_date=self.now + timedelta(hours=1), is_fixed=True,
+        )
+        anchored.tags.add(Tag.objects.create(name="c"))  # no bucket carries #c
 
         plan = allocate_tasks([b1, b2], [anchored])
 

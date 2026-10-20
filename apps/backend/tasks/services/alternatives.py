@@ -298,6 +298,8 @@ def _evaluate(plan: Dict[object, List[PlanItem]], snapshots: List[PlanningTask],
         fully_planned = allocated.get(snapshot.id, timedelta(0)) >= snapshot.remaining_duration
         projected = finish.get(snapshot.id)
         if not fully_planned:
+            if snapshot.not_after is not None:
+                continue  # a recurring task's occurrence: its next one takes over
             warnings.append(PlanWarning(
                 task_id=snapshot.id, header=snapshot.header,
                 kind="unplanned_within_horizon",

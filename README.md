@@ -251,19 +251,26 @@ its own (`apps/backend/tasks/services/series.py`):
 * Completing one completes only that one; each collects its own tracked
   time. Deleting a row deletes only that occurrence (its date is skipped);
   "Delete all occurrences" in the dialog deletes the series, done ones too.
-* An **appointment**'s occurrences exist for the planning horizon (60 days)
-  ahead and block their time like any appointment; a past one completes
-  itself when it ends, unless it is being tracked. The Tasks tab lists only
-  the next one.
-* Any **other task** comes again when its next date is reached and is
-  planned like any other task from then on, not before ("from Tue 06/10" in
-  its row). They do not pile up: the new one replaces an open one nobody
-  worked on, and after weeks away there is one task, for the latest date.
-  An occurrence with tracked time stays until it is completed.
+* Occurrences exist for the planning horizon (60 days) ahead. An
+  **appointment**'s block their time like any appointment; a past one
+  completes itself when it ends, unless it is being tracked. The Tasks tab
+  lists only the next one.
+* Any **other task**'s occurrences are each planned like any other task:
+  not before its date and not once the next one's date has come, so a daily
+  "Guten Morgen" goes into every morning's time bucket (the rule's time is
+  the earliest start: "every day" or "every day at 7" fits a bucket from
+  07:00 to 08:00, "every morning" — 08:00 — does not). A missed one is not
+  made up elsewhere and no warning says it is unplanned: the next one takes
+  over. The Tasks tab lists the one that is due — or, while none is, the
+  next one, saying from when ("from Tue 06/10" in its row). They do not
+  pile up: an open one nobody worked on goes when the next one's date is
+  reached, and after weeks away there is one task for the latest date. An
+  occurrence with tracked time stays until it is completed.
 * A new occurrence copies the latest one (title, description, estimate,
   priority, tags, color, project); a deadline moves along with the date.
-* Edits apply to "this occurrence" or "this and the following ones". A
-  changed rule applies from the edited occurrence on; an emptied one stops
+* Edits apply to "this occurrence" or "this and the following ones" — for a
+  task the following ones by default, as the Tasks tab does not list them.
+  A changed rule applies from the edited occurrence on; an emptied one stops
   the repetition after it.
 * A recurring task has no subtasks (it cannot be split, nothing moves into
   it), and is never the active project.
@@ -474,6 +481,14 @@ instances. For each bucket:
   exist, it only considers Tasks sharing at least one matching Tag.
   Tasks without any tag are the exception: they fit every bucket, as 
   if they had all tags (usually they just were not sorted yet).
+  A tagged task goes only into buckets with one of its tags, if any 
+  bucket carries one; otherwise (its tags are for sorting only) it goes 
+  anywhere. So a #Freizeit task stays out of untagged work hours when 
+  there is a #Freizeit bucket.
+* Own tasks first: a tagged bucket offers its time to the tasks with 
+  its tags first; untagged tasks get what they leave. A long untagged 
+  task does not take over the morning bucket meant for a #Freizeit 
+  routine.
 * Stickiness Bonus: The algorithm looks at the previously scheduled 
   task. If that task is incomplete and fits the current bucket's 
   affinity, it receives a heavy "stickiness bonus" to prevent 
