@@ -97,15 +97,19 @@ class Command(BaseCommand):
             project.save(update_fields=["duration"])
 
         # Recurring capacity (per the story: mornings deep, afternoons open,
-        # Tuesday evening for writing). The tagged ones share their tag's
-        # color; the open afternoons get an automatic one.
+        # Tuesday evening for writing). A tagged task goes only into buckets
+        # with its tag (README: The Scheduling Algorithm), so the open
+        # afternoons carry both tags: there the two projects compete. The
+        # mornings and Tuesday evenings share their tag's color; the
+        # afternoons get an automatic one.
         mornings = TimeBucketType.objects.create(
             name="Weekday Mornings", start_times="every weekday at 09:00",
             duration=timedelta(hours=4), color=b'\x33\x57\xFF')
         mornings.tags.add(tag_deep)
-        TimeBucketType.objects.create(
+        afternoons = TimeBucketType.objects.create(
             name="Weekday Afternoons", start_times="every weekday at 14:00",
             duration=timedelta(hours=3))
+        afternoons.tags.add(tag_deep, tag_writing)
         writing_evening = TimeBucketType.objects.create(
             name="Tuesday Writing", start_times="every tuesday at 19:00",
             duration=timedelta(hours=2), color=b'\x8e\x44\xad')

@@ -6,10 +6,12 @@ tracked on its own.
 * An appointment's occurrences exist for the planning horizon ahead, so they
   block their time like any appointment. A past one completes itself when
   it ends, unless it is being tracked.
-* Any other task's next occurrence appears when its date is reached and is
-  planned like any other task from then on. They do not pile up: only the
-  latest date that is due gets a task, and older open occurrences nobody
-  worked on go (one with tracked time stays, so the time is not lost).
+* Any other task's occurrences exist for the planning horizon ahead too, so
+  each is planned — not before its date, and not once the next one's date
+  has come ("Guten Morgen" into every morning's bucket). They do not pile
+  up: of missed dates only the latest gets a task, and an open occurrence
+  nobody worked on goes when the next one's date is reached (one with
+  tracked time stays, so the time is not lost).
 * A new occurrence copies the latest one (header, description, estimate,
   priority, tags, color, project); a deadline moves along with the date.
 * Deleting one occurrence skips its date; :func:`delete_series` deletes all.
@@ -203,9 +205,9 @@ def _complete_past_appointments(series: TaskSeries, now: datetime) -> int:
 
 
 def spawn_occurrences(now: Optional[datetime] = None) -> List[Task]:
-    """Make the occurrences that are due: an appointment's up to the planning
-    horizon, any other task's up to now; past appointments complete
-    themselves. Returns the new tasks."""
+    """Make the occurrences up to the planning horizon; past appointments
+    complete themselves, missed open tasks give way to the latest one.
+    Returns the new tasks."""
     return _update(now or timezone.now())[0]
 
 
@@ -240,24 +242,27 @@ def _update_series(series: TaskSeries, now: datetime) -> Tuple[List[Task], int]:
         completed = _complete_past_appointments(series, now)
         if series.calendar_subscription_id is not None:
             return [], completed  # its occurrences come from the calendar
-        until = now + timedelta(days=settings.PLANNING_HORIZON_DAYS)
-    else:
-        until = now
+    until = now + timedelta(days=settings.PLANNING_HORIZON_DAYS)
     created = []
     skipped = set(series.skipped)
     due = [moment for moment in occurrences(rule, series.anchor, template.occurrence + timedelta(minutes=1), until)
            if _key(moment) not in skipped]
     if not template.is_appointment:
-        due = due[-1:]  # missed dates do not pile up: the latest one only
+        # Missed dates do not pile up: of the past ones the latest only.
+        past = [moment for moment in due if moment <= now]
+        due = past[-1:] + [moment for moment in due if moment > now]
     for moment in due:
         try:
             with transaction.atomic():
                 created.append(_copy(template, rule, moment))
         except IntegrityError:
             continue  # made meanwhile by another request
-    if created and not template.is_appointment:
-        # The new one replaces the open ones before it; worked-on ones stay.
-        _untouched(series).filter(occurrence__lt=created[-1].occurrence).delete()
+    if not template.is_appointment:
+        # The latest one whose date has come replaces the open ones before
+        # it; worked-on ones stay.
+        current = Task.objects.filter(series=series, occurrence__lte=now).order_by("-occurrence").first()
+        if current is not None:
+            _untouched(series).filter(occurrence__lt=current.occurrence).delete()
     if created:
         from tasks.services.colors import ensure_auto_colors
         ensure_auto_colors()

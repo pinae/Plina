@@ -55,6 +55,9 @@ class PlanningTask:
     #: Not planned before this: a recurring task's occurrence that is still
     #: ahead (README: Recurring tasks).
     not_before: datetime | None = None
+    #: Not planned from this on: the date of a recurring task's next
+    #: occurrence, which takes over (no two "Guten Morgen" in one morning).
+    not_after: datetime | None = None
 
     @classmethod
     def from_task(cls, task: Task, project_id: UUID | None | object = ...,
@@ -138,7 +141,36 @@ def build_planning_tasks(tasks: Iterable[Task], now: datetime | None = None) -> 
         snapshots = [replace(snapshot, remaining_duration=snapshot.remaining_duration - elapsed)
                      if snapshot.id == task_id else snapshot for snapshot in snapshots]
     snapshots = _waiting_for_maybes(snapshots, tree)
+    snapshots = _until_the_next_occurrence(snapshots)
     return [snapshot for snapshot in snapshots if snapshot.remaining_duration > timedelta(0)]
+
+
+def _until_the_next_occurrence(snapshots: List[PlanningTask]) -> List[PlanningTask]:
+    """An occurrence of a recurring task (not an appointment) is planned
+    until the next one's date at the latest: a morning that is over is not
+    made up in the next one, next to that day's own occurrence."""
+    from tasks.models import TaskSeries
+    from tasks.services.recurrence import RecurrenceError, parse_rule
+    from tasks.services.series import next_after
+    recurring = [snapshot for snapshot in snapshots if not snapshot.is_appointment
+                 and snapshot.source.series_id is not None and snapshot.source.occurrence is not None]
+    series = TaskSeries.objects.in_bulk({snapshot.source.series_id for snapshot in recurring})
+    rules = {}
+    for series_id, one in series.items():  # parsed once per series, not per occurrence
+        try:
+            rules[series_id] = parse_rule(one.recurrence)
+        except RecurrenceError:
+            pass
+    windows = {}
+    for snapshot in recurring:
+        task = snapshot.source
+        if task.series_id not in rules:
+            continue
+        following = next_after(series[task.series_id], task.occurrence, rules[task.series_id])
+        if following is not None:
+            windows[snapshot.id] = following
+    return [replace(snapshot, not_after=windows[snapshot.id]) if snapshot.id in windows else snapshot
+            for snapshot in snapshots]
 
 
 def _waiting_for_maybes(snapshots: List[PlanningTask], tree: TreeIndex) -> List[PlanningTask]:
@@ -313,6 +345,8 @@ class _AllocationRun:
                 self.predecessors.setdefault(successor, []).append(predecessor)
         self.finished_at: Dict[UUID, datetime] = {}
         self.last_task: PlanningTask | None = None
+        #: The tags the buckets of this plan carry (see :func:`_matches_affinity`).
+        self.bucket_tags: frozenset = frozenset()
 
     def is_eligible(self, snapshot: PlanningTask, at: datetime) -> bool:
         """Finish-to-start: every planned predecessor must be fully allocated
@@ -329,11 +363,18 @@ class _AllocationRun:
             self.finished_at[snapshot.id] = end_time
 
 
-def _matches_affinity(snapshot: PlanningTask, bucket_tag_ids: frozenset) -> bool:
-    """Untagged buckets take every task; untagged tasks go into every bucket
-    (as if they had all tags — the user just did not sort them yet)."""
-    if not bucket_tag_ids or not snapshot.tag_ids:
+def _matches_affinity(snapshot: PlanningTask, bucket_tag_ids: frozenset,
+                      bucket_tags: frozenset = frozenset()) -> bool:
+    """A tagged bucket takes the tasks with one of its tags. A tagged task
+    goes into the buckets that carry one of its tags — ``bucket_tags`` are
+    all the tags the buckets of this plan carry —; only if none does, into
+    untagged buckets (a #Freizeit task stays out of the work buckets).
+    Untagged tasks go into every bucket (as if they had all tags — the user
+    just did not sort them yet)."""
+    if not snapshot.tag_ids:
         return True
+    if not bucket_tag_ids:
+        return not (snapshot.tag_ids & bucket_tags)
     return bool(bucket_tag_ids & snapshot.tag_ids)
 
 
@@ -389,7 +430,7 @@ def _place_anchored(anchored: List[PlanningTask], segments: List[_Segment],
                 (
                     i for i, segment in enumerate(segments)
                     if segment.end > cursor
-                    and (any_bucket or _matches_affinity(snapshot, segment.tag_ids))
+                    and (any_bucket or _matches_affinity(snapshot, segment.tag_ids, run.bucket_tags))
                 ),
                 None,
             )
@@ -428,25 +469,36 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
         needed = run.remaining[snapshot.id]
         if needed <= timedelta(0):
             return False
-        if not _matches_affinity(snapshot, segment.tag_ids):
+        if not _matches_affinity(snapshot, segment.tag_ids, run.bucket_tags):
             return False
         if free < config.min_task_slice and needed > free:
             return False  # leftover gap too small to be worth a context switch
         if snapshot.not_before is not None and at < snapshot.not_before:
             return False
+        if snapshot.not_after is not None and at >= snapshot.not_after:
+            return False
         return run.is_eligible(snapshot, at)
 
-    last = run.last_task
-    if last is not None and last in queue and is_candidate(last):
-        return last
-    if config.project_stickiness and last is not None and last.project_id is not None:
+    def pick(allowed) -> PlanningTask | None:
+        last = run.last_task
+        if last is not None and last in queue and allowed(last) and is_candidate(last):
+            return last
+        if config.project_stickiness and last is not None and last.project_id is not None:
+            for snapshot in queue:
+                if snapshot.project_id == last.project_id and allowed(snapshot) and is_candidate(snapshot):
+                    return snapshot
         for snapshot in queue:
-            if snapshot.project_id == last.project_id and is_candidate(snapshot):
+            if allowed(snapshot) and is_candidate(snapshot):
                 return snapshot
-    for snapshot in queue:
-        if is_candidate(snapshot):
-            return snapshot
-    return None
+        return None
+
+    # A tagged bucket is for the tasks with its tags first — also before the
+    # task worked on so far; unsorted (untagged) ones fill what is left.
+    if segment.tag_ids:
+        own = pick(lambda snapshot: bool(snapshot.tag_ids & segment.tag_ids))
+        if own is not None:
+            return own
+    return pick(lambda snapshot: True)
 
 
 def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
@@ -497,6 +549,7 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
         run.consume(appointment, appointment.remaining_duration, end_time)
 
     segments = _build_segments(buckets, by_role["appointment"])
+    run.bucket_tags = frozenset().union(*(segment.tag_ids for segment in segments))
     occupied = _Occupied()
     if running is not None and segments:
         _place_anchored([running], segments, run, plan, occupied,
@@ -525,7 +578,8 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
                 else:
                     break
                 continue
-            slice_duration = min(run.remaining[snapshot.id], window_end - current_time)
+            limit = min(window_end, snapshot.not_after) if snapshot.not_after else window_end
+            slice_duration = min(run.remaining[snapshot.id], limit - current_time)
             end_time = current_time + slice_duration
             plan[segment.bucket_id].append(
                 PlanItem.of(snapshot, current_time, slice_duration)

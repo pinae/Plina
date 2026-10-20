@@ -21,6 +21,18 @@ describe('recurring tasks in the Tasks tab', () => {
         expect(withoutLaterOccurrences(tasks, NOW).map(t => t.id)).toEqual(['past-open', 'done', 'next', 'plain']);
     });
 
+    it('a task waits for its open due occurrence: the ones ahead show once it is done', () => {
+        const chore = (id: string, date: string, over = {}) => occurrence(id, date, { header: 'Water plants', series_id: 's2', is_appointment: false, ...over });
+        const ahead = [chore('tue', '2026-10-06T20:00:00+02:00'), chore('tue2', '2026-10-13T20:00:00+02:00')];
+        const due = chore('due', '2026-09-29T20:00:00+02:00');
+        expect(withoutLaterOccurrences([due, ...ahead], NOW).map(t => t.id)).toEqual(['due']);
+        const done = { ...due, is_done: true, completed_at: '2026-09-29T21:00:00+02:00' };
+        expect(withoutLaterOccurrences([done, ...ahead], NOW).map(t => t.id)).toEqual(['due', 'tue']);
+        // An appointment's next one shows next to one still open (e.g. being tracked).
+        expect(withoutLaterOccurrences([occurrence('past-open', '2026-09-29T20:00:00+02:00'),
+            occurrence('next', '2026-10-06T20:00:00+02:00')], NOW).map(t => t.id)).toEqual(['past-open', 'next']);
+    });
+
     it('says what the rule is and when the next one comes', () => {
         const task = occurrence('next', '2026-10-06T20:00:00+02:00', { next_occurrence: '2026-10-13T20:00:00+02:00' });
         expect(recurrenceSummary(task)).toMatch(/^every Tuesday at 20:00 · next: .*13/);

@@ -497,12 +497,28 @@ describe('TaskFormDialog — repeats (README: Recurring tasks)', () => {
         render(<TaskFormDialog open onClose={() => { }} task={occurrence} />, { wrapper });
         expect(screen.getByText(/this occurrence:/i)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /split into subtasks/i })).toBeNull();
+        // A task's following occurrences are not listed: the edit goes to them too, unless said otherwise.
+        expect(screen.getByRole('radio', { name: /this and the following/i })).toBeChecked();
         fireEvent.change(headerInput(), { target: { value: 'Water all plants' } });
-        fireEvent.click(screen.getByRole('radio', { name: /this and the following/i }));
         fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
         await waitFor(() => expect(patches).toHaveLength(1));
         expect(patches[0]).toMatchObject({ header: 'Water all plants', scope: 'following' });
         expect(patches[0]).not.toHaveProperty('recurrence'); // the rule did not change
+    });
+
+    it('an appointment\'s edit goes to this occurrence unless said otherwise', async () => {
+        const patches: Record<string, unknown>[] = [];
+        server.use(previewHandler, http.patch(`${API}/tasks/chore/`, async ({ request }) => {
+            patches.push((await request.json()) as Record<string, unknown>);
+            return HttpResponse.json(occurrence);
+        }));
+        render(<TaskFormDialog open onClose={() => { }}
+            task={{ ...occurrence, is_appointment: true, start_date: occurrence.occurrence }} />, { wrapper });
+        expect(screen.getByRole('radio', { name: /^this occurrence/i })).toBeChecked();
+        fireEvent.click(screen.getByRole('radio', { name: /this and the following/i }));
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toMatchObject({ scope: 'following' });
     });
 
     it('deletes all occurrences after asking', async () => {

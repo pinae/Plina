@@ -139,10 +139,11 @@ function TaskForm({
     );
     const [startIncomplete, setStartIncomplete] = useState(false);
     // Repeats (README: Recurring tasks); "" = once. A recurring task's edit
-    // goes to this occurrence or the following ones too.
+    // goes to this occurrence or the following ones too — by default for a
+    // task, whose following ones the Tasks tab does not list.
     const [recurrence, setRecurrence] = useState(task?.recurrence ?? '');
     const recurring = Boolean(task?.series_id);
-    const [scope, setScope] = useState<'this' | 'following'>('this');
+    const [scope, setScope] = useState<'this' | 'following'>(task?.is_appointment === false ? 'following' : 'this');
     const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
     // A repeating calendar event (README: Calendar): new occurrences join
     // the recurring task without asking, while they fit its rule.

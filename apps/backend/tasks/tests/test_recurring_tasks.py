@@ -1,9 +1,9 @@
 """Recurring tasks (README: Recurring tasks, services.series): every
-occurrence is a task of its own — completed and tracked on its own. An
-appointment's occurrences exist for the planning horizon ahead (they block
-their time); any other task's next occurrence appears when its date is
-reached — replacing an open one nobody worked on, they do not pile up — and
-is planned like any other task from then on."""
+occurrence is a task of its own — completed and tracked on its own. The
+occurrences exist for the planning horizon ahead: an appointment's block
+their time, any other task's are each planned from their date on. They do
+not pile up: an open one nobody worked on goes when the next one's date is
+reached."""
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -50,62 +50,72 @@ class RecurringTaskTest(RecurringTestCase):
         self.assertEqual(self.series.recurrence, "every tuesday at 20:00")
         self.assertEqual(spawn_occurrences(now=MONDAY), [])  # nothing else before the next date
 
-    def test_the_next_one_appears_when_its_date_is_reached(self):
-        self.assertEqual(spawn_occurrences(now=at(13, 19, 59)), [])
-        [second] = spawn_occurrences(now=at(13, 20, 0))
-        self.assertEqual((second.header, second.duration, second.priority, second.occurrence),
-                         ("Water plants", timedelta(minutes=15), 4, at(13, 20)))
+    def test_occurrences_exist_for_the_planning_horizon_ahead(self):
+        # Like an appointment's, each is planned on its own (README: Recurring tasks).
+        tuesdays = [at(6, 20)] + [at(13 + 7 * week, 20) for week in range(8)]  # until Tuesday, 1 December
+        self.assertEqual([t.occurrence for t in self.occurrences(self.series)], tuesdays)
+        second = self.occurrences(self.series)[1]
+        self.assertEqual((second.header, second.duration, second.priority), ("Water plants", timedelta(minutes=15), 4))
         self.assertEqual(list(second.tags.all()), [self.tag])
-        self.assertEqual(spawn_occurrences(now=at(13, 21)), [])  # only once
+        # Days on, the horizon moves along: one more.
+        self.assertEqual([t.occurrence for t in spawn_occurrences(now=at(10))], [at(69, 20)])
+        self.assertEqual(spawn_occurrences(now=at(10, 1)), [])  # only once
 
     def test_they_do_not_pile_up(self):
-        # Not done by the next date: the new one replaces it.
-        [second] = spawn_occurrences(now=at(13, 20))
-        self.assertEqual(self.occurrences(self.series), [second])
-        # Weeks away: one task for the latest date, not one per missed date.
-        self.assertEqual([t.occurrence for t in spawn_occurrences(now=at(28, 12))], [at(27, 20)])
-        self.assertEqual([t.occurrence for t in self.occurrences(self.series)], [at(27, 20)])
+        # Not done by the next date: the next one takes its place.
+        spawn_occurrences(now=at(13, 19, 59))
+        self.assertEqual(self.occurrences(self.series)[0], self.chore)
+        spawn_occurrences(now=at(13, 20))
+        self.assertEqual(self.occurrences(self.series)[0].occurrence, at(13, 20))
+        self.assertFalse(Task.objects.filter(id=self.chore.id).exists())
+        # Weeks away, beyond the horizon: of the missed dates the latest only.
+        made = spawn_occurrences(now=at(100, 12))
+        self.assertEqual(made[0].occurrence, at(97, 20))
+        self.assertEqual(self.occurrences(self.series)[0].occurrence, at(97, 20))
 
     def test_worked_on_or_done_ones_stay(self):
         self.chore.time_spent = timedelta(minutes=5)  # begun: its time is kept
         self.chore.save()
-        [second] = spawn_occurrences(now=at(13, 20))
+        spawn_occurrences(now=at(13, 20))
+        second = self.occurrences(self.series)[1]
         TrackingSession.objects.create(task=second, start=at(13, 21))  # being tracked
-        [third] = spawn_occurrences(now=at(20, 20))
-        self.assertEqual(self.occurrences(self.series), [self.chore, second, third])
+        spawn_occurrences(now=at(20, 20))
+        third = self.occurrences(self.series)[2]
         third.completed_at = at(20, 21)
         third.save()
-        [fourth] = spawn_occurrences(now=at(27, 20))
-        self.assertEqual(self.occurrences(self.series), [self.chore, second, third, fourth])
+        spawn_occurrences(now=at(27, 20))
+        self.assertEqual([t.occurrence for t in self.occurrences(self.series)][:4],
+                         [at(6, 20), at(13, 20), at(20, 20), at(27, 20)])
 
     def test_completing_one_completes_only_that_one_and_each_has_its_own_time(self):
         self.chore.time_spent = timedelta(minutes=20)
         self.chore.save()
         spawn_occurrences(now=at(13, 20))
-        first, second = self.occurrences(self.series)
+        first, second = self.occurrences(self.series)[:2]
         first.completed_at = at(13, 21)
         first.save()
         second.refresh_from_db()
         self.assertFalse(second.is_done)
         self.assertEqual(second.time_spent, timedelta(0))
-        [third] = spawn_occurrences(now=at(20, 20))
-        self.assertEqual(third.occurrence, at(20, 20))
-        self.assertEqual(self.occurrences(self.series), [first, third])  # the open, untouched second went
+        spawn_occurrences(now=at(20, 20))
+        # The open, untouched second went when the third's date came.
+        self.assertEqual([t.occurrence for t in self.occurrences(self.series)][:2], [at(6, 20), at(20, 20)])
 
     def test_new_occurrences_copy_the_latest_one(self):
-        self.chore.header = "Water all plants"
-        self.chore.description = "Also the balcony"
-        self.chore.save()
-        [second] = spawn_occurrences(now=at(13, 20))
-        self.assertEqual((second.header, second.description), ("Water all plants", "Also the balcony"))
+        latest = self.occurrences(self.series)[-1]
+        latest.header = "Water all plants"
+        latest.description = "Also the balcony"
+        latest.save()
+        [new] = spawn_occurrences(now=at(10))
+        self.assertEqual((new.header, new.description), ("Water all plants", "Also the balcony"))
 
     def test_a_deadline_moves_along(self):
-        self.chore.latest_finish_date = at(8, 18)  # two days after the occurrence
-        self.chore.save()
-        [second] = spawn_occurrences(now=at(13, 20))
+        task = Task.objects.create(header="Bins out", latest_finish_date=at(8, 18))  # two days after the occurrence
+        make_recurring(task, "every tuesday at 20:00", now=MONDAY)
+        second = self.occurrences(task.series)[1]
         self.assertEqual(second.latest_finish_date, at(15, 18))
-        [fifth] = spawn_occurrences(now=at(34, 20))  # from the latest, also when dates were missed
-        self.assertEqual(fifth.latest_finish_date, at(36, 18))
+        [new] = [t for t in spawn_occurrences(now=at(10)) if t.series_id == task.series_id]
+        self.assertEqual(new.latest_finish_date, at(71, 18))
 
     def test_a_rule_without_a_time_is_due_from_the_start_of_the_day(self):
         task = Task.objects.create(header="Bins out")
@@ -119,17 +129,16 @@ class RecurringTaskTest(RecurringTestCase):
     def test_deleting_one_keeps_the_series_and_it_does_not_come_back(self):
         self.chore.completed_at = at(6, 21)
         self.chore.save()
-        [second] = spawn_occurrences(now=at(13, 20))
+        second = self.occurrences(self.series)[1]
         delete_occurrence(second)
-        self.assertEqual(spawn_occurrences(now=at(14)), [])
-        self.assertEqual(self.occurrences(self.series), [self.chore])
-        self.assertEqual([t.occurrence for t in spawn_occurrences(now=at(20, 20))], [at(20, 20)])
+        spawn_occurrences(now=at(14))
+        self.assertEqual([t.occurrence for t in self.occurrences(self.series)][:2], [at(6, 20), at(20, 20)])
 
     def test_deleting_all_occurrences(self):
         self.chore.completed_at = at(7)
         self.chore.save()
         spawn_occurrences(now=at(20, 20))
-        self.assertEqual(len(self.occurrences(self.series)), 2)
+        self.assertGreater(len(self.occurrences(self.series)), 2)
         delete_series(self.chore)
         self.assertFalse(Task.objects.filter(header="Water plants").exists())
         self.assertFalse(TaskSeries.objects.exists())
