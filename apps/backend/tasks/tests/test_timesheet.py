@@ -125,6 +125,59 @@ class TimeSheetTest(TimeSheetCase):
                          [(6, 3600), (7, 2 * 3600)])
 
 
+class ProjectTagsTest(TimeSheetCase):
+    """A task counts as work (or pause) also by the tag of a parent or its
+    project: the nearest tag decides."""
+
+    def child(self, header, parent, *tags):
+        task = Task.objects.create(header=header, parent=parent)
+        task.tags.set(tags)
+        return task
+
+    def test_work_on_tasks_of_tagged_projects_across_projects(self):
+        plina = self.task("Plina", self.arbeit)
+        rooms = self.task("Raumbuchung", self.work)
+        filters = self.child("Filter bar", self.child("Frontend", plina))  # two levels down
+        booking = self.child("Test: Raum buchen", rooms, self.maker)
+        self.track(filters, at(14, 9), at(14, 12))
+        self.track(booking, at(14, 13), at(14, 15, 30))
+        booking.completed_at = at(14, 15, 30)  # completed work still counts
+        booking.save()
+
+        [day] = self.sheet()
+
+        self.assertEqual((day.begin, day.end, day.working_seconds), (at(14, 9), at(14, 15, 30), int(6.5 * 3600)))
+        self.assertEqual([(entry.header, entry.kind, entry.via) for entry in day.entries], [
+            ("Filter bar", "work", "Plina"), ("Test: Raum buchen", "work", "Raumbuchung"),
+        ])
+        self.assertEqual([tag["name"] for tag in day.entries[1].tags], ["maker"])  # its own tags
+
+    def test_the_nearest_tag_decides(self):
+        office = self.task("Office", self.arbeit)
+        lunch = self.child("Lunch", office, self.freizeit)  # a pause, though in a work project
+        report = self.child("Report", office)
+        garden = self.task("Garden", self.freizeit)
+        invoice = self.child("Invoice for the garden", garden, self.work)  # work in a free-time project
+        self.track(report, at(15, 9), at(15, 12))
+        self.track(lunch, at(15, 12), at(15, 12, 30))
+        self.track(invoice, at(15, 12, 30), at(15, 13))
+
+        [day] = self.sheet()
+
+        self.assertEqual([(entry.header, entry.kind, entry.via) for entry in day.entries], [
+            ("Report", "work", "Office"), ("Lunch", "pause", None), ("Invoice for the garden", "work", None),
+        ])
+        self.assertEqual(day.pause_seconds, 30 * 60)
+
+    def test_tagging_a_project_later_counts_its_earlier_tasks(self):
+        project = self.task("Thesis")
+        chapter = self.child("Chapter 2", project)
+        self.track(chapter, at(16, 9), at(16, 11))
+        self.assertEqual(self.sheet(), [])
+        project.tags.add(self.arbeit)
+        self.assertEqual([day.working_seconds for day in self.sheet()], [2 * 3600])
+
+
 class TimeSheetApiTest(TimeSheetCase):
     def setUp(self):
         super().setUp()
@@ -149,8 +202,17 @@ class TimeSheetApiTest(TimeSheetCase):
         self.assertEqual(first["entries"], [{
             "task_id": str(report.id), "header": "Report", "kind": "work", "seconds": 3 * 3600, "running": False,
             "tags": [{"id": str(self.arbeit.id), "name": "Arbeit", "hex_color": self.arbeit.hex_color}],
+            "via": None,  # its own tag
         }])
         self.assertEqual([day["date"] for day in data["days"]], ["2026-10-07", "2026-10-31"])
+
+    def test_says_which_project_made_a_task_count(self):
+        project = self.task("Plina", self.arbeit)
+        task = Task.objects.create(header="Filter bar", parent=project)
+        self.track(task, at(7, 9), at(7, 12))
+        data = self.api.get("/api/timesheet/", {"from": "2026-10-07", "to": "2026-10-07"}).json()
+        [entry] = data["days"][0]["entries"]
+        self.assertEqual((entry["header"], entry["kind"], entry["via"], entry["tags"]), ("Filter bar", "work", "Plina", []))
 
     def test_a_range(self):
         self.track(self.task("Report", self.arbeit), at(7, 9), at(7, 12))

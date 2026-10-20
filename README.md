@@ -234,6 +234,12 @@ then on it is an appointment like any other — the Week view fits the work
 around it at once (planning light), and the next re-plan plans around it.
 Unticking it again takes it out of the next plan.
 
+A maybe also works as a marker to wait for: tasks that depend on it (or on
+a project that does) are not planned before it ends, though it blocks no
+time itself — e.g. "Colleague back" on November 2nd, with the joint
+project's tasks depending on it, keeps that project out of the weeks
+before while other work fills them.
+
 ### Recurring tasks
 
 "Repeats" in the edit dialog takes a rule in plain language — "every tuesday
@@ -356,17 +362,22 @@ The "Time Sheet" tab shows a month of tracked time (▶ on a task), a row
 per day (`apps/backend/tasks/services/timesheet.py`):
 
 * **Begin** and **End**: the start of the first and the end of the last
-  tracked time on a task tagged **#Arbeit** or **#Work** that day.
+  tracked time on a task tagged **#Arbeit** or **#Work** that day — or on
+  a task in a project (any parent) tagged so: tag your work projects once
+  and all their tasks count, also completed ones and ones made earlier.
 * **Pause**: the time tracked on tasks tagged **#Freizeit** or
-  **#Freetime** (and not #Arbeit or #Work) between begin and end, added up.
-  Free time before work began or after it ended is no pause.
+  **#Freetime** (and not #Arbeit or #Work) — or in a project tagged so —
+  between begin and end, added up. Free time before work began or after it
+  ended is no pause.
 * **Working time**: from begin to end without the pauses — time in between
   that was not tracked at all counts as work. The month's total is below.
 * The arrow opens a day: the tasks counted on it, their tags and their time
-  that day.
+  that day; "via Plina" names the project whose tag made a task count.
 
-Only a task's own tags count (subtasks get their parent's tags when they
-are made). Tag names count in any case. Days are those of your time zone; a
+The nearest tag decides: a task's own tags before its parent's, the
+parent's before the project's — a "Lunch" tagged #Freizeit in an #Arbeit
+project is a pause. Time tracked on tasks without such a tag anywhere above
+them stays off the sheet. Tag names count in any case. Days are those of your time zone; a
 session counts on the day it began, also when it went on after midnight
 (its end then shows "+1"), and a running one until now. Days without work
 are left out. `GET /api/timesheet/?from=2026-10-01&to=2026-10-31` gives the

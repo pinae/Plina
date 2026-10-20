@@ -225,7 +225,7 @@ def delete_task(task: Task, children_mode: Optional[str]) -> None:
 
 # Dependencies on the tree (UI-2) ---------------------------------------------
 
-def _units_of(task_id: UUID, tree: TreeIndex, unit_ids: Set[UUID]) -> List[UUID]:
+def units_of(task_id: UUID, tree: TreeIndex, unit_ids: Set[UUID]) -> List[UUID]:
     """Planning units in ``task_id``'s subtree: open leaves and positive Rests
     (a Rest is planned under its parent's id)."""
     if task_id not in tree.nodes:
@@ -247,8 +247,8 @@ def expand_edges(edges: Iterable[Tuple[UUID, UUID]], tree: TreeIndex,
     edges = list(edges)
     result: Set[Tuple[UUID, UUID]] = set()
     for predecessor, successor in edges:
-        for before in _units_of(predecessor, tree, unit_ids):
-            for after in _units_of(successor, tree, unit_ids):
+        for before in units_of(predecessor, tree, unit_ids):
+            for after in units_of(successor, tree, unit_ids):
                 if before != after:
                     result.add((before, after))
     for parent in unit_ids:
@@ -260,7 +260,7 @@ def expand_edges(edges: Iterable[Tuple[UUID, UUID]], tree: TreeIndex,
             continue
         with_successor = {p for p, _ in internal}
         for child in children - with_successor:
-            for unit in _units_of(child, tree, unit_ids):
+            for unit in units_of(child, tree, unit_ids):
                 result.add((unit, parent))
     return sorted(result, key=lambda edge: (str(edge[0]), str(edge[1])))
 

@@ -15,7 +15,7 @@ from uuid import UUID
 from django.utils import timezone
 
 from tasks.models import Task, TimeBucket
-from tasks.services.tree import DEFAULT_DURATION, TreeIndex, expand_edges
+from tasks.services.tree import DEFAULT_DURATION, TreeIndex, expand_edges, units_of
 
 #: Estimate used for tasks the user has not sized yet.
 DEFAULT_DURATION_ESTIMATE = DEFAULT_DURATION
@@ -137,7 +137,31 @@ def build_planning_tasks(tasks: Iterable[Task], now: datetime | None = None) -> 
         task_id, elapsed = running
         snapshots = [replace(snapshot, remaining_duration=snapshot.remaining_duration - elapsed)
                      if snapshot.id == task_id else snapshot for snapshot in snapshots]
+    snapshots = _waiting_for_maybes(snapshots, tree)
     return [snapshot for snapshot in snapshots if snapshot.remaining_duration > timedelta(0)]
+
+
+def _waiting_for_maybes(snapshots: List[PlanningTask], tree: TreeIndex) -> List[PlanningTask]:
+    """A dependency on an unplanned appointment (a maybe, README: Unplanned
+    appointments) still holds: what depends on it is not planned before it
+    ends. The maybe itself is no planning unit — it blocks no time — so its
+    edges would be dropped (:func:`planning_edges` keeps edges between units
+    only); this turns them into a "not before" of the units that wait (the
+    successor's, or all of a successor project's)."""
+    from tasks.models import TaskDependency
+    waits = TaskDependency.objects.filter(
+        predecessor__is_unplanned=True, predecessor__completed_at=None, predecessor__start_date__isnull=False,
+    ).values_list("successor_id", "predecessor__start_date", "predecessor__duration")
+    unit_ids = {snapshot.id for snapshot in snapshots}
+    ready: Dict[UUID, datetime] = {}
+    for successor_id, start, duration in waits:
+        end = start + (duration or timedelta(0))
+        for unit in units_of(successor_id, tree, unit_ids):
+            ready[unit] = max(end, ready.get(unit, end))
+    if not ready:
+        return snapshots
+    return [replace(snapshot, not_before=max(ready[snapshot.id], snapshot.not_before or ready[snapshot.id]))
+            if snapshot.id in ready else snapshot for snapshot in snapshots]
 
 
 def _running_session(now: datetime):
