@@ -500,7 +500,9 @@ instances. For each bucket:
 * Stickiness Bonus: The algorithm looks at the previously scheduled 
   task. If that task is incomplete and fits the current bucket's 
   affinity, it receives a heavy "stickiness bonus" to prevent 
-  unnecessary context switching.
+  unnecessary context switching. In an option with a focus ("Next: 
+  Company Blog") a task outside it does not stick: where the focus can 
+  go, it goes on.
 * Quantum Checking: It enforces a minimum time slice (e.g., 
   15 minutes) to prevent fragmentation (scheduling 3 minutes of a 
   task just to fill a gap).

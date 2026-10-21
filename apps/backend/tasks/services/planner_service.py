@@ -280,9 +280,12 @@ class AllocationConfig:
     ``min_task_slice``: minimum quantum for starting a task in a leftover gap.
     ``project_stickiness``: after finishing a task, prefer tasks of the same
     project before switching, on top of regular task stickiness.
+    ``focus_task_ids``: the tasks of the chosen option ("Next: Company
+    Blog"); stickiness does not keep another task going where they can go.
     """
     min_task_slice: timedelta = MIN_TASK_SLICE
     project_stickiness: bool = False
+    focus_task_ids: frozenset = frozenset()
 
 
 DEFAULT_CONFIG = AllocationConfig()
@@ -482,6 +485,8 @@ def _pick_next(queue: List[PlanningTask], run: _AllocationRun,
 
     def pick(allowed) -> PlanningTask | None:
         last = run.last_task
+        if last is not None and config.focus_task_ids and last.id not in config.focus_task_ids:
+            last = None  # outside the focus: the focus (ranked first) goes on where it can
         if last is not None and last in queue and allowed(last) and is_candidate(last):
             return last
         if config.project_stickiness and last is not None and last.project_id is not None:

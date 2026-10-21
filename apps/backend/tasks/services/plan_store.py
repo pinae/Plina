@@ -192,7 +192,7 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
     context = planning_context(now)
     weight = deadline_weight(snapshots, buckets, edges, now, context.running_id) if preset == "deadline_safe" else None
     ranked = plan_ranking(snapshots, preset, focus, now, context, weight)
-    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset),
+    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset, focus),
                                 running_id=context.running_id, now=now)
 
     anchored_ids = _anchored_task_ids()

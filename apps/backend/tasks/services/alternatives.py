@@ -201,10 +201,10 @@ def plan_ranking(snapshots: List[PlanningTask], preset: str, focus_task_ids: fro
     return _apply_focus(ranked, focus_task_ids)
 
 
-def _preset_config(preset: str) -> AllocationConfig:
+def _preset_config(preset: str, focus_task_ids: frozenset = frozenset()) -> AllocationConfig:
     if preset == "flow":
-        return AllocationConfig(min_task_slice=FLOW_MIN_SLICE, project_stickiness=True)
-    return AllocationConfig()
+        return AllocationConfig(min_task_slice=FLOW_MIN_SLICE, project_stickiness=True, focus_task_ids=focus_task_ids)
+    return AllocationConfig(focus_task_ids=focus_task_ids)
 
 
 def _apply_focus(ranked: List[PlanningTask],
@@ -424,7 +424,7 @@ def generate_alternatives(snapshots: List[PlanningTask], buckets: List,
     seen_orderings = set()
     for candidate in _candidates(snapshots, context):
         ranked = plan_ranking(snapshots, candidate.preset, candidate.focus_task_ids, now, context, weight)
-        plan = allocate_tasks(buckets, ranked, edge_list, config=_preset_config(candidate.preset),
+        plan = allocate_tasks(buckets, ranked, edge_list, config=_preset_config(candidate.preset, candidate.focus_task_ids),
                               running_id=running_id, now=now)
         ordering = _ordering_of(plan)
         if ordering in seen_orderings:
