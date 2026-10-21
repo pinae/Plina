@@ -43,4 +43,15 @@ describe('FeasibilityBanner', () => {
         expect(screen.getByRole('button', { name: /edit deadline/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /edit priority/i })).toBeInTheDocument();
     });
+
+    it('says how much of a task without a deadline finds no place, and why; no deadline to edit', () => {
+        renderBanner([{
+            task_id: 'cad', header: 'CAD', kind: 'unplanned_within_horizon', deadline: null, projected_finish: null,
+            missing_minutes: 90, waits_for: null, only_tags: [],
+        }]);
+        expect(screen.getByText('Project “T250” (task “CAD”): 1h 30m of it find no place in the time buckets '
+            + 'of the next 60 days: they are full.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /edit deadline/i })).toBeNull();
+        expect(screen.getByRole('button', { name: /edit priority/i })).toBeInTheDocument();
+    });
 });

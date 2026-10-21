@@ -14,7 +14,7 @@ import {
 } from '../../queries.tsx';
 import { useLightPlan } from '../../hooks/useLightPlan.ts';
 import { useIsNarrow } from '../../hooks/useResponsive.ts';
-import { needsReplan, type LightPlanNote } from '../../utils/lightPlan.ts';
+import { groupedNotes, needsReplan, type LightPlanNote } from '../../utils/lightPlan.ts';
 import type { Task } from '../../types.ts';
 import { useDependencyDrawing } from '../../hooks/useDependencyDrawing.ts';
 import { DependencyDrawLayer } from '../DependencyDrawLayer/DependencyDrawLayer.tsx';
@@ -126,8 +126,8 @@ interface PlannedWeekViewProps {
 }
 
 /** "CAD (1 h), Firmware (30 min)". */
-const listed = (notes: LightPlanNote[]) =>
-    notes.map(note => `${note.header} (${formatDuration(minutesToDurationString(note.minutes))})`).join(', ');
+const listed = (notes: LightPlanNote[]) => groupedNotes(notes).map(({ header, minutes, count }) =>
+    `${header} (${count > 1 ? `${count}× · ` : ''}${formatDuration(minutesToDurationString(minutes))})`).join(', ');
 
 /** A whole day's start, local time (e.g. a special bucket made from an all-day marker). */
 const atMidnight = (iso: string) => {

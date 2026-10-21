@@ -21,6 +21,7 @@ import type { PlanAlternative, PlanWarning, Task } from '../../types.ts';
 import {
     commonWarnings, formatSlack, isCommon, miniTimeline, nextTasks, planByDay, projectOf, slackSeverity, taskCount,
 } from '../../utils/planChooser.ts';
+import { whyUnplanned } from '../../utils/planWarnings.ts';
 
 const FALLBACK_COLOR = '#9e9e9e';
 
@@ -31,7 +32,7 @@ function warningText(warning: PlanWarning): string {
                 ? ` (projected ${format(new Date(warning.projected_finish), 'MMM d, HH:mm')})`
                 : '');
     }
-    return `“${warning.header}” doesn't fit within the planning horizon`;
+    return `“${warning.header}”${warning.missing_minutes === undefined ? '' : ':'} ${whyUnplanned(warning)}`;
 }
 
 const Dot = ({ color }: { color: string | null }) => (

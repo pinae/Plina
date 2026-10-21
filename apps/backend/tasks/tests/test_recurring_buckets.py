@@ -107,3 +107,47 @@ class OwnBucketsTest(MorningCase):
         for [start] in self.plan_of("Call the bank"):
             self.assertTrue(9 <= start.hour < 13, start)  # in an untagged work bucket
 
+
+
+class OverlappingBucketTest(MorningCase):
+    """Sleep in its own bucket (23:00 to 7:00, #Schlaf) while the evening's
+    bucket runs on to 23:18: the sleep bucket's own task gets its time, the
+    evening's work stops when the sleep bucket starts."""
+
+    def setUp(self):
+        super().setUp()
+        self.schlaf = Tag.objects.create(name="Schlaf")
+        TimeBucketType.objects.create(name="Evening", start_times="every day at 19:00",
+                                      duration=timedelta(hours=4, minutes=18))
+        night = TimeBucketType.objects.create(name="Night", start_times="every day at 23:00", duration=timedelta(hours=8))
+        night.tags.add(self.schlaf)
+        Task.objects.create(header="Big project", duration=timedelta(hours=300), priority=5)
+        response = self.request("post", "/api/tasks/", {
+            "header": "Schlaf", "duration": "08:00:00", "priority": 10, "recurrence": "every day at 23:00",
+            "tag_ids": [str(self.schlaf.id)],
+        })
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def items(self, alternative, header):
+        found = []
+        for bucket in alternative["buckets"]:
+            for item in bucket["items"]:
+                if item["header"] == header:
+                    start = datetime.fromisoformat(item["start_time"].replace("Z", "+00:00")).astimezone(BERLIN)
+                    found.append((start, start + timedelta(seconds=item["duration"])))
+        return sorted(found)
+
+    def test_the_whole_night_goes_to_sleep(self):
+        for alternative in self.request("post", "/api/plan/alternatives/").json()["alternatives"]:
+            nights = [(start, end) for start, end in self.items(alternative, "Schlaf") if start < at(7, 0)]
+            self.assertEqual(nights, [(at(day, 23), at(day + 1, 7)) for day in range(7)], alternative["label"])
+            evening = [(start, end) for start, end in self.items(alternative, "Big project")
+                       if start.hour >= 19 and start < at(7, 0)]
+            self.assertTrue(evening)
+            self.assertTrue(all(end.hour == 23 and end.minute == 0 or end.hour < 23 for _, end in evening), evening)
+
+    def test_without_a_task_of_its_own_the_overlap_is_not_lost(self):
+        Task.objects.filter(header="Schlaf").delete()
+        alternative = self.request("post", "/api/plan/alternatives/").json()["alternatives"][0]
+        night = [(start, end) for start, end in self.items(alternative, "Big project") if at(0, 19) <= start < at(1, 7)]
+        self.assertEqual(sum((end - start for start, end in night), timedelta(0)), timedelta(hours=12))

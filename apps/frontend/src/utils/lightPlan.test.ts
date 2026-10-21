@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { makeTask } from '../testing/treeFixtures.ts';
 import type { Dependency, PlanItem, PlanResponse, Task } from '../types.ts';
-import { lightPlan, needsReplan } from './lightPlan.ts';
+import { groupedNotes, lightPlan, needsReplan } from './lightPlan.ts';
 
 // Local times: the plan's days are the user's days.
 const at = (hour: number, minute = 0, day = 8) => new Date(2026, 9, day, hour, minute);
@@ -149,6 +149,18 @@ describe('lightPlan', () => {
         expect(slots).toContain('Back 10:00–10:30'); // still a reminder only
     });
 
+    it('keeps a recurring task\'s occurrence to what the plan gave it: its next one takes over', () => {
+        // Sleep: 3h, but its bucket left 2h of it planned; and yesterday's, missed.
+        const occurrence = { series_id: 's', occurrence: iso(0, 0, 9), duration: '03:00:00' };
+        const tasks = [...edit(baseTasks(), 'D', occurrence),
+            makeTask('Yesterday', { ...occurrence, occurrence: iso(0, 0, 7), duration: '01:00:00' })];
+        const missed = plan();
+        missed.buckets[0].items.push(item('Yesterday', at(9, 0, 7), 1));
+        const { slots, notes } = shown(tasks, at(8), [], missed);
+        expect(slots).toContain('D 9. 9:00–9. 11:00');
+        expect(needsReplan(notes)).toBe(false);
+    });
+
     it('drops deleted tasks and lists work whose days are over', () => {
         const yesterday = plan();
         yesterday.buckets[0].items.push(item('Old', at(9, 0, 7), 1));
@@ -157,5 +169,14 @@ describe('lightPlan', () => {
         expect(slots.some(slot => slot.startsWith('C '))).toBe(false);
         expect(slots).toContain('Old 7. 9:00–7. 10:00'); // history stays
         expect(notes.dropped).toEqual([{ taskId: 'Old', header: 'Old', minutes: 60 }]);
+    });
+});
+
+describe('groupedNotes', () => {
+    it('lists a name once, with its minutes added up', () => {
+        const notes = [{ taskId: 'm1', header: 'Mittagessen', minutes: 25 }, { taskId: 'w', header: 'Write', minutes: 30 },
+            { taskId: 'm2', header: 'Mittagessen', minutes: 15 }];
+        expect(groupedNotes(notes)).toEqual([{ header: 'Mittagessen', minutes: 40, count: 2 },
+            { header: 'Write', minutes: 30, count: 1 }]);
     });
 });

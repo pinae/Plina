@@ -6,6 +6,7 @@ import { useTasks } from '../../queries.tsx';
 import type { PlanWarning } from '../../types.ts';
 import { TaskFormDialog } from '../TaskFormDialog/TaskFormDialog.tsx';
 import { BucketTypeFormDialog } from '../BucketTypeFormDialog/BucketTypeFormDialog.tsx';
+import { whyUnplanned } from '../../utils/planWarnings.ts';
 
 /**
  * WP-13: the accepted plan's feasibility warnings, surfaced globally with
@@ -33,7 +34,7 @@ export function FeasibilityBanner({ warnings }: { warnings: PlanWarning[] }) {
                 : '';
             return `${subject} can't finish by ${format(new Date(warning.deadline), 'MMM d')}${projected}.`;
         }
-        return `${subject} doesn't fit within the planning horizon.`;
+        return `${subject}${warning.missing_minutes === undefined ? '' : ':'} ${whyUnplanned(warning)}.`;
     };
 
     const editingTask = tasks.data?.find(t => t.id === editTaskId);
@@ -51,10 +52,12 @@ export function FeasibilityBanner({ warnings }: { warnings: PlanWarning[] }) {
                             onClick={() => setBucketFormOpen(true)}>
                             Add time buckets
                         </Button>
-                        <Button size="small" color="inherit" variant="outlined"
-                            onClick={() => setEditTaskId(warning.task_id)}>
-                            Edit deadline
-                        </Button>
+                        {(warning.kind === 'deadline_missed' || warning.deadline) && (
+                            <Button size="small" color="inherit" variant="outlined"
+                                onClick={() => setEditTaskId(warning.task_id)}>
+                                Edit deadline
+                            </Button>
+                        )}
                         <Button size="small" color="inherit" variant="outlined"
                             onClick={() => setEditTaskId(warning.task_id)}>
                             Edit priority

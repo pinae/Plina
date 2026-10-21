@@ -308,6 +308,10 @@ export interface PlanWarning {
     kind: 'deadline_missed' | 'unplanned_within_horizon';
     deadline: string | null;
     projected_finish: string | null;
+    /** Unplanned within the horizon: how much does not fit, and why (absent in plans stored before). */
+    missing_minutes?: number;
+    waits_for?: string | null;
+    only_tags?: string[];
 }
 
 export interface ProjectFinish {

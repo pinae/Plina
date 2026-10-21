@@ -69,13 +69,19 @@ when it is dragged manually (the server rejects placements that would
 violate the dependency order); a running task goes first by its tracking
 session, and once stopped it is planned like any other. Feasibility warnings ("Project X can't finish by ...")
 surface as a banner with remedy shortcuts, and the Week view can jump to
-the first day with free capacity.
+the first day with free capacity. A task that does not fit into the time
+buckets of the next 60 days (the planning horizon) gets a warning too,
+deadline or not; it says how much finds no place and why: it waits for a
+task that does not fit either, its tags allow it only into some buckets,
+or the buckets are full.
 
 A re-plan of the accepted plan keeps appointments and anchored tasks where
 they are and reflows the rest around them; when one of them moves (dragged,
 changed in its calendar, started) or is new (a calendar read, an occurrence
 of a recurring appointment), its place in the plan follows. Where two time
-buckets cover the same hours, that time is planned once. In the Week view
+buckets cover the same hours, that time is planned once: from where a
+bucket for other tags starts (the night's #Schlaf in the evening's time),
+its own tasks go first; what it leaves, the earlier bucket fills. In the Week view
 cards are drawn at their exact times (seconds too), split at the device's
 midnight, and only cards that really overlap (by a minute or more, e.g. two
 appointments at once) share their column side by side.
@@ -108,7 +114,9 @@ the tasks and the clock, so every device shows the same):
   earlier today come back at now. Nothing starts before its predecessors
   end, and work never moves to another day.
 
-What no longer fits its day is listed above the Week view. **Re-plan**
+What no longer fits its day is listed above the Week view (the
+occurrences of a recurring task once, counted). A recurring task's
+occurrence keeps what the plan gave it: its next one takes over. **Re-plan**
 (next to it, and in the Week view's toolbar) plans again from now the way
 the accepted plan was made (its preset and focus, `POST
 /api/plan/recalculate/`); **Plan my week** offers fresh alternatives to

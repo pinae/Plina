@@ -6,7 +6,8 @@ models.  The allocator never mutates ``Task`` instances; it works on immutable
 """
 from __future__ import annotations
 
-from bisect import bisect_right
+import heapq
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple, Union
@@ -558,7 +559,22 @@ def allocate_tasks(buckets: List, tasks: List[Union[Task, PlanningTask]],
     _place_anchored(by_role["anchored"], segments, run, plan, occupied)
 
     queue = list(by_role["flexible"])  # ranked order is preserved
-    for segment in segments:
+    starts = [segment.start for segment in segments]
+    # Chronologically; a segment cut short by a later one (below) goes on
+    # after it: (start, after a segment starting then, index, segment).
+    pending = [(segment.start, 0, index, segment) for index, segment in enumerate(segments)]
+    heapq.heapify(pending)
+    while pending:
+        _, _, index, segment = heapq.heappop(pending)
+        # Where a bucket starts that is for other tags (the night's #Schlaf
+        # within the evening), it takes over: its tasks first. What it leaves
+        # free, this one fills after it.
+        takes_over = min((other.start for other in segments[bisect_right(starts, segment.start):
+                                                              bisect_left(starts, segment.end)]
+                          if other.tag_ids - segment.tag_ids), default=None)
+        if takes_over is not None:
+            heapq.heappush(pending, (takes_over, 1, index, replace(segment, start=takes_over)))
+            segment = replace(segment, end=takes_over)
         current_time = segment.start
         while current_time < segment.end:
             # Only time no other bucket's task took (buckets may overlap).
