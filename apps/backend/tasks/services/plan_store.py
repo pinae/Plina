@@ -48,6 +48,15 @@ def _metrics_json(metrics) -> dict:
     }
 
 
+def reason_json(warning) -> dict:
+    """How much of a task does not fit, and why (alternatives.PlanWarning)."""
+    return {
+        "missing_minutes": round(warning.missing.total_seconds() / 60),
+        "waits_for": warning.waits_for,
+        "only_tags": list(warning.only_tags),
+    }
+
+
 def _warnings_json(warnings) -> list:
     return [
         {
@@ -59,6 +68,7 @@ def _warnings_json(warnings) -> list:
                 warning.projected_finish.isoformat()
                 if warning.projected_finish else None
             ),
+            **reason_json(warning),
         }
         for warning in warnings
     ]
@@ -182,7 +192,7 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
     context = planning_context(now)
     weight = deadline_weight(snapshots, buckets, edges, now, context.running_id) if preset == "deadline_safe" else None
     ranked = plan_ranking(snapshots, preset, focus, now, context, weight)
-    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset),
+    allocation = allocate_tasks(buckets, ranked, edges, config=_preset_config(preset, focus),
                                 running_id=context.running_id, now=now)
 
     anchored_ids = _anchored_task_ids()
@@ -234,7 +244,7 @@ def recalculate_accepted_plan(now: Optional[datetime] = None) -> Optional[Plan]:
         new_entries.append(entry)
     PlanEntry.objects.bulk_create(new_entries)
 
-    metrics, warnings = _evaluate(allocation, snapshots, now)
+    metrics, warnings = _evaluate(allocation, snapshots, now, edges, buckets)
     plan.metrics = _metrics_json(metrics)
     plan.warnings = _warnings_json(warnings)
     plan.feasible = not warnings

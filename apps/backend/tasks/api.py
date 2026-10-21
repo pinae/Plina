@@ -468,7 +468,7 @@ from datetime import timedelta
 from tasks.services.planner_service import (build_planning_tasks, rank_tasks, allocate_tasks,
                                             planning_edges, UNBUCKETED)
 from tasks.services.bucket_service import gather_time_buckets
-from tasks.services.plan_store import recalculate_accepted_plan
+from tasks.services.plan_store import reason_json, recalculate_accepted_plan
 from tasks.models import Task, TimeBucket, TaskDependency, Plan
 
 
@@ -703,6 +703,7 @@ def serialize_alternatives(alternatives, buckets, plan_ids=None):
                     "kind": warning.kind,
                     "deadline": warning.deadline,
                     "projected_finish": warning.projected_finish,
+                    **reason_json(warning),
                 }
                 for warning in alternative.warnings
             ],

@@ -88,6 +88,12 @@ class PlanWarning:
     kind: str  # "deadline_missed" | "unplanned_within_horizon"
     deadline: Optional[datetime] = None
     projected_finish: Optional[datetime] = None
+    #: Unplanned within the horizon: how much does not fit, and why — it
+    #: waits for a task that does not fit either, or its tags allow it only
+    #: into some buckets; neither: the buckets are full.
+    missing: timedelta = timedelta(0)
+    waits_for: Optional[str] = None
+    only_tags: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,10 +201,10 @@ def plan_ranking(snapshots: List[PlanningTask], preset: str, focus_task_ids: fro
     return _apply_focus(ranked, focus_task_ids)
 
 
-def _preset_config(preset: str) -> AllocationConfig:
+def _preset_config(preset: str, focus_task_ids: frozenset = frozenset()) -> AllocationConfig:
     if preset == "flow":
-        return AllocationConfig(min_task_slice=FLOW_MIN_SLICE, project_stickiness=True)
-    return AllocationConfig()
+        return AllocationConfig(min_task_slice=FLOW_MIN_SLICE, project_stickiness=True, focus_task_ids=focus_task_ids)
+    return AllocationConfig(focus_task_ids=focus_task_ids)
 
 
 def _apply_focus(ranked: List[PlanningTask],
@@ -269,7 +275,9 @@ def _ordering_of(plan: Dict[object, List[PlanItem]]) -> Tuple:
 
 
 def _evaluate(plan: Dict[object, List[PlanItem]], snapshots: List[PlanningTask],
-              now: datetime) -> Tuple[PlanMetrics, List[PlanWarning]]:
+              now: datetime, edges: Iterable = (), buckets: Iterable = ()) -> Tuple[PlanMetrics, List[PlanWarning]]:
+    """The plan's metrics and warnings; ``edges`` and ``buckets`` (those it
+    was planned with) say why a task does not fit."""
     chronological = sorted(
         (item for key, items in plan.items() if key is not UNBUCKETED for item in items),
         key=lambda item: item.start_time,
@@ -294,16 +302,25 @@ def _evaluate(plan: Dict[object, List[PlanItem]], snapshots: List[PlanningTask],
     priority_earliness = 0.0
     project_finishes: Dict[Hashable, datetime] = {}
 
+    unplanned = {snapshot.id: snapshot for snapshot in snapshots
+                 if allocated.get(snapshot.id, timedelta(0)) < snapshot.remaining_duration}
+    waiting_for = {successor: unplanned[predecessor].header
+                   for predecessor, successor in edges if predecessor in unplanned}
+    bucket_tag_ids = frozenset(tag.id for bucket in buckets for tag in bucket.type.tags.all())
     for snapshot in snapshots:
-        fully_planned = allocated.get(snapshot.id, timedelta(0)) >= snapshot.remaining_duration
         projected = finish.get(snapshot.id)
-        if not fully_planned:
+        if snapshot.id in unplanned:
             if snapshot.not_after is not None:
                 continue  # a recurring task's occurrence: its next one takes over
+            waits_for = waiting_for.get(snapshot.id)
             warnings.append(PlanWarning(
                 task_id=snapshot.id, header=snapshot.header,
                 kind="unplanned_within_horizon",
                 deadline=snapshot.latest_finish_date, projected_finish=projected,
+                missing=snapshot.remaining_duration - allocated.get(snapshot.id, timedelta(0)),
+                waits_for=waits_for,
+                only_tags=() if waits_for else tuple(sorted(
+                    tag.name for tag in snapshot.source.tags.all() if tag.id in bucket_tag_ids)),
             ))
             continue
         if snapshot.latest_finish_date is not None:
@@ -407,13 +424,13 @@ def generate_alternatives(snapshots: List[PlanningTask], buckets: List,
     seen_orderings = set()
     for candidate in _candidates(snapshots, context):
         ranked = plan_ranking(snapshots, candidate.preset, candidate.focus_task_ids, now, context, weight)
-        plan = allocate_tasks(buckets, ranked, edge_list, config=_preset_config(candidate.preset),
+        plan = allocate_tasks(buckets, ranked, edge_list, config=_preset_config(candidate.preset, candidate.focus_task_ids),
                               running_id=running_id, now=now)
         ordering = _ordering_of(plan)
         if ordering in seen_orderings:
             continue
         seen_orderings.add(ordering)
-        metrics, warnings = _evaluate(plan, snapshots, now)
+        metrics, warnings = _evaluate(plan, snapshots, now, edge_list, buckets)
         alternatives.append(PlanAlternative(
             label=candidate.label, plan=plan, ordering=ordering,
             metrics=metrics, warnings=warnings,

@@ -281,6 +281,11 @@ export function lightPlan(plan: PlanResponse, { tasks, dependencies, now, defaul
                 else note(overflow, task, isRest, unit.length);
             }
         }
+        if (left > 0 && task.series_id && !task.is_appointment) {
+            // A recurring task's occurrence keeps what the plan gave it (its
+            // next one takes over; README: Recurring tasks).
+            left = 0;
+        }
         if (left > 0) {
             // A bigger estimate: the last slice grows.
             const last = future[future.length - 1]
@@ -365,3 +370,16 @@ export function lightPlan(plan: PlanResponse, { tasks, dependencies, now, defaul
 
 /** Whether the light plan had to leave work out ("Re-plan" helps). */
 export const needsReplan = (notes: LightPlanNotes) => notes.overflow.length > 0 || notes.dropped.length > 0;
+
+/** Notes of the same name (the occurrences of a recurring task) as one:
+ *  their minutes added up, and how many. */
+export function groupedNotes(notes: LightPlanNote[]): { header: string; minutes: number; count: number }[] {
+    const groups = new Map<string, { header: string; minutes: number; count: number }>();
+    for (const note of notes) {
+        const group = groups.get(note.header) ?? { header: note.header, minutes: 0, count: 0 };
+        group.minutes += note.minutes;
+        group.count += 1;
+        groups.set(note.header, group);
+    }
+    return [...groups.values()];
+}

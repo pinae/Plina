@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+from unittest import mock
 
 from django.core.management import call_command
 from tasks.tests.support import TestCase
@@ -83,6 +84,18 @@ class MaraDemoDataTest(TestCase):
         self.assertIn("Webshop Relaunch", labels)
         self.assertIn("Company Blog", labels)
         Plan.objects.all().delete()
+
+    def test_a_real_choice_also_with_an_hour_of_the_morning_left(self):
+        # 12:00: the webshop's "Design schema" starts in what is left of the
+        # deep-work morning in every option; the option "Next: Company Blog"
+        # still turns to the blog in the afternoon, it does not just go on.
+        Task.objects.all().delete()
+        TimeBucketType.objects.all().delete()
+        noon = datetime(2026, 10, 19, 12, 0, tzinfo=dt_timezone.utc)
+        with mock.patch("django.utils.timezone.now", return_value=noon):
+            call_command("populate_demo_data", verbosity=0)
+            alternatives = APIClient().post("/api/plan/alternatives/").data["alternatives"]
+        self.assertEqual([a["label"] for a in alternatives], ["Highest priority: Webshop Relaunch", "Next: Company Blog"])
 
 
 class AcceptedPlanIncludesFreeCapacityTest(TestCase):
