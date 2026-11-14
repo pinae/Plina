@@ -9,7 +9,7 @@ from typing import List
 
 from django.db import transaction
 
-from tasks.models import CalendarLink, Task, TaskDependency, TrackingSession, UserSettings
+from tasks.models import CalendarLink, Task, TaskDependency, TrackingSession, UserSettings, WorkBlockItem
 from tasks.services.tree import TreeIndex, dependency_cycle, next_sibling_order
 
 
@@ -47,6 +47,7 @@ def merge_into(kept: Task, other: Task) -> List[str]:
     kept.time_spent += other.time_spent
     kept.save(update_fields=["time_spent"])
     TrackingSession.objects.filter(task=other).update(task=kept)
+    WorkBlockItem.objects.filter(task=other).update(task=kept)  # sorted time (docs/sort-time.md)
     for dependency in list(TaskDependency.objects.filter(predecessor=other)) + \
             list(TaskDependency.objects.filter(successor=other)):
         predecessor = kept.id if dependency.predecessor_id == other.id else dependency.predecessor_id

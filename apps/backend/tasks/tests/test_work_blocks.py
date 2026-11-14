@@ -100,3 +100,198 @@ class SharesTest(TestCase):
 
     def test_without_weight_the_time_is_shared_evenly(self):
         self.assertEqual(self.shares(minutes(60), self.done(0), self.done(0)), [minutes(30), minutes(30)])
+
+
+class SortingTest(TestCase):
+    """S3: sorting a block makes its shares; sorting again replaces them,
+    Undo restores what was there before."""
+
+    def setUp(self):
+        self.now = at(13)
+        self.project = Task.objects.create(header="Website")
+        self.a = Task.objects.create(header="Header", duration=minutes(60), parent=self.project, order=0)
+        self.b = Task.objects.create(header="Footer", duration=minutes(30), parent=self.project, order=1)
+        self.later = Task.objects.create(header="Later", duration=minutes(30), parent=self.project, order=2)
+
+    def tick(self, task=None, **kwargs):
+        from tasks.services.work_blocks import Tick
+        return Tick(task=task, **kwargs)
+
+    def gap(self, *ticks, start=at(9), end=at(12)):
+        from tasks.services.work_blocks import fill_gap
+        return fill_gap(start, end, list(ticks), now=self.now)
+
+    def sessions(self):
+        return [(s.task.header, s.start, s.end, s.apportioned) for s in TrackingSession.objects.order_by("start")]
+
+    def fresh(self, task):
+        return Task.objects.get(id=task.id)
+
+    def test_the_ticked_tasks_share_the_block_end_to_end(self):
+        block = self.gap(self.tick(self.a), self.tick(self.b))
+
+        self.assertEqual(self.sessions(), [("Header", at(9), at(11), True), ("Footer", at(11), at(12), True)])
+        a, b = self.fresh(self.a), self.fresh(self.b)
+        self.assertEqual((a.time_spent, b.time_spent), (minutes(120), minutes(60)))
+        # Done at the end of its share, with figures that say how it was measured.
+        self.assertEqual((a.completed_at, b.completed_at), (at(11), at(12)))
+        self.assertEqual((a.completion_time_spent, a.completion_time_apportioned), (minutes(120), minutes(120)))
+        self.assertEqual(block.sorted_at, self.now)
+        self.assertEqual([(i.task_id, i.weight, i.completed, i.completed_here) for i in block.items.all()],
+                         [(self.a.id, minutes(60), True, True), (self.b.id, minutes(30), True, True)])
+
+    def test_worked_on_is_not_completed(self):
+        self.gap(self.tick(self.a), self.tick(self.b, completed=False))
+        b = self.fresh(self.b)
+        self.assertFalse(b.is_done)
+        self.assertEqual(b.time_spent, timedelta(hours=3) * 15 / 75)  # 60 : 15
+
+    def test_a_task_added_in_the_sheet_is_made_done(self):
+        from tasks.models import Tag
+        urgent = Tag.objects.create(name="urgent")
+        block = self.gap(self.tick(self.a), self.tick(new={"header": "Hotfix", "duration": minutes(60),
+                                                         "parent_id": self.project.id, "tag_ids": [urgent.id]}))
+        hotfix = Task.objects.get(header="Hotfix")
+        self.assertEqual((hotfix.parent_id, list(hotfix.tags.all()), hotfix.completed_at),
+                         (self.project.id, [urgent], at(12)))
+        self.assertEqual(hotfix.time_spent, minutes(90))
+        self.assertEqual(list(hotfix.estimate_changes.values_list("reason", flat=True)), ["logged"])
+        self.assertTrue(block.items.get(task=hotfix).created_here)
+
+    def test_pinned_minutes(self):
+        self.gap(self.tick(self.a, pinned=minutes(150)), self.tick(self.b))
+        self.assertEqual(self.sessions(), [("Header", at(9), at(11, 30), True), ("Footer", at(11, 30), at(12), True)])
+
+    def test_sorting_again_replaces_the_shares(self):
+        from tasks.services.work_blocks import sort_block
+        block = self.gap(self.tick(self.a), self.tick(new={"header": "Hotfix", "duration": minutes(30)}))
+        sort_block(block, [self.tick(self.b), self.tick(self.later)], now=self.now)
+
+        self.assertEqual(self.sessions(), [("Footer", at(9), at(10, 30), True), ("Later", at(10, 30), at(12), True)])
+        a = self.fresh(self.a)
+        self.assertEqual((a.time_spent, a.completed_at, a.completion_time_spent), (timedelta(0), None, None))
+        self.assertFalse(Task.objects.filter(header="Hotfix").exists())  # made in the sheet, no longer ticked
+        self.assertEqual(block.items.count(), 2)
+
+    def test_a_task_made_in_the_sheet_and_still_ticked_stays_made_there(self):
+        from tasks.services.work_blocks import sort_block, undo_block
+        block = self.gap(self.tick(new={"header": "Hotfix", "duration": minutes(30)}))
+        hotfix = Task.objects.get(header="Hotfix")
+        sort_block(block, [self.tick(hotfix), self.tick(self.a)], now=self.now)
+        self.assertTrue(block.items.get(task=hotfix).created_here)
+        undo_block(block)
+        self.assertFalse(Task.objects.filter(header="Hotfix").exists())
+
+    def test_a_task_done_before_keeps_its_completion(self):
+        self.b.completed_at = at(8)
+        self.b.save()
+        self.gap(self.tick(self.a), self.tick(self.b))
+        b = self.fresh(self.b)
+        self.assertEqual((b.completed_at, b.time_spent, b.completion_time_apportioned), (at(8), minutes(60), minutes(60)))
+
+    def test_undo_of_a_gap_removes_it(self):
+        from tasks.services.work_blocks import undo_block
+        block = self.gap(self.tick(self.a), self.tick(new={"header": "Hotfix", "duration": minutes(30)}))
+        undo_block(block)
+        self.assertEqual(self.sessions(), [])
+        a = self.fresh(self.a)
+        self.assertEqual((a.time_spent, a.is_done), (timedelta(0), False))
+        self.assertFalse(Task.objects.filter(header="Hotfix").exists())
+        self.assertFalse(WorkBlock.objects.exists())
+
+    def test_splitting_a_session_and_undo(self):
+        from tasks.services.work_blocks import split_session, undo_block
+        from tasks.services.sessions import add_session
+        session = add_session(self.a, at(9), at(12), now=self.now)
+        self.assertEqual(self.fresh(self.a).time_spent, minutes(180))
+
+        block = split_session(session, [self.tick(self.a), self.tick(self.b)], now=self.now)
+        self.assertEqual(self.sessions(), [("Header", at(9), at(11), True), ("Footer", at(11), at(12), True)])
+        self.assertEqual(self.fresh(self.a).time_spent, minutes(120))
+        self.assertEqual((block.origin, block.original_task_id), ("split", self.a.id))
+
+        undo_block(block)
+        self.assertEqual(self.sessions(), [("Header", at(9), at(12), False)])
+        a, b = self.fresh(self.a), self.fresh(self.b)
+        self.assertEqual((a.time_spent, a.is_done, b.time_spent, b.is_done), (minutes(180), False, timedelta(0), False))
+
+    def test_undo_of_a_started_block_leaves_it_to_sort(self):
+        from tasks.services.work_blocks import sort_block, undo_block
+        block = WorkBlock.objects.create(start=at(9), end=at(12), origin="started")
+        sort_block(block, [self.tick(self.a)], now=self.now)
+        undo_block(block)
+        block.refresh_from_db()
+        self.assertIsNone(block.sorted_at)
+        self.assertEqual((self.sessions(), block.items.count()), ([], 0))
+
+    def test_refusals(self):
+        from tasks.services.sessions import add_session
+        from tasks.services.work_blocks import SortError, sort_block
+        add_session(self.later, at(10), at(10, 30), now=self.now)
+        with self.assertRaisesMessage(SortError, "overlaps “Later”"):
+            self.gap(self.tick(self.a))
+        with self.assertRaisesMessage(SortError, "future"):
+            self.gap(self.tick(self.a), start=at(12), end=at(14))
+        with self.assertRaisesMessage(SortError, "Tick"):
+            self.gap(start=at(11), end=at(12))
+        running = WorkBlock.objects.create(start=at(11), origin="started")
+        with self.assertRaisesMessage(SortError, "still running"):
+            sort_block(running, [self.tick(self.a)], now=self.now)
+        running.delete()
+        with self.assertRaisesMessage(SortError, "open subtask"):
+            self.gap(self.tick(self.project), start=at(11), end=at(12))
+        self.assertFalse(WorkBlock.objects.exists())
+        self.assertEqual(len(self.sessions()), 1)
+
+    def test_merging_a_ticked_task_keeps_its_share(self):
+        from tasks.services.merge import merge_into
+        block = self.gap(self.tick(self.a), self.tick(self.b))
+        merge_into(self.later, self.fresh(self.b))
+        self.assertEqual([item.task_id for item in block.items.all()], [self.a.id, self.later.id])
+        self.assertEqual(self.fresh(self.later).time_spent, minutes(60))
+
+
+class StartWorkTest(TestCase):
+    """S4: "Start work" before the first task is chosen."""
+
+    def setUp(self):
+        self.task = Task.objects.create(header="Urgent", duration=minutes(60))
+
+    def test_start_and_stop(self):
+        from tasks.services.work_blocks import open_block, start_work, stop_work
+        block = start_work(now=at(8, 47))
+        self.assertEqual((block.origin, block.start, block.end), ("started", at(8, 47), None))
+        self.assertEqual(start_work(now=at(9)), block)  # one at a time
+        self.assertEqual(open_block(), block)
+
+        stopped = stop_work(now=at(11, 30))
+        self.assertEqual((stopped.end, stopped.sorted_at), (at(11, 30), None))  # to sort
+        self.assertIsNone(open_block())
+        self.assertEqual(Task.objects.get(id=self.task.id).time_spent, timedelta(0))
+
+    def test_starting_a_task_ends_the_block_to_sort(self):
+        from tasks.services.tracking import start_tracking
+        from tasks.services.work_blocks import start_work
+        block = start_work(now=at(8, 47))
+        start_tracking(self.task, now=at(10))
+        block.refresh_from_db()
+        self.assertEqual((block.end, block.sorted_at), (at(10), None))
+
+    def test_start_work_stops_the_running_task(self):
+        from tasks.services.tracking import start_tracking
+        from tasks.services.work_blocks import start_work
+        start_tracking(self.task, now=at(9))
+        start_work(now=at(9, 30))
+        self.assertEqual(Task.objects.get(id=self.task.id).time_spent, minutes(30))
+        self.assertFalse(TrackingSession.objects.filter(end=None).exists())
+
+    def test_less_than_a_minute_is_nothing_to_sort(self):
+        from tasks.services.work_blocks import start_work, stop_work
+        start_work(now=at(9))
+        self.assertIsNone(stop_work(now=at(9, 0) + timedelta(seconds=40)))
+        self.assertFalse(WorkBlock.objects.exists())
+
+    def test_stop_without_a_block(self):
+        from tasks.services.work_blocks import SortError, stop_work
+        with self.assertRaisesMessage(SortError, "not running"):
+            stop_work(now=at(9))

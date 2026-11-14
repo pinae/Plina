@@ -90,6 +90,9 @@ def start_tracking(task: Task, now: Optional[datetime] = None
     if open_session is not None:
         stopped = open_session.task
         _close(open_session, now)
+    # Work begun before a task was chosen ends here: it is to sort (docs/sort-time.md).
+    from tasks.services.work_blocks import end_open_block
+    end_open_block(now)
 
     # Not pinned: plans put the running task first by its session, and a
     # stopped one stays free to be planned (docs/plan-chooser.md).
