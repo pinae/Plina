@@ -13,6 +13,7 @@ import App from './App.tsx';
 import { API, makeTask, makerTag, settingsFor, treeTasks } from './testing/treeFixtures.ts';
 import type { Task, TaskWrite } from './types.ts';
 import { calendarHandlers, noBucketTypes } from './testing/calendarHandlers.ts';
+import { workBlockHandlers } from './testing/workBlockHandlers.ts';
 import { savedFilterHandlers } from './testing/savedFilterHandlers.ts';
 import { fakeScreen, PHONE } from './testing/matchMedia.ts';
 
@@ -25,6 +26,7 @@ const server = setupServer(
     // Planning light keeps tasks apart from their predecessors.
     http.get(`${API}/dependencies/`, () => HttpResponse.json([])),
     ...calendarHandlers(),
+    ...workBlockHandlers(),
     ...savedFilterHandlers(),
     ...noBucketTypes(),
     http.get(`${API}/tasks/`, () => HttpResponse.json(tasks)),

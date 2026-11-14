@@ -3,19 +3,24 @@
  *
  * Tracking: ⏹, the task (click → edit dialog), a live hh:mm:ss timer that
  * turns amber with "+0:15 over" past the estimate, and ✓. Idle: ▶ "Next: …"
- * (the first planned task of the active project) and a picker for any task.
+ * (the first planned task of the active project), a picker for any task,
+ * and "Start work" before a task is chosen (docs/sort-time.md): then
+ * "Working", its time, "not sorted yet", and ⏹ opens the sort sheet. What
+ * waits to be sorted is one click away ("2 to sort"); a session that ran
+ * long asks "Only this task?" without blocking.
  * State and actions come from ``useTracker`` so the T shortcut shares them.
  */
 import { useState } from 'react';
-import { Alert, Box, Button, Divider, IconButton, ListSubheader, Menu, MenuItem, Snackbar, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Divider, IconButton, ListSubheader, Menu, MenuItem, Snackbar, Tooltip, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import CheckIcon from '@mui/icons-material/Check';
+import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 
 import type { TrackerControls } from '../../hooks/useTracker.ts';
 import { useNow } from '../../hooks/useNow.ts';
-import { formatElapsed, parseDurationMinutes } from '../../utils/duration.ts';
+import { formatDuration, formatElapsed, minutesToDurationString, parseDurationMinutes } from '../../utils/duration.ts';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -69,8 +74,18 @@ export interface HeaderTrackerProps {
     compact?: boolean;
 }
 
+/** "Start work" running: its time, no estimate to run over. */
+function WorkTimer({ start }: { start: string }) {
+    const now = useNow(1000);
+    return (
+        <Typography data-testid="tracker-elapsed" variant="body2" component="span" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            {formatElapsed((now.getTime() - new Date(start).getTime()) / 1000)}
+        </Typography>
+    );
+}
+
 export function HeaderTracker({ controls, onEditTask, compact = false }: HeaderTrackerProps) {
-    const { tracked, next, pickable } = controls;
+    const { tracked, next, pickable, work } = controls;
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const pick = (taskId: string) => {
         setMenuAnchor(null);
@@ -122,6 +137,20 @@ export function HeaderTracker({ controls, onEditTask, compact = false }: HeaderT
                         </IconButton>
                     </Tooltip>
                 </>
+            ) : work ? (
+                <>
+                    <Tooltip title="Stop work and sort it (T)">
+                        <IconButton size="small" aria-label="stop work" onClick={controls.stopWork}
+                            disabled={controls.pending}>
+                            <StopIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', lineHeight: 1, minWidth: 0 }}>
+                        {!compact && <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Working</Typography>}
+                        <WorkTimer start={work.start} />
+                    </Box>
+                    {!compact && <Typography variant="caption" color="text.secondary" noWrap>not sorted yet</Typography>}
+                </>
             ) : next && compact ? (
                 <IconButton size="small" aria-label={`start next: ${next.header}`}
                     onClick={() => controls.start(next.task_id)} disabled={controls.pending}>
@@ -144,11 +173,32 @@ export function HeaderTracker({ controls, onEditTask, compact = false }: HeaderT
                     Start a task…
                 </Button>
             )}
-            {!tracked && (
-                <IconButton size="small" aria-label="choose a task to start"
-                    onClick={event => setMenuAnchor(event.currentTarget)}>
-                    <ArrowDropDownIcon fontSize="small" />
-                </IconButton>
+            {!tracked && !work && (
+                <>
+                    <IconButton size="small" aria-label="choose a task to start"
+                        onClick={event => setMenuAnchor(event.currentTarget)}>
+                        <ArrowDropDownIcon fontSize="small" />
+                    </IconButton>
+                    <Tooltip describeChild title="Start work before choosing a task: sort it afterwards">
+                        {compact ? (
+                            <IconButton size="small" aria-label="start work" onClick={controls.startWork}
+                                disabled={controls.pending}>
+                                <WorkOutlineIcon fontSize="small" />
+                            </IconButton>
+                        ) : (
+                            <Button size="small" color="inherit" startIcon={<WorkOutlineIcon />} onClick={controls.startWork}
+                                disabled={controls.pending} sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}>
+                                Start work
+                            </Button>
+                        )}
+                    </Tooltip>
+                </>
+            )}
+            {controls.toSort.length > 0 && (
+                <Tooltip describeChild title="Sort the time tracked without a task">
+                    <Chip size="small" color="warning" variant="outlined" clickable
+                        label={`${controls.toSort.length} to sort`} onClick={() => controls.sort(controls.toSort[0])} />
+                </Tooltip>
             )}
             <Menu anchorEl={menuAnchor} open={menuAnchor !== null} onClose={() => setMenuAnchor(null)}
                 slotProps={{ paper: { sx: { maxHeight: 420, minWidth: 260 } } }}>
@@ -164,6 +214,13 @@ export function HeaderTracker({ controls, onEditTask, compact = false }: HeaderT
                     <MenuItem disabled>No open tasks</MenuItem>
                 )}
             </Menu>
+            <Snackbar open={controls.longSession !== null} autoHideDuration={15000}
+                onClose={(_event, reason) => { if (reason !== 'clickaway') controls.dismissLongSession(); }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                message={controls.longSession
+                    ? `Only “${controls.longSession.header}” for ${formatDuration(minutesToDurationString(controls.longSession.seconds / 60))}?`
+                    : ''}
+                action={<Button color="inherit" size="small" onClick={controls.splitLongSession}>Split…</Button>} />
             <Snackbar open={controls.error !== null} autoHideDuration={6000} onClose={controls.clearError}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
                 <Alert severity="error" variant="filled" onClose={controls.clearError}>{controls.error}</Alert>

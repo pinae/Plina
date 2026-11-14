@@ -3,7 +3,7 @@
  * block, computed as the server does (services.work_blocks.shares) for the
  * sheet's live preview. The server's are the ones saved.
  */
-import { formatDuration, minutesToDurationString } from './duration.ts';
+import { formatDuration, minutesToDurationString, parseDurationMinutes } from './duration.ts';
 
 /** A ticked row as far as its share goes. */
 export interface ShareInput {
@@ -53,4 +53,18 @@ export function shares(totalSeconds: number, items: ShareInput[]): { seconds: nu
         previous = boundary;
     });
     return { seconds };
+}
+
+/** Shorter sessions are not worth asking about. */
+const LONG_SESSION_MINUTES = 30;
+
+/** A session that ran long — over 1.5× what was left of its task's estimate
+ *  when it began (``task``: as the stop answered, its time included) — may
+ *  have covered more tasks: the tracker asks "Only this task?". */
+export function ranLong(session: { seconds: number }, task: { duration: string | null; time_spent: string },
+                        defaultMinutes: number): boolean {
+    const minutes = session.seconds / 60;
+    const before = (parseDurationMinutes(task.time_spent) ?? 0) - minutes;
+    const left = Math.max(0, (parseDurationMinutes(task.duration) ?? defaultMinutes) - before);
+    return minutes >= LONG_SESSION_MINUTES && minutes > 1.5 * left;
 }

@@ -213,7 +213,8 @@ export const useStartTracking = () => {
         mutationFn: startTracking,
         onSuccess: data => {
             if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
-            return invalidate(queryKeys.tasks, queryKeys.timeSheet, queryKeys.sessions);
+            // Work begun with "Start work" ends: it is to sort (docs/sort-time.md).
+            return invalidate(queryKeys.tasks, queryKeys.timeSheet, queryKeys.sessions, queryKeys.workBlocks);
         },
     });
 };

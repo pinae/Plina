@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shares, weightMinutes, type ShareInput } from './workBlocks.ts';
+import { ranLong, shares, weightMinutes, type ShareInput } from './workBlocks.ts';
 
 const done = (estimate: number, over: Partial<ShareInput> = {}): ShareInput => ({
     estimateMinutes: estimate, spentElsewhereMinutes: 0, completed: true, pinnedMinutes: null, ...over,
@@ -47,5 +47,22 @@ describe('shares of a work block', () => {
 
     it('without weight, evenly', () => {
         expect(minutesOf(60, done(0), done(0))).toEqual([30, 30]);
+    });
+});
+
+describe('a session that ran long (“Only this task?”)', () => {
+    // Header: 1h estimate, 10m tracked before this session.
+    const task = { duration: '01:00:00', time_spent: '01:40:00' };
+    const session = (minutes: number) => ({ seconds: minutes * 60 });
+
+    it('over 1.5× what was left of the estimate when it began', () => {
+        expect(ranLong(session(90), task, 60)).toBe(true); // 50m were left
+        expect(ranLong(session(70), { ...task, time_spent: '01:20:00' }, 60)).toBe(false); // 70m of 50m
+    });
+
+    it('not for short sessions, and the default duration without an estimate', () => {
+        expect(ranLong(session(20), { duration: '00:05:00', time_spent: '00:20:00' }, 60)).toBe(false);
+        expect(ranLong(session(100), { duration: null, time_spent: '01:40:00' }, 60)).toBe(true);
+        expect(ranLong(session(80), { duration: null, time_spent: '01:20:00' }, 60)).toBe(false);
     });
 });

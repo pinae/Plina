@@ -10,17 +10,20 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { AppHeader } from './AppHeader.tsx';
 import PlannedWeekView from '../PlannedWeekView/PlannedWeekView.tsx';
+import { SortTimeProvider } from '../SortTimeDialog/SortTimeDialog.tsx';
 import { API, loggedInSession, makeTask, makerTag, settingsFor, treeTasks } from '../../testing/treeFixtures.ts';
 import { projectFor } from '../../utils/projects.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
-import type { PlanResponse, SettingsWrite, Task, TaskWrite } from '../../types.ts';
+import type { PlanResponse, SettingsWrite, Task, TaskWrite, WorkBlock } from '../../types.ts';
 import { calendarHandlers, noBucketTypes } from '../../testing/calendarHandlers.ts';
+import { workBlockHandlers } from '../../testing/workBlockHandlers.ts';
 
 let tasks: Task[] = [];
 let tracked: { id: string; since: string } | null = null;
 let activeId: string | null = 'hw';
 let requests: string[] = [];
 let posted: TaskWrite[] = [];
+const blocks: WorkBlock[] = [];
 
 const withTracking = () => tasks.map(t => ({
     ...t, active_tracking_start: tracked?.id === t.id ? tracked.since : null,
@@ -47,6 +50,7 @@ const server = setupServer(
     // Planning light keeps tasks apart from their predecessors.
     http.get(`${API}/dependencies/`, () => HttpResponse.json([])),
     ...calendarHandlers(),
+    ...workBlockHandlers(blocks),
     ...noBucketTypes(),
     http.get(`${API}/plan/`, () => HttpResponse.json(plan())),
     http.get(`${API}/tasks/`, () => HttpResponse.json(withTracking())),
@@ -92,6 +96,7 @@ beforeEach(() => {
     activeId = 'hw';
     requests = [];
     posted = [];
+    blocks.length = 0;
     localStorage.clear(); // recent projects/tags
 });
 afterEach(() => { cleanup(); server.resetHandlers(); });
@@ -101,8 +106,10 @@ function renderApp() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
         <QueryClientProvider client={client}>
-            <AppHeader />
-            <PlannedWeekView />
+            <SortTimeProvider>
+                <AppHeader />
+                <PlannedWeekView />
+            </SortTimeProvider>
         </QueryClientProvider>,
     );
 }
@@ -251,3 +258,30 @@ describe('On a phone (UI-9)', () => {
     });
 });
 
+describe('sorting tracked time afterwards (docs/sort-time.md)', () => {
+    it('“Start work”, then stopping it opens the sheet to sort it', async () => {
+        renderApp();
+        fireEvent.click(await screen.findByRole('button', { name: /start work/i }));
+        expect(await screen.findByText('Working')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /stop work/i }));
+        expect(await screen.findByRole('dialog', { name: /^sort .* · 2h$/i })).toBeInTheDocument();
+    });
+
+    it('a session that ran long asks “Only this task?”; Split… opens the sheet', async () => {
+        tracked = { id: 'cad', since: new Date(Date.now() - 2 * 3600_000).toISOString() };
+        server.use(http.post(`${API}/tasks/:id/track/stop/`, () => {
+            tracked = null;
+            const end = new Date();
+            return HttpResponse.json({
+                task: { ...tasks.find(t => t.id === 'cad'), duration: '01:00:00', time_spent: '02:00:00' },
+                session: { id: 's1', task_id: 'cad', task_header: 'CAD', task_tags: [], running: false, seconds: 7200,
+                    start: new Date(end.getTime() - 7200_000).toISOString(), end: end.toISOString() },
+            });
+        }));
+        renderApp();
+        fireEvent.click(await within(header()).findByRole('button', { name: /stop tracking/i }));
+        expect(await screen.findByText('Only “CAD” for 2h?')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Split…' }));
+        expect(await screen.findByRole('dialog', { name: /^sort .* · 2h$/i })).toBeInTheDocument();
+    });
+});

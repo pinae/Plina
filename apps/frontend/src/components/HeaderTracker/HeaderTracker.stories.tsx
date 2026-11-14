@@ -13,6 +13,8 @@ const base: TrackerControls = {
     },
     defaultDurationMinutes: 60, start: noop, stop: noop, complete: noop, toggle: noop,
     pending: false, error: null, clearError: noop,
+    work: null, toSort: [], startWork: noop, stopWork: noop, sort: noop,
+    longSession: null, splitLongSession: noop, dismissLongSession: noop,
 };
 
 const meta: Meta<typeof HeaderTracker> = {
@@ -47,4 +49,12 @@ export const CompactTracking: Story = {
 };
 export const CompactIdleWithNext: Story = {
     args: { compact: true, controls: IdleWithNext.args!.controls },
+};
+
+/** "Start work" before a task was chosen (docs/sort-time.md). */
+export const Working: Story = {
+    args: { controls: { ...base, work: {
+        id: 'b1', start: minutesAgo(83), end: null, origin: 'started', sorted_at: null, original_task_id: null,
+        running: true, seconds: 83 * 60, items: [],
+    } } },
 };

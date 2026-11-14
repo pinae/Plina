@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HeaderTracker } from './HeaderTracker.tsx';
 import { formatElapsed } from '../../utils/duration.ts';
 import type { TrackerControls } from '../../hooks/useTracker.ts';
+import type { WorkBlock } from '../../types.ts';
 import { makeTask } from '../../testing/treeFixtures.ts';
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -12,7 +13,14 @@ const controls = (over: Partial<TrackerControls> = {}): TrackerControls => ({
     tracked: null, outsidePath: null, next: null,
     pickable: { inProject: [], others: [] }, defaultDurationMinutes: 60,
     start: vi.fn(), stop: vi.fn(), complete: vi.fn(), toggle: vi.fn(),
-    pending: false, error: null, clearError: vi.fn(), ...over,
+    pending: false, error: null, clearError: vi.fn(),
+    work: null, toSort: [], startWork: vi.fn(), stopWork: vi.fn(), sort: vi.fn(),
+    longSession: null, splitLongSession: vi.fn(), dismissLongSession: vi.fn(), ...over,
+});
+
+const block = (over: Partial<WorkBlock> = {}): WorkBlock => ({
+    id: 'b1', start: minutesAgo(83), end: null, origin: 'started', sorted_at: null, original_task_id: null,
+    running: true, seconds: 83 * 60, items: [], ...over,
 });
 
 describe('formatElapsed', () => {
@@ -146,3 +154,40 @@ describe('HeaderTracker compact (phones, UI-9)', () => {
     });
 });
 
+describe('HeaderTracker: sorting time afterwards (docs/sort-time.md)', () => {
+    afterEach(cleanup);
+
+    it('idle: “Start work” before a task is chosen', () => {
+        const c = controls();
+        render(<HeaderTracker controls={c} onEditTask={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start work/i }));
+        expect(c.startWork).toHaveBeenCalled();
+    });
+
+    it('while it runs: “Working”, its time, not sorted yet; stop', () => {
+        const c = controls({ work: block() });
+        render(<HeaderTracker controls={c} onEditTask={vi.fn()} />);
+        expect(screen.getByText('Working')).toBeInTheDocument();
+        expect(screen.getByText('not sorted yet')).toBeInTheDocument();
+        expect(screen.getByTestId('tracker-elapsed').textContent).toMatch(/^01:2[23]:\d\d$/);
+        fireEvent.click(screen.getByRole('button', { name: /stop work/i }));
+        expect(c.stopWork).toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: /start work/i })).toBeNull();
+    });
+
+    it('what is left to sort, one click away', () => {
+        const waiting = block({ end: minutesAgo(10), running: false });
+        const c = controls({ toSort: [waiting, block({ id: 'b2' })] });
+        render(<HeaderTracker controls={c} onEditTask={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: '2 to sort' }));
+        expect(c.sort).toHaveBeenCalledWith(waiting);
+    });
+
+    it('asks “Only this task?” after a long session, without blocking', () => {
+        const c = controls({ longSession: { header: 'Header', seconds: 2 * 3600 + 10 * 60 } });
+        render(<HeaderTracker controls={c} onEditTask={vi.fn()} />);
+        expect(screen.getByText('Only “Header” for 2h 10m?')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /split/i }));
+        expect(c.splitLongSession).toHaveBeenCalled();
+    });
+});
