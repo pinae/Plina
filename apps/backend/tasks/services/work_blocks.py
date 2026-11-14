@@ -8,6 +8,7 @@ block.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -69,7 +70,8 @@ def shares(total: timedelta, items: List[Share]) -> List[timedelta]:
         if position == len(free) - 1:
             boundary = left
         else:
-            boundary = MINUTE * round(left.total_seconds() * reached / whole / 60)
+            # Halves up, as the sheet's preview rounds (utils/workBlocks.ts).
+            boundary = MINUTE * math.floor(left.total_seconds() * reached / whole / 60 + 0.5)
         result[index] = boundary - previous
         previous = boundary
     return result
