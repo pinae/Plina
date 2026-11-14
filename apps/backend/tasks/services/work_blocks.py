@@ -160,7 +160,11 @@ def sort_block(block: WorkBlock, ticks: List[Tick], now: Optional[datetime] = No
     apportioned session each, end to end from the block's start; a ticked
     task is completed at the end of its share. Sorting again replaces what
     sorting did before."""
-    from tasks.services.completion import CompletionError, complete_finished_ancestors, ensure_completable
+    from tasks.services.completion import (
+        CompletionError,
+        complete_finished_ancestors,
+        ensure_completable,
+    )
     from tasks.services.estimates import write_completion_snapshot
     from tasks.services.sessions import _book
     from tasks.services.settings import default_duration
@@ -291,3 +295,49 @@ def stop_work(now: Optional[datetime] = None) -> Optional[WorkBlock]:
     if open_block() is None:
         raise SortError("Work begun with “Start work” is not running.")
     return end_open_block(now)
+
+
+#: How far back "recently tracked" reaches, and how many suggestions at most.
+RECENT = timedelta(days=7)
+MAX_SUGGESTIONS = 12
+
+
+def suggestions(start: datetime, end: datetime, task: Optional[Task] = None) -> List[tuple]:
+    """What the sheet offers to tick for ``start``–``end``, as (task,
+    reason), the likeliest first: the tracked ``task``, tasks completed in
+    the stretch without time on them, the tasks the accepted plan had in
+    it, open tasks of the tracked task's project, recently tracked ones.
+    Only tasks that are worked on themselves (no parents, no appointments),
+    open or done in the stretch."""
+    from tasks.models import PlanEntry
+    from tasks.services.tree import TreeIndex
+    tree = TreeIndex.load()
+    found: List[tuple] = []
+    seen = set()
+
+    def offer(candidates, reason):
+        for candidate in candidates:
+            if candidate.id in seen or len(found) >= MAX_SUGGESTIONS:
+                continue
+            if candidate.is_appointment or candidate.id not in tree.nodes or tree.has_children(candidate.id):
+                continue
+            if candidate.completed_at is not None and not start <= candidate.completed_at <= end:
+                continue
+            seen.add(candidate.id)
+            found.append((candidate, reason))
+
+    if task is not None:
+        offer([task], "tracked")
+    offer(Task.objects.filter(completed_at__gte=start, completed_at__lte=end, time_spent=timedelta(0))
+          .order_by("completed_at"), "done meanwhile")
+    entries = (PlanEntry.objects.filter(plan__is_accepted=True, is_rest=False, start__lt=end)
+               .select_related("task").order_by("start"))
+    offer([entry.task for entry in entries if entry.start + entry.duration > start], "planned")
+    if task is not None:
+        in_project = tree.descendant_ids(tree.root_id(task.id) or task.id)  # in the order of the Tasks tab
+        by_id = Task.objects.in_bulk(in_project)
+        offer([by_id[task_id] for task_id in in_project], "same project")
+    recent = (TrackingSession.objects.filter(start__lt=end, start__gte=end - RECENT, block=None)
+              .select_related("task").order_by("-start"))
+    offer([session.task for session in recent], "recent")
+    return found

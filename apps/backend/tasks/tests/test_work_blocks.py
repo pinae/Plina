@@ -1,12 +1,19 @@
 """Sorting tracked time afterwards (docs/sort-time.md, README: Time
 tracking): a stretch of work whose split between tasks is decided later is
 a work block; the tasks ticked for it share its time by their estimates."""
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
 
 from plina.scoping import owner_scope
-from tasks.models import Task, TaskEstimateChange, TrackingSession, WorkBlock, WorkBlockItem
+from tasks.models import (
+    Task,
+    TaskEstimateChange,
+    TrackingSession,
+    WorkBlock,
+    WorkBlockItem,
+)
 from tasks.tests.support import TestCase
 
 UTC = dt_timezone.utc
@@ -117,9 +124,9 @@ class SortingTest(TestCase):
         from tasks.services.work_blocks import Tick
         return Tick(task=task, **kwargs)
 
-    def gap(self, *ticks, start=at(9), end=at(12)):
+    def gap(self, *ticks, start=None, end=None):
         from tasks.services.work_blocks import fill_gap
-        return fill_gap(start, end, list(ticks), now=self.now)
+        return fill_gap(start or at(9), end or at(12), list(ticks), now=self.now)
 
     def sessions(self):
         return [(s.task.header, s.start, s.end, s.apportioned) for s in TrackingSession.objects.order_by("start")]
@@ -200,8 +207,8 @@ class SortingTest(TestCase):
         self.assertFalse(WorkBlock.objects.exists())
 
     def test_splitting_a_session_and_undo(self):
-        from tasks.services.work_blocks import split_session, undo_block
         from tasks.services.sessions import add_session
+        from tasks.services.work_blocks import split_session, undo_block
         session = add_session(self.a, at(9), at(12), now=self.now)
         self.assertEqual(self.fresh(self.a).time_spent, minutes(180))
 
@@ -295,3 +302,90 @@ class StartWorkTest(TestCase):
         from tasks.services.work_blocks import SortError, stop_work
         with self.assertRaisesMessage(SortError, "not running"):
             stop_work(now=at(9))
+
+
+class SuggestionsTest(TestCase):
+    """S6: what the sheet offers to tick, so it is recognised, not recalled."""
+
+    def setUp(self):
+        self.project = Task.objects.create(header="Website")
+        self.tracked = Task.objects.create(header="Header", duration=minutes(60), parent=self.project, order=0)
+        self.sibling = Task.objects.create(header="Footer", duration=minutes(30), parent=self.project, order=1)
+        self.done_sibling = Task.objects.create(header="Logo", parent=self.project, order=2, completed_at=at(7))
+        self.planned = Task.objects.create(header="Invoice", duration=minutes(30))
+        self.finished = Task.objects.create(header="Call back", completed_at=at(10, 30))  # done meanwhile, no time
+        self.recent = Task.objects.create(header="Review", duration=minutes(30))
+        TrackingSession.objects.create(task=self.recent, start=at(8, 0, day=14), end=at(9, 0, day=14))
+        self.old = Task.objects.create(header="Ancient")
+        TrackingSession.objects.create(task=self.old, start=at(8, 0, day=1), end=at(9, 0, day=1))
+        from tasks.models import Plan, PlanEntry
+        plan = Plan.objects.create(label="Accepted", is_accepted=True)
+        PlanEntry.objects.create(plan=plan, task=self.planned, start=at(11), duration=minutes(30), order=0)
+        PlanEntry.objects.create(plan=plan, task=self.sibling, start=at(9), duration=minutes(30), order=1)
+
+    def suggested(self, **kwargs):
+        from tasks.services.work_blocks import suggestions
+        return [(task.header, reason) for task, reason in suggestions(at(9), at(12), **kwargs)]
+
+    def test_the_sources_in_their_order(self):
+        self.assertEqual(self.suggested(task=self.tracked), [
+            ("Header", "tracked"), ("Call back", "done meanwhile"), ("Footer", "planned"), ("Invoice", "planned"),
+            ("Review", "recent"),
+        ])
+
+    def test_without_a_tracked_task(self):
+        self.assertEqual([header for header, _ in self.suggested()], ["Call back", "Footer", "Invoice", "Review"])
+
+    def test_same_project_and_no_parents(self):
+        extra = Task.objects.create(header="Menu", parent=self.project, order=3)
+        suggested = self.suggested(task=self.tracked)
+        self.assertIn(("Menu", "same project"), suggested)
+        self.assertNotIn("Website", [header for header, _ in suggested])  # a parent is not ticked itself
+        self.assertNotIn("Logo", [header for header, _ in suggested])  # done before the block
+        self.assertEqual(len(suggested), len({header for header, _ in suggested}))
+        self.assertTrue(extra)
+
+    def test_the_api(self):
+        from tasks.tests.support import APIClient
+        response = APIClient().get(f"/api/work-blocks/suggestions/?start={at(9).isoformat().replace('+', '%2B')}"
+                                   f"&end={at(12).isoformat().replace('+', '%2B')}&task={self.tracked.id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data[0], {"task_id": str(self.tracked.id), "reason": "tracked"})
+
+
+class TimeSheetTest(TestCase):
+    """S6: time to sort counts as work; shared-out time says so."""
+
+    def setUp(self):
+        from tasks.models import Tag
+        self.work = Tag.objects.create(name="Arbeit")
+        self.task = Task.objects.create(header="Report", duration=minutes(60))
+        self.task.tags.add(self.work)
+
+    def sheet(self, now=None):
+        from tasks.services.timesheet import time_sheet
+        [day] = time_sheet(at(0).date(), at(0).date(), now=now or at(18), zone=UTC)
+        return day
+
+    def test_time_to_sort_counts_as_work(self):
+        WorkBlock.objects.create(start=at(8), end=at(10), origin="started")
+        TrackingSession.objects.create(task=self.task, start=at(10), end=at(11))
+        day = self.sheet()
+        self.assertEqual((day.begin, day.end, day.working_seconds), (at(8), at(11), 3 * 3600))
+        unsorted = day.entries[0]
+        self.assertEqual((unsorted.header, unsorted.task_id, unsorted.kind, unsorted.seconds),
+                         ("Not sorted yet", None, "work", 7200))
+        self.assertTrue(unsorted.block_id)
+
+    def test_running_start_work_counts_until_now(self):
+        WorkBlock.objects.create(start=at(8), origin="started")
+        day = self.sheet(now=at(9, 30))
+        self.assertTrue(day.running)
+        self.assertEqual(day.entries[0].seconds, 5400)
+
+    def test_shared_out_time_is_approximate(self):
+        from tasks.services.work_blocks import Tick, fill_gap
+        fill_gap(at(8), at(9), [Tick(task=self.task, completed=False)], now=at(18))
+        TrackingSession.objects.create(task=self.task, start=at(10), end=at(11))
+        [entry] = self.sheet().entries
+        self.assertEqual((entry.seconds, entry.approximate), (7200, True))

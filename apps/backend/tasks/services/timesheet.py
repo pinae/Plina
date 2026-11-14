@@ -12,6 +12,9 @@ and how long the pauses were — from the tracked time.
   is a pause).
 * The working time is the span from begin to end without the pauses.
 
+Time begun with "Start work" and not sorted yet (docs/sort-time.md) is
+work too ("Not sorted yet"); time shared out when sorting is ``approximate``.
+
 Days are the user's days (the active time zone). A session counts on the
 day it began, also when it goes on after midnight (the day then ends on the
 next one); a running one counts until now. Tags count by name, in any case,
@@ -25,7 +28,7 @@ from typing import Dict, List, Optional
 
 from django.utils import timezone
 
-from tasks.models import Task, TrackingSession
+from tasks.models import Task, TrackingSession, WorkBlock
 
 WORK_TAGS = ("Arbeit", "Work")
 PAUSE_TAGS = ("Freizeit", "Freetime")
@@ -72,10 +75,14 @@ def kinds_of(task_ids) -> Dict:
     return kinds
 
 
+#: The entry of time begun with "Start work" and not sorted yet.
+NOT_SORTED = "Not sorted yet"
+
+
 @dataclass
 class Entry:
     """A task counted on a day, with its time on that day."""
-    task_id: str
+    task_id: Optional[str]
     header: str
     tags: List[dict]
     kind: str
@@ -85,6 +92,10 @@ class Entry:
     first_start: Optional[datetime] = None
     #: The parent or project whose tag made the task count (None: its own).
     via: Optional[str] = None
+    #: Time not sorted yet: the work block (``task_id`` is None).
+    block_id: Optional[str] = None
+    #: Some of the time was shared out by estimates, not measured.
+    approximate: bool = False
 
 
 @dataclass
@@ -135,6 +146,10 @@ def time_sheet(first: date, last: date, now: Optional[datetime] = None, zone=Non
         end = session.end or max(now, session.start)
         day = timezone.localtime(session.start, zone).date()
         pieces.setdefault(day, []).append((kind, session.start, end, session, tags))
+    for block in WorkBlock.objects.filter(sorted_at=None, start__gte=window_start, start__lt=window_end):
+        end = block.end or max(now, block.start)
+        day = timezone.localtime(block.start, zone).date()
+        pieces.setdefault(day, []).append(("work", block.start, end, block, []))
 
     days = []
     for day in sorted(pieces):
@@ -151,13 +166,19 @@ def time_sheet(first: date, last: date, now: Optional[datetime] = None, zone=Non
                 continue  # free time outside the working day
             if kind == "pause":
                 pause += seconds
-            task = session.task
-            entry = entries.get(str(task.id))
-            if entry is None:
-                entry = entries[str(task.id)] = Entry(
-                    task_id=str(task.id), header=task.header, kind=kind, first_start=max(start, begin),
-                    tags=[{"id": str(tag.id), "name": tag.name, "hex_color": tag.hex_color} for tag in tags],
-                    via=kinds[task.id][1])
+            if isinstance(session, WorkBlock):
+                entry = entries[f"block:{session.id}"] = Entry(
+                    task_id=None, header=NOT_SORTED, kind=kind, first_start=start, tags=[],
+                    block_id=str(session.id))
+            else:
+                task = session.task
+                entry = entries.get(str(task.id))
+                if entry is None:
+                    entry = entries[str(task.id)] = Entry(
+                        task_id=str(task.id), header=task.header, kind=kind, first_start=max(start, begin),
+                        tags=[{"id": str(tag.id), "name": tag.name, "hex_color": tag.hex_color} for tag in tags],
+                        via=kinds[task.id][1])
+                entry.approximate = entry.approximate or session.apportioned
             entry.seconds += seconds
             entry.running = entry.running or session.end is None
         for entry in entries.values():

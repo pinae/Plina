@@ -202,7 +202,7 @@ class TimeSheetApiTest(TimeSheetCase):
         self.assertEqual(first["entries"], [{
             "task_id": str(report.id), "header": "Report", "kind": "work", "seconds": 3 * 3600, "running": False,
             "tags": [{"id": str(self.arbeit.id), "name": "Arbeit", "hex_color": self.arbeit.hex_color}],
-            "via": None,  # its own tag
+            "via": None, "block_id": None, "approximate": False,  # its own tag
         }])
         self.assertEqual([day["date"] for day in data["days"]], ["2026-10-07", "2026-10-31"])
 

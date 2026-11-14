@@ -456,6 +456,7 @@ class TimeSheetView(APIView):
                 "entries": [{
                     "task_id": entry.task_id, "header": entry.header, "tags": entry.tags, "kind": entry.kind,
                     "seconds": entry.seconds, "running": entry.running, "via": entry.via,
+                    "block_id": entry.block_id, "approximate": entry.approximate,
                 } for entry in day.entries],
             } for day in timesheet.time_sheet(first, last)],
         })
@@ -841,6 +842,20 @@ class WorkBlockViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.
     def start(self, request):
         from .services.work_blocks import start_work
         return self._answer(start_work(), status=201)
+
+    @action(detail=False, methods=["get"])
+    def suggestions(self, request):
+        """What to offer for ``?start=…&end=…`` (``&task=<id>``: the task
+        tracked in it), the likeliest first, with why."""
+        from django.utils.dateparse import parse_datetime
+        from .services.work_blocks import suggestions
+        params = request.query_params
+        start, end = parse_datetime(params.get("start") or ""), parse_datetime(params.get("end") or "")
+        if start is None or end is None:
+            return Response({"detail": "Give the start and end of the stretch."}, status=400)
+        task = Task.objects.filter(id=params["task"]).first() if _is_uuid(params.get("task")) else None
+        return Response([{"task_id": str(found.id), "reason": reason}
+                         for found, reason in suggestions(start, end, task=task)])
 
     @action(detail=False, methods=["post"])
     def stop(self, request):
