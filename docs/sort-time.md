@@ -1,5 +1,7 @@
 # Sorting tracked time afterwards — development plan
 
+*Status: S1–S11 delivered; README: Sorting tracked time afterwards.*
+
 Two ways time tracking breaks down in a flow state:
 
 1. A session runs on task A while A, B and C get done: A gets all the time,
@@ -37,9 +39,11 @@ with the keyboard, undone with Undo instead of confirmed beforehand.
 * **Never interrupt the flow:** starting a task while "Start work" runs
   ends the block and leaves it "to sort" (a count in the header); stopping
   a session that ran long asks "Only this task?" without blocking.
-* **Suggestions** (recognition over recall): the tracked task, the tasks
-  the plan had in the block, open tasks of the same project, tasks
-  completed in the block without time, recently tracked ones.
+* **Suggestions** (recognition over recall): the tracked task, tasks
+  completed in the block without time, the tasks the plan had in the
+  block, open tasks of the same project, recently tracked ones — and, so a
+  fresh day offers something too (found in the live check), the active
+  project's open tasks, then the open ones by priority.
 
 ## Work packages
 
@@ -103,8 +107,9 @@ sent; save and Undo calls.
 Idle: "Start work" next to ▶. Running block: "Working · 1:23 · not
 sorted yet" with ⏹ (stop opens the sheet). Starting a task meanwhile:
 "1 to sort" in the header opens the sheet. Stopping or completing a session
-that ran long (over 90 minutes, or 1.5× what was left of the estimate):
-"Only “A” for 2h 10m? Split…".
+that ran long (over 1.5× what was left of the estimate when it began, and
+30 minutes at least; "over 90 minutes" alone would ask after every long
+task): "Only “A” for 2h 10m? Split…".
 *Tests:* each of these.
 
 ### S10 — Time sheet (frontend)

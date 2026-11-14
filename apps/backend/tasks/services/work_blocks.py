@@ -308,7 +308,9 @@ def suggestions(start: datetime, end: datetime, task: Optional[Task] = None) -> 
     """What the sheet offers to tick for ``start``–``end``, as (task,
     reason), the likeliest first: the tracked ``task``, tasks completed in
     the stretch without time on them, the tasks the accepted plan had in
-    it, open tasks of the tracked task's project, recently tracked ones.
+    it, open tasks of the tracked task's project, recently tracked ones —
+    and, so that a fresh day offers something too, the open tasks of the
+    active project, then the open ones by priority.
     Only tasks that are worked on themselves (no parents, no appointments),
     open or done in the stretch."""
     from tasks.models import PlanEntry
@@ -342,4 +344,11 @@ def suggestions(start: datetime, end: datetime, task: Optional[Task] = None) -> 
     recent = (TrackingSession.objects.filter(start__lt=end, start__gte=end - RECENT, block=None)
               .select_related("task").order_by("-start"))
     offer([session.task for session in recent], "recent")
+    from tasks.services.settings import get_settings
+    active = get_settings().active_task_id
+    if active is not None and active in tree.nodes:
+        in_active = tree.descendant_ids(active)
+        by_id = Task.objects.in_bulk(in_active)
+        offer([by_id[task_id] for task_id in in_active if not by_id[task_id].is_done], "active project")
+    offer(Task.objects.filter(completed_at=None).order_by("-priority", "header"), "priority")
     return found

@@ -225,8 +225,8 @@ function SortTimeSheet({ target, onClose, onSorted }: SheetProps) {
                     label="Find or add a done task" onChange={event => setText(event.target.value)}
                     helperText={query ? (plainSearch && matches.length ? 'Enter ticks the first match' : `Enter adds “${parsed.header}”, done`)
                         : 'Enter saves · ↓ to the list, Space ticks (twice: worked on)'}
-                    slotProps={{ htmlInput: { role: 'combobox', 'aria-expanded': Boolean(query), ref: findRef,
-                        onKeyDown: onFindKey } }} />
+                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { role: 'combobox', 'aria-expanded': Boolean(query),
+                        ref: findRef, onKeyDown: onFindKey } }} />
                 <Box role="list" sx={{ display: 'flex', flexDirection: 'column' }}>
                     {visible.map((row, index) => {
                         const state = states[row.key] ?? 'none';
@@ -246,25 +246,29 @@ function SortTimeSheet({ target, onClose, onSorted }: SheetProps) {
                                     {row.created && <Chip size="small" label="new" />}
                                     {row.reason && <Typography variant="caption" color="text.secondary" noWrap>{row.reason}</Typography>}
                                 </Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                                {/* Fixed columns: estimate, share, minutes — unticked rows keep their place. */}
+                                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', width: 64, textAlign: 'right' }}>
                                     est {formatDuration(row.created ? duration(row.created.durationMinutes)
                                         : row.task!.duration) }
                                 </Typography>
-                                {seconds !== undefined && (
-                                    <>
-                                        <Typography data-testid={`share-${name}`} variant="body2"
-                                            sx={{ minWidth: 56, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                                            {spoken(seconds)}
-                                        </Typography>
-                                        <Tooltip title="Minutes for it (pinned; the rest is shared out)">
-                                            <TextField size="small" type="number" value={pinned[row.key] ?? ''}
-                                                placeholder={String(Math.round(seconds / 60))}
-                                                onChange={event => setPinned(current => ({ ...current,
-                                                    [row.key]: event.target.value === '' ? null : Math.max(0, Math.round(Number(event.target.value))) }))}
-                                                slotProps={{ htmlInput: { 'aria-label': `Minutes for ${name}`, min: 0, style: { width: 56 } } }} />
-                                        </Tooltip>
-                                    </>
-                                )}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: 136, justifyContent: 'flex-end' }}>
+                                    {seconds !== undefined && (
+                                        <>
+                                            <Typography data-testid={`share-${name}`} variant="body2"
+                                                sx={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                                {spoken(seconds)}
+                                            </Typography>
+                                            <Tooltip describeChild title="Minutes for it (pinned; the rest is shared out)">
+                                                <TextField size="small" type="number" value={pinned[row.key] ?? ''}
+                                                    placeholder={String(Math.round(seconds / 60))}
+                                                    onChange={event => setPinned(current => ({ ...current,
+                                                        [row.key]: event.target.value === '' ? null : Math.max(0, Math.round(Number(event.target.value))) }))}
+                                                    sx={{ width: 64, '& input': { py: 0.5, px: 1 } }}
+                                                    slotProps={{ htmlInput: { 'aria-label': `Minutes for ${name}`, min: 0 } }} />
+                                            </Tooltip>
+                                        </>
+                                    )}
+                                </Box>
                             </Box>
                         );
                     })}

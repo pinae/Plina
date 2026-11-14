@@ -328,13 +328,13 @@ class SuggestionsTest(TestCase):
         return [(task.header, reason) for task, reason in suggestions(at(9), at(12), **kwargs)]
 
     def test_the_sources_in_their_order(self):
-        self.assertEqual(self.suggested(task=self.tracked), [
+        self.assertEqual(self.suggested(task=self.tracked)[:5], [
             ("Header", "tracked"), ("Call back", "done meanwhile"), ("Footer", "planned"), ("Invoice", "planned"),
             ("Review", "recent"),
-        ])
+        ])  # then the rest by priority (SuggestionsOnAFreshDayTest)
 
     def test_without_a_tracked_task(self):
-        self.assertEqual([header for header, _ in self.suggested()], ["Call back", "Footer", "Invoice", "Review"])
+        self.assertEqual([header for header, _ in self.suggested()][:4], ["Call back", "Footer", "Invoice", "Review"])
 
     def test_same_project_and_no_parents(self):
         extra = Task.objects.create(header="Menu", parent=self.project, order=3)
@@ -389,3 +389,23 @@ class TimeSheetTest(TestCase):
         TrackingSession.objects.create(task=self.task, start=at(10), end=at(11))
         [entry] = self.sheet().entries
         self.assertEqual((entry.seconds, entry.approximate), (7200, True))
+
+
+class SuggestionsOnAFreshDayTest(TestCase):
+    """S6, found in the live check: "Start work" on a day with nothing
+    tracked or planned yet still offers tasks — the active project's, then
+    the most urgent ones by priority."""
+
+    def test_the_active_project_then_by_priority(self):
+        from tasks.services.settings import activate
+        from tasks.services.work_blocks import suggestions
+        blog = Task.objects.create(header="Blog")
+        draft = Task.objects.create(header="Draft", parent=blog, order=0, priority=3)
+        shop = Task.objects.create(header="Shop")
+        Task.objects.create(header="Checkout", parent=shop, order=0, priority=9)
+        Task.objects.create(header="Low", priority=1)
+        Task.objects.create(header="Gone", priority=10, completed_at=at(7))
+        activate(blog)
+        self.assertEqual([(task.header, reason) for task, reason in suggestions(at(9), at(12))],
+                         [("Draft", "active project"), ("Checkout", "priority"), ("Low", "priority")])
+        self.assertTrue(draft)

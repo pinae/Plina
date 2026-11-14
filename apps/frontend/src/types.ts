@@ -623,7 +623,8 @@ export interface WorkBlockCreate {
     items: WorkBlockTick[];
 }
 
-export type SuggestionReason = 'tracked' | 'done meanwhile' | 'planned' | 'same project' | 'recent';
+export type SuggestionReason = 'tracked' | 'done meanwhile' | 'planned' | 'same project' | 'recent' | 'active project'
+    | 'priority';
 
 export interface WorkBlockSuggestion {
     task_id: string;
