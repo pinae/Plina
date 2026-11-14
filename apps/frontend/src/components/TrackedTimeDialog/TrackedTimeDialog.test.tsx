@@ -13,6 +13,7 @@ import { TrackedTimeDialog } from './TrackedTimeDialog.tsx';
 import { API, makeTask } from '../../testing/treeFixtures.ts';
 import type { TrackedSession } from '../../types.ts';
 import { composeSpan, keepSeconds, untilNextDay } from '../../utils/trackedTime.ts';
+import { SortTimeContext, type SortTarget } from '../SortTimeDialog/sortTimeContext.ts';
 
 const local = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute).toISOString();
 const report = makeTask('report', { header: 'Report' });
@@ -244,5 +245,54 @@ describe('TrackedTimeDialog by day', () => {
         expect(await screen.findByText(/Nothing tracked on/)).toBeInTheDocument();
         fireEvent.change(screen.getAllByLabelText('Day')[0], { target: { value: '2026-10-05' } });
         await waitFor(() => expect(log.map(entry => entry.query)).toContain('?from=2026-10-05&to=2026-10-05'));
+    });
+});
+
+describe('sorting tracked time afterwards (docs/sort-time.md)', () => {
+    const opened: SortTarget[] = [];
+    function sortWrapper({ children }: { children: ReactNode }) {
+        const Base = wrapper;
+        return <Base><SortTimeContext.Provider value={target => opened.push(target)}>{children}</SortTimeContext.Provider></Base>;
+    }
+    afterEach(() => { opened.length = 0; });
+
+    it('a session that covered several tasks is split', async () => {
+        sessions = [session('s1', local(6, 9), local(6, 12))];
+        render(<TrackedTimeDialog task={report} onClose={() => { }} />, { wrapper: sortWrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /split this time/i }));
+        expect(opened).toEqual([{ session: sessions[0] }]);
+    });
+
+    it('shared-out time says so and is sorted again', async () => {
+        sessions = [session('s1', local(6, 9), local(6, 11), { apportioned: true, block_id: 'b1' })];
+        const block = { id: 'b1', start: local(6, 9), end: local(6, 11), origin: 'gap', sorted_at: local(6, 13),
+            original_task_id: null, running: false, seconds: 7200, items: [] };
+        server.use(http.get(`${API}/work-blocks/b1/`, () => HttpResponse.json(block)));
+        render(<TrackedTimeDialog task={report} onClose={() => { }} />, { wrapper: sortWrapper });
+        expect(await screen.findByText('≈ shared out')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /split this time/i })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /sort again/i }));
+        await waitFor(() => expect(opened).toEqual([{ block }]));
+    });
+
+    it('a gap between two stretches of a day is filled', async () => {
+        sessions = [session('s1', local(6, 8), local(6, 10)), session('s2', local(6, 11, 30), local(6, 12)),
+            session('s3', local(6, 12, 5), local(6, 13))];
+        render(<TrackedTimeDialog day="2026-10-06" onClose={() => { }} />, { wrapper: sortWrapper });
+        // 10:00–11:30 is worth sorting; five minutes are not.
+        const gaps = await screen.findAllByRole('button', { name: /fill/i });
+        expect(gaps).toHaveLength(1);
+        expect(screen.getByText(/not tracked: 1h 30m/i)).toBeInTheDocument();
+        fireEvent.click(gaps[0]);
+        expect(opened).toEqual([{ gap: { start: local(6, 10), end: local(6, 11, 30) } }]);
+    });
+
+    it('time not tracked live can be sorted into several tasks', async () => {
+        render(<TrackedTimeDialog day="2026-10-06" onClose={() => { }} />, { wrapper: sortWrapper });
+        const form = await screen.findByRole('form', { name: 'add time' });
+        fireEvent.change(field(form, 'From'), { target: { value: '14:00' } });
+        fireEvent.change(field(form, 'Until'), { target: { value: '16:15' } });
+        fireEvent.click(within(form).getByRole('button', { name: /sort into tasks/i }));
+        expect(opened).toEqual([{ gap: { start: local(6, 14), end: local(6, 16, 15) } }]);
     });
 });

@@ -5,7 +5,9 @@
  * By day (from the time sheet): everything begun that day, on any task.
  *
  * Each stretch has a day, a from and an until; an until at or before the
- * from is on the next day. The server refuses an end before the start, time
+ * from is on the next day. A stretch that covered several tasks is split
+ * among them, a gap of a day (or time entered here) sorted into tasks
+ * (docs/sort-time.md); time shared out so is marked ≈. The server refuses an end before the start, time
  * in the future and overlaps (one task at a time); the task's tracked time,
  * the plan and the time sheet follow every change.
  */
@@ -22,6 +24,8 @@ import { fromDateInput, toDateInput } from '../../utils/dateInput.ts';
 import { hoursAndMinutes } from '../../utils/duration.ts';
 import { composeSpan, keepSeconds, refusal, toTimeInput, untilNextDay } from '../../utils/trackedTime.ts';
 import { useIsMobile } from '../../hooks/useResponsive.ts';
+import { useOpenSortBlock } from '../../hooks/useOpenSortBlock.ts';
+import { useOpenSortTime } from '../SortTimeDialog/sortTimeContext.ts';
 
 const shrink = { inputLabel: { shrink: true } };
 /** Room for "08:30 AM" where the browser shows 12-hour times. */
@@ -35,6 +39,8 @@ const secondsOf = (span: { start: Date; end: Date | null } | null) =>
 function SessionRow({ session, byDay }: { session: TrackedSession; byDay: boolean }) {
     const update = useUpdateSession();
     const remove = useDeleteSession();
+    const openSort = useOpenSortTime();
+    const openBlock = useOpenSortBlock();
     const initial = {
         date: toDateInput(session.start), from: toTimeInput(session.start),
         until: session.end ? toTimeInput(session.end) : '',
@@ -92,7 +98,23 @@ function SessionRow({ session, byDay }: { session: TrackedSession; byDay: boolea
                 {seconds === null ? '' : hoursAndMinutes(seconds)}
             </Typography>
             {session.running && !dirty && <Chip size="small" color="success" label="running" />}
+            {session.apportioned && (
+                <Tooltip describeChild title="Shared out by estimates when it was sorted, not measured">
+                    <Chip size="small" variant="outlined" label="≈ shared out" />
+                </Tooltip>
+            )}
             <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {!dirty && session.block_id && (
+                    <Button size="small" onClick={() => void openBlock(session.block_id!).catch(
+                        () => setError('Could not load the sorted time.'))}>
+                        Sort again…
+                    </Button>
+                )}
+                {!dirty && !session.block_id && !session.running && (
+                    <Tooltip describeChild title="It covered several tasks: share it among them">
+                        <Button size="small" aria-label="split this time" onClick={() => openSort({ session })}>Split…</Button>
+                    </Tooltip>
+                )}
                 {dirty && (
                     <>
                         <Button size="small" onClick={() => { setDate(initial.date); setFrom(initial.from); setUntil(initial.until); setError(null); }}>
@@ -149,6 +171,7 @@ function useTaskOptions() {
 
 function AddTime({ task, day }: { task?: Pick<Task, 'id' | 'header'>; day?: string }) {
     const create = useCreateSession();
+    const openSort = useOpenSortTime();
     const options = useTaskOptions();
     const [taskId, setTaskId] = useState<string | null>(task?.id ?? null);
     const [ownDate, setDate] = useState(toDateInput(new Date()));
@@ -199,9 +222,44 @@ function AddTime({ task, day }: { task?: Pick<Task, 'id' | 'header'>; day?: stri
                     helperText={untilNextDay(from, until) ? 'the next day' : undefined}
                     slotProps={{ ...shrink, formHelperText: { sx: { mx: 0 } } }} />
                 <Typography variant="body2" sx={{ minWidth: 56 }}>{seconds === null ? '' : hoursAndMinutes(seconds)}</Typography>
-                <Button type="submit" variant="outlined" disabled={create.isPending} sx={{ ml: 'auto' }}>Add</Button>
+                <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
+                    {!task && (
+                        <Tooltip describeChild title="Several tasks in this time: tick them, it is shared out by their estimates">
+                            <span>
+                                <Button disabled={!span?.end}
+                                    onClick={() => span?.end && openSort({ gap: { start: span.start.toISOString(), end: span.end.toISOString() } })}>
+                                    Sort into tasks…
+                                </Button>
+                            </span>
+                        </Tooltip>
+                    )}
+                    <Button type="submit" variant="outlined" disabled={create.isPending}>Add</Button>
+                </Box>
             </Box>
             {error && <Alert severity="error" sx={{ mt: 1 }}>{error}</Alert>}
+        </Box>
+    );
+}
+
+/** A gap of a day worth sorting (docs/sort-time.md): work not tracked live. */
+const MIN_GAP_SECONDS = 15 * 60;
+
+function Gap({ after, before }: { after: TrackedSession; before?: TrackedSession }) {
+    const openSort = useOpenSortTime();
+    if (!before || !after.end) return null;
+    const seconds = (new Date(before.start).getTime() - new Date(after.end).getTime()) / 1000;
+    if (seconds < MIN_GAP_SECONDS) return null;
+    const range = `${toTimeInput(after.end)} – ${toTimeInput(before.start)}`;
+    return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, borderBottom: 1, borderColor: 'divider',
+            color: 'text.secondary' }}>
+            <Typography variant="body2">Not tracked: {hoursAndMinutes(seconds)} ({range})</Typography>
+            <Tooltip describeChild title="Worked then? Sort it into the tasks done">
+                <Button size="small" sx={{ ml: 'auto' }} aria-label={`fill ${range}`}
+                    onClick={() => openSort({ gap: { start: after.end!, end: before.start } })}>
+                    Fill…
+                </Button>
+            </Tooltip>
         </Box>
     );
 }
@@ -245,8 +303,11 @@ export function TrackedTimeDialog({ task, day, onClose }: TrackedTimeDialogProps
                         {byTask ? 'No time tracked on this task yet.' : `Nothing tracked on ${dayName}.`}
                     </Typography>
                 )}
-                {list.map(session => (
-                    <SessionRow key={`${session.id}@${session.start}-${session.end}`} session={session} byDay={!byTask} />
+                {list.map((session, index) => (
+                    <Box key={`${session.id}@${session.start}-${session.end}`}>
+                        <SessionRow session={session} byDay={!byTask} />
+                        {!byTask && <Gap after={session} before={list[index + 1]} />}
+                    </Box>
                 ))}
                 {list.length > 0 && (
                     <Typography variant="body2" sx={{ mt: 1, textAlign: 'right' }} data-testid="tracked-total">

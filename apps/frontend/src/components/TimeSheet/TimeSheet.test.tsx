@@ -13,6 +13,7 @@ import TimeSheet from './TimeSheet.tsx';
 import { API } from '../../testing/treeFixtures.ts';
 import type { TimeSheet as Sheet, TimeSheetDay } from '../../types.ts';
 import { hoursAndMinutes } from '../../utils/duration.ts';
+import { SortTimeContext, type SortTarget } from '../SortTimeDialog/sortTimeContext.ts';
 
 const local = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute).toISOString();
 const arbeit = { id: 'tag-arbeit', name: 'Arbeit', hex_color: '#3f51b5' };
@@ -175,5 +176,27 @@ describe('TimeSheet', () => {
         const today = new Date();
         const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         expect((within(dialog).getAllByLabelText('Day')[0] as HTMLInputElement).value).toBe(iso);
+    });
+});
+
+describe('TimeSheet: sorting time afterwards (docs/sort-time.md)', () => {
+    it('time not sorted yet is work, one click from the sheet; shared-out time is marked ≈', async () => {
+        const opened: SortTarget[] = [];
+        const block = { id: 'b1', start: local(7, 8), end: local(7, 10), origin: 'started', sorted_at: null,
+            original_task_id: null, running: false, seconds: 7200, items: [] };
+        server.use(http.get(`${API}/work-blocks/b1/`, () => HttpResponse.json(block)));
+        days = [{ ...wednesday, entries: [
+            { task_id: null, block_id: 'b1', header: 'Not sorted yet', tags: [], kind: 'work', seconds: 7200, running: false },
+            { ...wednesday.entries[0], approximate: true },
+        ] }];
+        render(<SortTimeContext.Provider value={target => opened.push(target)}>
+            <TimeSheet initialMonth={new Date(2026, 9, 1)} />
+        </SortTimeContext.Provider>, { wrapper });
+        fireEvent.click(await screen.findByRole('button', { name: /show the tasks of/ }));
+        const tasks = await screen.findByRole('table', { name: /tasks of/ });
+        const [, unsorted, report] = within(tasks).getAllByRole('row');
+        expect(cells(report)).toEqual(['Report', '#Arbeit', '≈ 5h 15m']);
+        fireEvent.click(within(unsorted).getByRole('button', { name: /sort it/i }));
+        await waitFor(() => expect(opened).toEqual([{ block }]));
     });
 });

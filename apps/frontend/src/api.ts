@@ -307,6 +307,9 @@ export const deleteSession = (sessionId: string) =>
 export const fetchWorkBlocks = () =>
     api.get<WorkBlock[]>('work-blocks/').then(r => r.data);
 
+export const fetchWorkBlock = (blockId: string) =>
+    api.get<WorkBlock>(`work-blocks/${blockId}/`).then(r => r.data);
+
 export const startWork = () =>
     api.post<WorkBlock>('work-blocks/start/').then(r => r.data);
 

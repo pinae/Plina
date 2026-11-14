@@ -7,7 +7,9 @@
  *
  * Work is time tracked on tasks tagged #Arbeit or #Work, or in a project
  * tagged so; time tracked on #Freizeit or #Freetime tasks (or projects)
- * between the begin and end of work is a pause.
+ * between the begin and end of work is a pause. Time begun with "Start
+ * work" and not sorted yet is work too, sorted from its row; time shared
+ * out when sorting is marked ≈ (docs/sort-time.md).
  */
 import { useState } from 'react';
 import {
@@ -26,6 +28,7 @@ import type { TimeSheetDay } from '../../types.ts';
 import { fromDateInput, toDateInput } from '../../utils/dateInput.ts';
 import { hoursAndMinutes } from '../../utils/duration.ts';
 import { useIsMobile } from '../../hooks/useResponsive.ts';
+import { useOpenSortBlock } from '../../hooks/useOpenSortBlock.ts';
 import { TrackedTimeDialog } from '../TrackedTimeDialog/TrackedTimeDialog.tsx';
 
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -48,6 +51,7 @@ function DayRows({ day, open, onToggle, onEdit, compact }: {
 }) {
     const label = dayLabel(day.date);
     const later = daysLater(day.date, day.end);
+    const openBlock = useOpenSortBlock(); // time not sorted yet (docs/sort-time.md)
     return (
         <>
             <TableRow hover onClick={onToggle} data-testid={`day-${day.date}`}
@@ -90,7 +94,7 @@ function DayRows({ day, open, onToggle, onEdit, compact }: {
                             </TableHead>
                             <TableBody>
                                 {day.entries.map(entry => (
-                                    <TableRow key={entry.task_id} data-kind={entry.kind}>
+                                    <TableRow key={entry.task_id ?? entry.block_id} data-kind={entry.kind}>
                                         <TableCell sx={{ overflowWrap: 'anywhere' }}>
                                             {entry.header}
                                             {entry.via && (
@@ -105,6 +109,12 @@ function DayRows({ day, open, onToggle, onEdit, compact }: {
                                             {entry.running && (
                                                 <Chip size="small" color="success" label="running" sx={{ ml: 0.75, height: 18 }} />
                                             )}
+                                            {entry.block_id && !entry.running && (
+                                                <Button size="small" sx={{ ml: 0.75 }} aria-label="sort it"
+                                                    onClick={() => void openBlock(entry.block_id!)}>
+                                                    Sort…
+                                                </Button>
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
@@ -114,7 +124,10 @@ function DayRows({ day, open, onToggle, onEdit, compact }: {
                                                 ))}
                                             </Box>
                                         </TableCell>
-                                        <TableCell align="right">{hoursAndMinutes(entry.seconds)}</TableCell>
+                                        <TableCell align="right"
+                                            title={entry.approximate ? 'Partly shared out by estimates when it was sorted' : undefined}>
+                                            {entry.approximate ? '≈ ' : ''}{hoursAndMinutes(entry.seconds)}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
