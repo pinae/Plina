@@ -4,7 +4,7 @@ from rest_framework import serializers
 from datetime import timedelta
 
 from .models import (CalendarSubscription, Marker, SavedFilter, Task, Tag, TimeBucket, TimeBucketType, TaskDependency,
-                     TrackingSession, UserSettings)
+                     TrackingSession, UserSettings, WorkBlock, WorkBlockItem)
 from .services.colors import ensure_auto_colors, ensure_bucket_type_colors, from_hex, to_hex
 from .services.estimates import (clear_completion_snapshot, record_estimate_change,
                                  write_completion_snapshot)
@@ -658,16 +658,21 @@ class CalendarSubscriptionSerializer(serializers.ModelSerializer):
 
 class TrackingSessionSerializer(serializers.ModelSerializer):
     """Tracked time (README: Time sheet): when, on which task; ``running``
-    while it is being tracked, ``seconds`` until its end or now."""
+    while it is being tracked, ``seconds`` until its end or now;
+    ``apportioned`` when it is a share of sorted time (``block_id``,
+    docs/sort-time.md)."""
     task_id = serializers.PrimaryKeyRelatedField(queryset=Task.objects.all(), source='task')
     task_header = serializers.CharField(source='task.header', read_only=True)
     task_tags = TagSerializer(source='task.tags', many=True, read_only=True)
     running = serializers.SerializerMethodField()
     seconds = serializers.SerializerMethodField()
+    block_id = serializers.UUIDField(read_only=True)
 
     class Meta:
         model = TrackingSession
-        fields = ['id', 'task_id', 'task_header', 'task_tags', 'start', 'end', 'running', 'seconds']
+        fields = ['id', 'task_id', 'task_header', 'task_tags', 'start', 'end', 'running', 'seconds',
+                  'apportioned', 'block_id']
+        read_only_fields = ['apportioned']
 
     def get_running(self, session) -> bool:
         return session.end is None
@@ -735,3 +740,103 @@ class SavedFilterSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "filter", "created_at"]
         read_only_fields = ["created_at"]
         extra_kwargs = {"name": {"error_messages": {"blank": "Give the filter a name."}}}
+
+
+class WorkBlockItemSerializer(serializers.ModelSerializer):
+    """A task ticked when sorting a work block (docs/sort-time.md), with the
+    share it got (``seconds``)."""
+    task_id = serializers.UUIDField(read_only=True)
+    header = serializers.CharField(source='task.header', read_only=True)
+    weight_minutes = serializers.SerializerMethodField()
+    pinned_minutes = serializers.SerializerMethodField()
+    seconds = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkBlockItem
+        fields = ['task_id', 'header', 'order', 'weight_minutes', 'pinned_minutes', 'completed', 'created_here',
+                  'seconds']
+        read_only_fields = fields
+
+    def get_weight_minutes(self, item) -> int:
+        return round(item.weight.total_seconds() / 60)
+
+    def get_pinned_minutes(self, item):
+        return None if item.pinned is None else round(item.pinned.total_seconds() / 60)
+
+    def get_seconds(self, item) -> int:
+        return round(sum(((s.end - s.start).total_seconds() for s in item.block.sessions.all()
+                          if s.task_id == item.task_id and s.end is not None), 0))
+
+
+class WorkBlockSerializer(serializers.ModelSerializer):
+    """A stretch of work to sort, or sorted (docs/sort-time.md): ``running``
+    while "Start work" goes on, ``seconds`` until its end or now."""
+    original_task_id = serializers.UUIDField(read_only=True)
+    running = serializers.SerializerMethodField()
+    seconds = serializers.SerializerMethodField()
+    items = WorkBlockItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = WorkBlock
+        fields = ['id', 'start', 'end', 'origin', 'sorted_at', 'original_task_id', 'running', 'seconds', 'items']
+        read_only_fields = fields
+
+    def get_running(self, block) -> bool:
+        return block.end is None
+
+    def get_seconds(self, block) -> int:
+        from django.utils import timezone
+        return max(0, round(((block.end or timezone.now()) - block.start).total_seconds()))
+
+
+class NewTaskTickSerializer(serializers.Serializer):
+    """A task added in the sort sheet, done at once (the quick-add's parse)."""
+    header = serializers.CharField(max_length=1024)
+    duration = serializers.DurationField(required=False, allow_null=True)
+    parent_id = serializers.PrimaryKeyRelatedField(queryset=Task.objects.all(), required=False, allow_null=True)
+    tag_ids = serializers.PrimaryKeyRelatedField(queryset=Tag.objects.all(), many=True, required=False)
+
+
+class TickSerializer(serializers.Serializer):
+    """A row ticked in the sort sheet: a task, or a ``new`` one."""
+    task_id = serializers.PrimaryKeyRelatedField(queryset=Task.objects.all(), required=False, allow_null=True)
+    new = NewTaskTickSerializer(required=False, allow_null=True)
+    completed = serializers.BooleanField(default=True)
+    pinned_minutes = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if (attrs.get('task_id') is None) == (attrs.get('new') is None):
+            raise serializers.ValidationError("Each row is a task or a new one.")
+        return attrs
+
+    def to_tick(self, attrs):
+        from datetime import timedelta
+        from .services.work_blocks import Tick
+        new = attrs.get('new')
+        if new is not None:
+            parent = new.get('parent_id')
+            new = {"header": new['header'], "duration": new.get('duration'),
+                   "parent_id": parent.id if parent is not None else None,
+                   "tag_ids": [tag.id for tag in new.get('tag_ids', [])]}
+        pinned = attrs.get('pinned_minutes')
+        return Tick(task=attrs.get('task_id'), new=new, completed=attrs['completed'],
+                    pinned=None if pinned is None else timedelta(minutes=pinned))
+
+
+class SortSerializer(serializers.Serializer):
+    items = TickSerializer(many=True)
+
+    def ticks(self):
+        return [TickSerializer().to_tick(item) for item in self.validated_data['items']]
+
+
+class SortNewSerializer(SortSerializer):
+    """Sorting a session (``session_id``) or a gap (``start``, ``end``)."""
+    session_id = serializers.PrimaryKeyRelatedField(queryset=TrackingSession.objects.all(), required=False)
+    start = serializers.DateTimeField(required=False)
+    end = serializers.DateTimeField(required=False)
+
+    def validate(self, attrs):
+        if 'session_id' not in attrs and not ('start' in attrs and 'end' in attrs):
+            raise serializers.ValidationError({"detail": "Give the session to split, or the start and end of a gap."})
+        return attrs

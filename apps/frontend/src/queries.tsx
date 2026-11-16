@@ -64,9 +64,17 @@ import {
     createSavedFilter,
     updateSavedFilter,
     deleteSavedFilter,
+    fetchWorkBlocks,
+    startWork,
+    stopWork,
+    createWorkBlock,
+    sortWorkBlock,
+    undoWorkBlock,
+    fetchWorkBlockSuggestions,
 } from './api';
 import type {
     BucketTypeWrite, CalendarSubscriptionWrite, Dependency, DependencyCycleError, MarkerWrite, SavedFilterWrite,
+    WorkBlockCreate,
     SettingsWrite,
     SplitRequest, TagWrite, Task, TaskWrite, TrackedSessionWrite, TrackingBlockedError, UserSettings,
 } from './types';
@@ -86,6 +94,7 @@ export const queryKeys = {
     timeSheet: ['timesheet'] as const,
     sessions: ['sessions'] as const,
     savedFilters: ['savedFilters'] as const,
+    workBlocks: ['workBlocks'] as const,
 };
 
 /** Other devices pick up a changed active project this often (§3.1). */
@@ -204,7 +213,8 @@ export const useStartTracking = () => {
         mutationFn: startTracking,
         onSuccess: data => {
             if (data.settings) client.setQueryData<UserSettings>(queryKeys.settings, data.settings);
-            return invalidate(queryKeys.tasks, queryKeys.timeSheet, queryKeys.sessions);
+            // Work begun with "Start work" ends: it is to sort (docs/sort-time.md).
+            return invalidate(queryKeys.tasks, queryKeys.timeSheet, queryKeys.sessions, queryKeys.workBlocks);
         },
     });
 };
@@ -598,6 +608,48 @@ export const useDeleteSession = () => {
         onSuccess: () => invalidate(...TRACKED_TIME),
     });
 };
+
+// -------------------------------------------- sorting tracked time (docs/sort-time.md)
+
+/** What is to sort, and "Start work" while it runs. */
+export const useWorkBlocks = () =>
+    useQuery({ queryKey: queryKeys.workBlocks, queryFn: fetchWorkBlocks });
+
+/** What sorting changes: tracked time, the tasks (done, made), the blocks. */
+const SORTED_TIME = [queryKeys.workBlocks, ...TRACKED_TIME] as const;
+
+export const useStartWork = () => {
+    const invalidate = useInvalidate();
+    // A task being tracked is stopped first.
+    return useMutation({ mutationFn: startWork, onSuccess: () => invalidate(...SORTED_TIME) });
+};
+
+export const useStopWork = () => {
+    const invalidate = useInvalidate();
+    return useMutation({ mutationFn: stopWork, onSuccess: () => invalidate(...SORTED_TIME) });
+};
+
+/** Sort a block that exists (``blockId``), or split a session / fill a gap. */
+export const useSortTime = () => {
+    const invalidate = useInvalidate();
+    return useMutation({
+        mutationFn: ({ blockId, ...block }: WorkBlockCreate & { blockId?: string }) =>
+            (blockId ? sortWorkBlock(blockId, block.items) : createWorkBlock(block)),
+        onSuccess: () => invalidate(...SORTED_TIME),
+    });
+};
+
+export const useUndoSortTime = () => {
+    const invalidate = useInvalidate();
+    return useMutation({ mutationFn: undoWorkBlock, onSuccess: () => invalidate(...SORTED_TIME) });
+};
+
+export const useWorkBlockSuggestions = (params: { start: string; end: string; task?: string } | null) =>
+    useQuery({
+        queryKey: [...queryKeys.workBlocks, 'suggestions', params],
+        queryFn: () => fetchWorkBlockSuggestions(params!),
+        enabled: params !== null,
+    });
 
 // ------------------------------------------- saved filters (README: Filtering tasks)
 

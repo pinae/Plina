@@ -12,6 +12,7 @@ import { useState, type ReactNode } from 'react';
 
 import { TaskFormDialog } from './TaskFormDialog.tsx';
 import { treeDefaults } from '../../testing/treeFixtures.ts';
+import { toDateInput } from '../../utils/dateInput.ts';
 import { fakeScreen, PHONE } from '../../testing/matchMedia.ts';
 import { calendarHandlers } from '../../testing/calendarHandlers.ts';
 
@@ -196,8 +197,10 @@ describe('TaskFormDialog — the task tree (UI-8)', () => {
         is_fixed: false, is_appointment: false, completed_at: null, is_done: false,
         active_tracking_start: null, ...treeDefaults, parent_id: null, children_ids: [], ancestor_ids: [], ...over,
     });
+    // Ahead of today, whenever the tests run: a deadline in the past is refused first.
+    const inDays = (days: number) => new Date(Date.now() + days * 24 * 3600_000);
     const tree = [
-        task('t250', { header: 'T250', children_ids: ['hw'], latest_finish_date: '2026-10-31T23:59:00Z' }),
+        task('t250', { header: 'T250', children_ids: ['hw'], latest_finish_date: inDays(10).toISOString() }),
         task('hw', { header: 'Hardware Design', parent_id: 't250', ancestor_ids: ['t250'], children_ids: ['cad'],
             duration: '12:00:00', parts_total: '14:00:00', over_budget: true, time_spent: '01:00:00' }),
         task('cad', { header: 'CAD', parent_id: 'hw', ancestor_ids: ['t250', 'hw'], duration: '14:00:00' }),
@@ -270,7 +273,8 @@ describe('TaskFormDialog — the task tree (UI-8)', () => {
         useTree(null);
         render(<TaskFormDialog open task={tree[2] as never} onClose={() => {}} />, { wrapper });
         await waitFor(() => expect(parentInput()).toHaveValue('T250 › Hardware Design'));
-        fireEvent.change(screen.getByLabelText(/deadline/i), { target: { value: '2026-11-15T12:00' } });
+        // A week after T250's deadline, as the date picker gives it (local time).
+        fireEvent.change(screen.getByLabelText(/deadline/i), { target: { value: `${toDateInput(inDays(17))}T12:00` } });
         fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
         expect(await screen.findByText(/later than the deadline of “T250”/)).toBeInTheDocument();
         expect(patches).toHaveLength(0);

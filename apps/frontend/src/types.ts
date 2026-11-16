@@ -366,6 +366,9 @@ export interface TrackingResponse {
     stopped_task_id?: string | null;
     /** track/start only: settings after the active project followed the task. */
     settings?: UserSettings;
+    /** track/stop and complete: the session it closed (one that ran long may be
+     *  split, docs/sort-time.md); null when none was running. */
+    session?: TrackedSession | null;
 }
 
 /** Response of POST tasks/{id}/move/ (T-1). */
@@ -447,6 +450,8 @@ export interface CompleteResponse {
     task: Task;
     /** Parents completed because their last open child was (bottom-up, UI-2). */
     auto_completed?: { id: string; header: string }[];
+    /** The session it closed, null when none was running (docs/sort-time.md). */
+    session?: TrackedSession | null;
 }
 
 /** 400 payload of track/start when predecessors are unfinished. */
@@ -493,7 +498,8 @@ export interface PasswordChange {
 
 /** A task counted on a day of the time sheet (README: Time sheet). */
 export interface TimeSheetEntry {
-    task_id: string;
+    /** Null for time not sorted yet (``block_id``). */
+    task_id: string | null;
     header: string;
     tags: Tag[];
     /** #Arbeit/#Work: work; #Freizeit/#Freetime: a pause (its own tag or a project's). */
@@ -504,6 +510,10 @@ export interface TimeSheetEntry {
     seconds: number;
     /** Being tracked right now. */
     running: boolean;
+    /** Time begun with "Start work", not sorted yet (docs/sort-time.md). */
+    block_id?: string | null;
+    /** Some of its time was shared out by estimates, not measured. */
+    approximate?: boolean;
 }
 
 export interface TimeSheetDay {
@@ -541,6 +551,9 @@ export interface TrackedSession {
     running: boolean;
     /** Until its end, or now. */
     seconds: number;
+    /** A share of sorted time (docs/sort-time.md): shared out by estimates. */
+    apportioned?: boolean;
+    block_id?: string | null;
 }
 
 export interface TrackedSessionWrite {
@@ -561,4 +574,59 @@ export interface SavedFilter {
 export interface SavedFilterWrite {
     name?: string;
     filter?: TaskFilter;
+}
+
+// -------------------------------------------- sorting tracked time (docs/sort-time.md)
+
+/** A task ticked when sorting a work block, with the share it got. */
+export interface WorkBlockItem {
+    task_id: string;
+    header: string;
+    order: number;
+    weight_minutes: number;
+    pinned_minutes: number | null;
+    /** Done (☑) — else worked on (◐). */
+    completed: boolean;
+    /** Made in the sheet: Undo deletes it. */
+    created_here: boolean;
+    seconds: number;
+}
+
+/** A stretch of work to sort, or sorted: begun with "Start work"
+ *  (``started``, ``running`` while it goes on), a split session or a gap. */
+export interface WorkBlock {
+    id: string;
+    start: string;
+    end: string | null;
+    origin: 'started' | 'split' | 'gap';
+    /** Null: still to sort. */
+    sorted_at: string | null;
+    original_task_id: string | null;
+    running: boolean;
+    seconds: number;
+    items: WorkBlockItem[];
+}
+
+/** A row of the sort sheet as sent: a task, or a ``new`` one (the quick-add's parse). */
+export interface WorkBlockTick {
+    task_id?: string;
+    new?: { header: string; duration: string | null; parent_id: string | null; tag_ids: string[] };
+    completed: boolean;
+    pinned_minutes: number | null;
+}
+
+/** Sorting a session (``session_id``) or a gap (``start``, ``end``). */
+export interface WorkBlockCreate {
+    session_id?: string;
+    start?: string;
+    end?: string;
+    items: WorkBlockTick[];
+}
+
+export type SuggestionReason = 'tracked' | 'done meanwhile' | 'planned' | 'same project' | 'recent' | 'active project'
+    | 'priority';
+
+export interface WorkBlockSuggestion {
+    task_id: string;
+    reason: SuggestionReason;
 }

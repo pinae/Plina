@@ -106,6 +106,9 @@ class Task(OptionallyColored):
     completion_time_spent = models.DurationField(null=True, blank=True, default=None)
     completion_subtree_time_spent = models.DurationField(null=True, blank=True, default=None)
     completion_dropped_rest = models.DurationField(null=True, blank=True, default=None)
+    #: Of ``completion_time_spent``: how much was shared out by estimates
+    #: when sorting a work block (docs/sort-time.md), not measured.
+    completion_time_apportioned = models.DurationField(null=True, blank=True, default=None)
     #: Recurring tasks (README: Recurring tasks, services.series): the series
     #: this task is one occurrence of, and the moment of that occurrence.
     #: Every occurrence is completed and tracked on its own.
@@ -190,6 +193,8 @@ class TaskEstimateChange(Owned):
         ("set_to_sum", "set to sum of parts"),
         ("raised_from_warning", "raised from over-budget warning"),
         ("migrated", "migrated from a project"),
+        # Made while sorting a work block: the estimate was typed after the work.
+        ("logged", "logged after the work"),
     ]
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     task = models.ForeignKey(to=Task, related_name="estimate_changes", on_delete=models.CASCADE)
@@ -405,6 +410,11 @@ class TrackingSession(Owned):
                              on_delete=models.CASCADE)
     start = models.DateTimeField()
     end = models.DateTimeField(null=True, blank=True, default=None)
+    #: A share of a sorted work block (docs/sort-time.md); ``apportioned``:
+    #: its length was shared out by estimates, not measured.
+    block = models.ForeignKey(to="WorkBlock", related_name="sessions", null=True, blank=True, default=None,
+                              on_delete=models.CASCADE)
+    apportioned = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["start"]
@@ -412,6 +422,55 @@ class TrackingSession(Owned):
     def __str__(self) -> str:
         state = "…" if self.end is None else f"– {self.end:%H:%M}"
         return f"{self.task.header}: {self.start:%Y-%m-%d %H:%M} {state}"
+
+
+class WorkBlock(Owned):
+    """A stretch of work whose split between tasks is sorted afterwards
+    (docs/sort-time.md, services.work_blocks): begun with "Start work"
+    before a task was chosen (open while it runs), a session that covered
+    several tasks, or a gap in the time sheet. The user's ticks are its
+    items; the result are its apportioned sessions."""
+    ORIGINS = [
+        ("started", "Start work"),
+        ("split", "split a session"),
+        ("gap", "filled a gap"),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    start = models.DateTimeField()
+    end = models.DateTimeField(null=True, blank=True, default=None)
+    origin = models.CharField(max_length=16, choices=ORIGINS)
+    #: A split session's task: Undo gives it its session back.
+    original_task = models.ForeignKey(to=Task, related_name="+", null=True, blank=True, default=None,
+                                      on_delete=models.SET_NULL)
+    #: None: still to sort.
+    sorted_at = models.DateTimeField(null=True, blank=True, default=None)
+
+    class Meta:
+        ordering = ["start"]
+
+    def __str__(self) -> str:
+        return f"{self.origin}: {self.start:%Y-%m-%d %H:%M} – {self.end:%H:%M}" if self.end else f"{self.origin}: …"
+
+
+class WorkBlockItem(Owned):
+    """A task ticked when sorting a work block."""
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    block = models.ForeignKey(to=WorkBlock, related_name="items", on_delete=models.CASCADE)
+    task = models.ForeignKey(to=Task, related_name="work_block_items", on_delete=models.CASCADE)
+    #: Its share's place in the block.
+    order = models.PositiveIntegerField(default=0)
+    #: What its share was scaled from (what was left of its estimate).
+    weight = models.DurationField(default=timedelta(0))
+    #: Minutes typed for it: not scaled.
+    pinned = models.DurationField(null=True, blank=True, default=None)
+    #: Done (☑) — else worked on (◐).
+    completed = models.BooleanField(default=True)
+    #: Completed by this block / made in the sheet: Undo reopens / deletes it.
+    completed_here = models.BooleanField(default=False)
+    created_here = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["order"]
 
 
 class Plan(Owned):

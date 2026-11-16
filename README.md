@@ -412,6 +412,50 @@ Plina refuses an end before the start, time in the future and overlaps
 plan and the time sheet follow every change
 (`apps/backend/tasks/services/sessions.py`, `/api/sessions/`).
 
+### Sorting tracked time afterwards
+
+In a flow you don't look at Plina: a session runs on one task while you
+finish the next three, or you start working before you have chosen the
+first task. The time is known — when it began and ended — only not how it
+split between tasks. **Sort it afterwards** (docs/sort-time.md,
+`apps/backend/tasks/services/work_blocks.py`, `/api/work-blocks/`):
+
+* **Start work** (next to ▶ in the header) before a task is chosen: the
+  header shows "Working", its time and "not sorted yet". ⏹ stops it and
+  opens the sort sheet; starting a task meanwhile ends it too and leaves it
+  to sort ("1 to sort" in the header, "Not sorted yet" in the time sheet,
+  counted as work) — nothing interrupts the flow.
+* **Only this task?** Stopping or completing a session that ran over 1.5×
+  what was left of the task's estimate (and 30 minutes at least) asks so,
+  without blocking; **Split…** opens the sheet. Any session can be split
+  later in "Tracked time" (**Split…**), a gap between two stretches of a
+  day filled (**Fill…**), and time not tracked live entered for several
+  tasks at once (**Sort into tasks…**).
+* **The sheet** offers what you likely did: the tracked task, tasks
+  completed in that time without time on them, the tasks the plan had
+  there, open tasks of the same project, recently tracked ones — on a fresh
+  day the active project's tasks and the most urgent ones. Tick what you
+  finished (☑; a second tap: worked on but not finished, ◐; a third
+  unticks), or type a task — `Fix login redirect 45m #Arbeit`, the quick-add
+  syntax — to add it done right there. Type to find, Enter ticks the first
+  match (or adds the text), Enter on nothing saves; ↓/↑ move through the
+  rows, Space ticks.
+* **Shares.** Each ticked task weighs what is left of its estimate (the
+  default duration without one, minus the time tracked on it elsewhere), at
+  least a quarter of it; worked on counts half. The weights are scaled to
+  fill the stretch ("Estimates × 0.39 to fill 2h 13m"); minutes typed for
+  a row are kept as typed and the rest scales around them. A bar shows the
+  split while you tick. The shares become tracked time, end to end in the
+  order of the rows, and a ticked task is completed at the end of its share.
+* **Nothing is asked before, everything can be undone:** Undo in the
+  snackbar puts back what was there (a split session comes back, tasks made
+  in the sheet go, completions reopen); "Sort again…" on a share changes it.
+  Shared-out time is marked ≈ in the time sheet ("≈ shared out" in Tracked
+  time), and a done task's figures keep how much of its time was shared out
+  (`completion_time_apportioned`); a task added in the sheet records its
+  estimate as typed after the work (`logged`), so estimate analyses can
+  tell measured from shared-out time.
+
 
 ### Core Data Structures (Domain Model)
 

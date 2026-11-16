@@ -12,6 +12,7 @@ import { PlanChooserDialog } from './components/PlanChooserDialog/PlanChooserDia
 import { PlanMyWeekButton } from './components/PlanMyWeekButton/PlanMyWeekButton.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary.tsx';
 import { AppHeader } from './components/AppHeader/AppHeader.tsx';
+import { SortTimeProvider } from './components/SortTimeDialog/SortTimeDialog.tsx';
 import { useIsMobile, useIsShort } from './hooks/useResponsive.ts';
 import { useTimeZoneSync } from './hooks/useTimeZoneSync.ts';
 import { useCalendarSync } from './queries.tsx';
@@ -54,55 +55,59 @@ function App() {
 
 
   return (
-    <Layout pageScroll={pageScroll}>
-      {/* Engage bar (UI-5): active project, tracker, quick add. */}
-      <AppHeader
-        onShowAllProjects={() => {
-          // The Tasks tab: every project in one tree (§3.1, T-3).
-          setTab('tasks');
-        }}
-        actions={
-          <PlanMyWeekButton
-            onClick={triggerPlan}
-            compact={compact}
-          />
-        }
-      />
-      <Box sx={{
-        flexShrink: 0, borderBottom: 1, borderColor: 'divider',
-        display: 'flex', alignItems: 'center', bgcolor: 'background.paper', px: 1,
-      }}>
-        <Tabs value={tab} onChange={handleChange} aria-label="plina tabs" variant="scrollable" scrollButtons="auto" sx={{ flexGrow: 1 }}>
-          {TABS.map(([key, long, short]) => (
-            <Tab key={key} value={key} label={compact ? short : long} aria-label={long} sx={compact ? { minWidth: 0, px: 1.5 } : undefined} />
-          ))}
-        </Tabs>
-      </Box>
-      <PlanChooserDialog
-        open={chooserOpen}
-        onClose={() => setChooserOpen(false)}
-        onAccepted={() => setTab('week')}
-      />
+    // The sheet that sorts tracked time afterwards (docs/sort-time.md), opened
+    // from the tracker and the time sheet.
+    <SortTimeProvider>
+      <Layout pageScroll={pageScroll}>
+        {/* Engage bar (UI-5): active project, tracker, quick add. */}
+        <AppHeader
+          onShowAllProjects={() => {
+            // The Tasks tab: every project in one tree (§3.1, T-3).
+            setTab('tasks');
+          }}
+          actions={
+            <PlanMyWeekButton
+              onClick={triggerPlan}
+              compact={compact}
+            />
+          }
+        />
+        <Box sx={{
+          flexShrink: 0, borderBottom: 1, borderColor: 'divider',
+          display: 'flex', alignItems: 'center', bgcolor: 'background.paper', px: 1,
+        }}>
+          <Tabs value={tab} onChange={handleChange} aria-label="plina tabs" variant="scrollable" scrollButtons="auto" sx={{ flexGrow: 1 }}>
+            {TABS.map(([key, long, short]) => (
+              <Tab key={key} value={key} label={compact ? short : long} aria-label={long} sx={compact ? { minWidth: 0, px: 1.5 } : undefined} />
+            ))}
+          </Tabs>
+        </Box>
+        <PlanChooserDialog
+          open={chooserOpen}
+          onClose={() => setChooserOpen(false)}
+          onAccepted={() => setTab('week')}
+        />
 
-      {/* pageScroll: part of the page, which scrolls (Layout). */}
-      <Box data-testid="tab-content" sx={{ flex: pageScroll ? '1 0 auto' : 1, minHeight: 0, display: 'flex', flexDirection: 'column',
-        overflow: pageScroll ? 'visible' : 'auto', p: FULL_BLEED.includes(tab) ? 0 : compact ? 1 : 2,
-        // Phones: room to scroll the last rows clear of the ⊕ button; the
-        // Week ends the page, so it can scroll exactly to fill the screen.
-        pb: compact && !pageScroll ? 11 : undefined }}>
-        <ErrorBoundary key={tab}>
-          {tab === 'tasks' && <OutlineView />}
-          {tab === 'week' && (
-            <PlannedWeekView />
-          )}
-          {tab === 'calendar' && <Calendar />}
-          {tab === 'timesheet' && <TimeSheet />}
-          {tab === 'tags' && <TagList />}
-          {tab === 'buckets' && <BucketTypeList />}
-          {tab === 'dependencies' && <DependencyEditor />}
-        </ErrorBoundary>
-      </Box>
-    </Layout>
+        {/* pageScroll: part of the page, which scrolls (Layout). */}
+        <Box data-testid="tab-content" sx={{ flex: pageScroll ? '1 0 auto' : 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          overflow: pageScroll ? 'visible' : 'auto', p: FULL_BLEED.includes(tab) ? 0 : compact ? 1 : 2,
+          // Phones: room to scroll the last rows clear of the ⊕ button; the
+          // Week ends the page, so it can scroll exactly to fill the screen.
+          pb: compact && !pageScroll ? 11 : undefined }}>
+          <ErrorBoundary key={tab}>
+            {tab === 'tasks' && <OutlineView />}
+            {tab === 'week' && (
+              <PlannedWeekView />
+            )}
+            {tab === 'calendar' && <Calendar />}
+            {tab === 'timesheet' && <TimeSheet />}
+            {tab === 'tags' && <TagList />}
+            {tab === 'buckets' && <BucketTypeList />}
+            {tab === 'dependencies' && <DependencyEditor />}
+          </ErrorBoundary>
+        </Box>
+      </Layout>
+    </SortTimeProvider>
   );
 }
 

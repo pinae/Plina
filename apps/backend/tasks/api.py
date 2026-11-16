@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from .models import Task, Tag, TimeBucket, TimeBucketType, TaskDependency, Plan
 from .services.colors import FALLBACK_COLOR, ensure_auto_colors
 from .serializers import (MarkerSerializer, SavedFilterSerializer, TaskSerializer, TagSerializer,
+                          WorkBlockSerializer, SortSerializer, SortNewSerializer,
                           TimeBucketSerializer, TimeBucketTypeSerializer,
                           TaskDependencySerializer, TrackingSessionSerializer)
 
@@ -76,21 +77,25 @@ class TaskViewSet(viewsets.ModelViewSet):
         from tasks.services.tracking import TrackingError, stop_tracking
         task = self.get_object()
         try:
-            stop_tracking(task)
+            session = stop_tracking(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
         task.refresh_from_db()
-        return self._tracking_response(task)
+        # The session it closed: one that ran long may be split (docs/sort-time.md).
+        return self._tracking_response(task, extra={"session": TrackingSessionSerializer(session).data})
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         from tasks.services.tracking import TrackingError, complete_task
         task = self.get_object()
+        from .models import TrackingSession
         try:
             task, auto_completed = complete_task(task)
         except TrackingError as error:
             return Response(error.payload, status=error.status)
+        closed = TrackingSession.objects.filter(task=task, end=task.completed_at, block=None).first()
         return self._tracking_response(task, extra={
+            "session": TrackingSessionSerializer(closed).data if closed is not None else None,
             # Parents completed because their last open child was (bottom-up).
             "auto_completed": [{"id": t.id, "header": t.header} for t in auto_completed],
         })
@@ -451,6 +456,7 @@ class TimeSheetView(APIView):
                 "entries": [{
                     "task_id": entry.task_id, "header": entry.header, "tags": entry.tags, "kind": entry.kind,
                     "seconds": entry.seconds, "running": entry.running, "via": entry.via,
+                    "block_id": entry.block_id, "approximate": entry.approximate,
                 } for entry in day.entries],
             } for day in timesheet.time_sheet(first, last)],
         })
@@ -763,3 +769,101 @@ class PlanViewSet(mixins.ListModelMixin,
         from tasks.services.plan_store import accept_plan
         plan = accept_plan(self.get_object())
         return Response(PlanSerializer(plan).data)
+
+
+class WorkBlockViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.DestroyModelMixin,
+                       viewsets.GenericViewSet):
+    """Sorting tracked time afterwards (docs/sort-time.md,
+    services.work_blocks): the list holds what is to sort (and work begun
+    with "Start work" that runs); ``?from=…&to=…`` the blocks begun on these
+    days, sorted ones too. Deleting one is Undo."""
+    serializer_class = WorkBlockSerializer
+
+    def get_queryset(self):
+        from datetime import date
+        from django.db.models import Prefetch
+        from .models import TrackingSession, WorkBlock
+        from .services.timesheet import day_bounds
+        blocks = WorkBlock.objects.prefetch_related(
+            "items__task", Prefetch("sessions", queryset=TrackingSession.objects.all())).order_by("start")
+        params = self.request.query_params
+        if self.action != "list":
+            return blocks
+        if params.get("from") or params.get("to"):
+            try:
+                first = date.fromisoformat(params.get("from") or params["to"])
+                last = date.fromisoformat(params.get("to") or params["from"])
+            except ValueError:
+                raise serializers.ValidationError({"detail": "Give the days like 2026-10-01."})
+            start, end = day_bounds(first, last)
+            return blocks.filter(start__gte=start, start__lt=end)
+        return blocks.filter(sorted_at=None)
+
+    @staticmethod
+    def _refusal(error):
+        return Response({"detail": str(error)}, status=400)
+
+    def _answer(self, block, status=200):
+        """The block as it is now (its items and shares freshly loaded)."""
+        return Response(self.get_serializer(self.get_queryset().get(id=block.id)).data, status=status)
+
+    def create(self, request, *args, **kwargs):
+        from .services.work_blocks import SharesError, SortError, fill_gap, split_session
+        serializer = SortNewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            if "session_id" in data:
+                block = split_session(data["session_id"], serializer.ticks())
+            else:
+                block = fill_gap(data["start"], data["end"], serializer.ticks())
+        except (SortError, SharesError) as error:
+            return self._refusal(error)
+        return self._answer(block, status=201)
+
+    @action(detail=True, methods=["post"])
+    def sort(self, request, pk=None):
+        from .services.work_blocks import SharesError, SortError, sort_block
+        block = self.get_object()
+        serializer = SortSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            sort_block(block, serializer.ticks())
+        except (SortError, SharesError) as error:
+            return self._refusal(error)
+        return self._answer(block)
+
+    def destroy(self, request, *args, **kwargs):
+        from .services.work_blocks import undo_block
+        undo_block(self.get_object())
+        return Response(status=204)
+
+    @action(detail=False, methods=["post"])
+    def start(self, request):
+        from .services.work_blocks import start_work
+        return self._answer(start_work(), status=201)
+
+    @action(detail=False, methods=["get"])
+    def suggestions(self, request):
+        """What to offer for ``?start=…&end=…`` (``&task=<id>``: the task
+        tracked in it), the likeliest first, with why."""
+        from django.utils.dateparse import parse_datetime
+        from .services.work_blocks import suggestions
+        params = request.query_params
+        start, end = parse_datetime(params.get("start") or ""), parse_datetime(params.get("end") or "")
+        if start is None or end is None:
+            return Response({"detail": "Give the start and end of the stretch."}, status=400)
+        task = Task.objects.filter(id=params["task"]).first() if _is_uuid(params.get("task")) else None
+        return Response([{"task_id": str(found.id), "reason": reason}
+                         for found, reason in suggestions(start, end, task=task)])
+
+    @action(detail=False, methods=["post"])
+    def stop(self, request):
+        from .services.work_blocks import SortError, stop_work
+        try:
+            block = stop_work()
+        except SortError as error:
+            return self._refusal(error)
+        if block is None:
+            return Response(status=204)  # less than a minute: nothing to sort
+        return self._answer(block)

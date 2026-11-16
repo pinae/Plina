@@ -34,6 +34,10 @@ import type {
     LoginRequest,
     PasswordChange,
     Session,
+    WorkBlock,
+    WorkBlockCreate,
+    WorkBlockSuggestion,
+    WorkBlockTick,
 } from './types';
 
 const DEFAULT_BACKEND_URL = 'http://localhost:8000';
@@ -296,6 +300,36 @@ export const updateSession = (sessionId: string, patch: TrackedSessionWrite) =>
 
 export const deleteSession = (sessionId: string) =>
     api.delete(`sessions/${sessionId}/`).then(() => undefined);
+
+// -------------------------------------------- sorting tracked time (docs/sort-time.md)
+
+/** What is to sort, and "Start work" while it runs. */
+export const fetchWorkBlocks = () =>
+    api.get<WorkBlock[]>('work-blocks/').then(r => r.data);
+
+export const fetchWorkBlock = (blockId: string) =>
+    api.get<WorkBlock>(`work-blocks/${blockId}/`).then(r => r.data);
+
+export const startWork = () =>
+    api.post<WorkBlock>('work-blocks/start/').then(r => r.data);
+
+/** Null: it ran less than a minute, nothing to sort. */
+export const stopWork = () =>
+    api.post<WorkBlock | ''>('work-blocks/stop/').then(r => (r.status === 204 || !r.data ? null : r.data));
+
+/** Split a session or fill a gap, sorted at once. */
+export const createWorkBlock = (block: WorkBlockCreate) =>
+    api.post<WorkBlock>('work-blocks/', block).then(r => r.data);
+
+export const sortWorkBlock = (blockId: string, items: WorkBlockTick[]) =>
+    api.post<WorkBlock>(`work-blocks/${blockId}/sort/`, { items }).then(r => r.data);
+
+/** Undo: back to how it was before sorting. */
+export const undoWorkBlock = (blockId: string) =>
+    api.delete(`work-blocks/${blockId}/`).then(() => undefined);
+
+export const fetchWorkBlockSuggestions = (params: { start: string; end: string; task?: string }) =>
+    api.get<WorkBlockSuggestion[]>('work-blocks/suggestions/', { params }).then(r => r.data);
 
 // ------------------------------------------- saved filters (README: Filtering tasks)
 
